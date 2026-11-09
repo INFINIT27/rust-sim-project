@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8178c1e3cc6803e2d00a16878538f4550f01cd8ed0f3dee6e12a37127ffc6e46 # shrinks to rotation = Quat(-0.29327536, -0.6434345, -0.64340246, 0.293283), radius = 1.0

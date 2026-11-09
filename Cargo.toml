@@ -1,0 +1,43 @@
+[package]
+name = "physics-sandbox"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "A desktop 3D physics sandbox: the solar system under Newtonian gravity, at true scale."
+publish = false
+
+# Tests live in `tst/`, not Cargo's conventional `tests/`. Unit tests are `#[path]`-included into
+# their modules from `tst/`, so Cargo needs no entry for them. Cargo does not auto-discover
+# integration tests outside `tests/`, so each one is declared below. See `tst/README.md`.
+autotests = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "physics-sandbox"
+path = "src/main.rs"
+
+# The only true integration test: `MinimalPlugins` + `ScenePlugin`, ticked headlessly.
+[[test]]
+name = "headless_app"
+path = "tst/headless_app.rs"
+
+[dependencies]
+# The code is written against Bevy 0.14's API (`PbrBundle`, `Camera3dBundle`, `SmaaSettings`).
+# Default features include `smaa_luts` and `tonemapping_luts`, which `src/performance/` and the
+# renderer rely on.
+bevy = "0.14"
+# The `bevy_egui` line that targets Bevy 0.14. `src/ui/` is the only module that imports it.
+bevy_egui = "0.28"
+
+[dev-dependencies]
+proptest = "1"
+
+# Dependencies build fully optimised and the crate lightly, so a dev build of the solar system
+# runs about as fast as release and still rebuilds quickly.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

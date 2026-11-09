@@ -1,0 +1,16 @@
+# Cargo build output.
+/target/
+
+# Benchmark logs written by src/performance/scripts/bench.sh (default $RGA_BENCH_LOG).
+bench.tsv
+
+# Editors and OS clutter.
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Note: Cargo.lock is committed on purpose. This is an application, and the lockfile pins the
+# exact Bevy build the tests and measurements were taken with.
+# Note: tst/**/proptest-regressions/ is committed on purpose. See tst/README.md.
