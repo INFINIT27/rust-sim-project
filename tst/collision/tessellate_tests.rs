@@ -12,7 +12,7 @@
 
 use super::*;
 use crate::collision::trimesh::TriMesh;
-use crate::core::scene::{Color, Pose};
+use crate::core::scene::{Color, DVec3, Pose};
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
@@ -30,7 +30,7 @@ fn white() -> Color {
 
 fn pose_at(position: Vec3) -> Pose {
     Pose {
-        position,
+        position: position.as_dvec3(),
         rotation: Quat::IDENTITY,
     }
 }
@@ -153,7 +153,7 @@ fn a_rotated_cuboid_hull_follows_its_pose() {
     // A quarter turn about Y swaps the X and Z extents.
     let body = Body::Cuboid {
         pose: Pose {
-            position: Vec3::ZERO,
+            position: DVec3::ZERO,
             rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
         },
         half_extents: Vec3::new(2.0, 1.0, 0.5),
@@ -216,8 +216,8 @@ fn a_line_with_width_is_a_solid_rod_along_the_segment() {
     let from = Vec3::new(-2.0, 1.0, 0.0);
     let to = Vec3::new(2.0, 1.0, 0.0);
     let body = Body::Line {
-        from,
-        to,
+        from: from.as_dvec3(),
+        to: to.as_dvec3(),
         width: 0.5,
         color: white(),
     };
@@ -243,8 +243,8 @@ fn a_line_with_width_is_a_solid_rod_along_the_segment() {
 #[test]
 fn a_zero_width_line_has_no_hull_because_a_curve_has_no_inside() {
     let curve = Body::Line {
-        from: Vec3::ZERO,
-        to: Vec3::X,
+        from: DVec3::ZERO,
+        to: DVec3::X,
         width: 0.0,
         color: white(),
     };
@@ -262,8 +262,8 @@ fn a_zero_width_line_has_no_hull_because_a_curve_has_no_inside() {
 #[test]
 fn a_degenerate_line_has_no_hull() {
     let point = Body::Line {
-        from: Vec3::ZERO,
-        to: Vec3::ZERO,
+        from: DVec3::ZERO,
+        to: DVec3::ZERO,
         width: 0.5,
         color: white(),
     };
@@ -324,7 +324,7 @@ proptest! {
     fn every_rod_hull_contains_its_axis(from in position(), to in position(), width in 0.01_f32..2.0) {
         prop_assume!((to - from).length() > 0.1);
 
-        let body = Body::Line { from, to, width, color: white() };
+        let body = Body::Line { from: from.as_dvec3(), to: to.as_dvec3(), width, color: white() };
         let mesh = collision_mesh(&body).expect("a positive-width segment bounds a volume");
 
         prop_assert!(mesh.is_valid());

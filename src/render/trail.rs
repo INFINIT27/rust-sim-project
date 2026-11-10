@@ -440,7 +440,7 @@ impl Trails {
             let (length_units, spacing_units) = match moon_primary(scene, id) {
                 None => (config.length_units, config.min_spacing_units),
                 Some((_, orbit_radius_units)) => {
-                    let spacing = std::f32::consts::TAU * orbit_radius_units
+                    let spacing = std::f32::consts::TAU * orbit_radius_units as f32
                         / TRAIL_MOON_SAMPLES_PER_ORBIT as f32;
                     let length = config
                         .length_units
@@ -449,7 +449,7 @@ impl Trails {
                 }
             };
             self.paths.entry(id).or_default().record(
-                prop.body.center(),
+                prop.body.center().as_vec3(),
                 length_units,
                 spacing_units,
                 config.max_samples,

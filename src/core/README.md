@@ -1,5 +1,14 @@
 # `src/core/` — GUI-free world model
 
+> **Purpose:** The world model with no GUI: `Scene`, `Prop`, `Body`, the units (1 world unit =
+> 10⁹ m), the step loop, gravity, and the coasting-path planner in [`transfer/`](transfer/README.md).
+> **Edit here to:** change what a body or prop is, the order of the step loop, gravity
+> integration, the units↔SI conversion, or how far ahead bodies are predicted.
+> **Not here:** contacts are in [`collision/`](../collision/README.md), burns in
+> [`spacecraft/`](../spacecraft/README.md), clocks in [`time/`](../time/README.md), named scenes in
+> [`experiments/`](../experiments/README.md), and formulas in
+> [`physics_utils/`](../physics_utils/README.md).
+
 The pure-Rust representation of the scene: what exists, where it is, and how
 big it is. No renderer, no ECS, no window. This is the layer a physics engine
 would drive.
@@ -11,7 +20,7 @@ would drive.
 | `mod.rs` | Declares the layer and states the Bevy-free rule. |
 | `constants.rs` | Every constant the layer reads: `ROTATION_UNIT_TOLERANCE`, `GRAVITY_SOFTENING_UNITS`, and the starter scene's bounds, floor size, and colours. |
 | `integrator.rs` | The gravitational half of the `Scene::step` seam: mutual gravitation, composed entirely from `physics_utils` functions, and the crate's only units↔SI conversion site. `gravitational_acceleration`, `integrate_gravity`. The contact half lives in `src/collision/`. |
-| `transfer.rs` | Planning a craft's path between any two bodies under the scene's own gravity: `plan_departure`, `plan_correction`, `TransferPlan`, and `Voyage`, which tracks a live flight's correction schedule and finds the substep it touches down. Predicts by stepping a clone of the scene, not with conics. Chooses the departure speed and direction that arrive first, under the craft's cap, with no time limit; `PlanProgress` reports and cancels the search. |
+| `transfer/` | Planning a craft's coasting path between any two bodies under the scene's own gravity, by stepping a clone of the scene rather than with conics. A directory of its own; see [`transfer/README.md`](transfer/README.md). |
 | `scene.rs` | `moon_primary` (which planet a body orbits as a moon, by Hill sphere), `Scene` container, `Prop` (a body plus its velocity and mass), and the value types `Pose`, `Color`, `Aabb`, `BodyId`, `Body` (`Sphere`/`Cuboid`/`Line`/`Plane`), plus the `step(dt)` physics seam, `step_observed`, which calls an observer after each substep, and `step_steered`, which also calls a controller before each. |
 
 ## Units: 1 world unit = 10⁹ metres
@@ -31,6 +40,16 @@ Why not store metres: at `3e10 m` the spacing between representable `f32` values
 already ~2 km, and the render pipeline would be pushing `1e10`-magnitude transforms
 through a depth buffer. Keeping stored numbers in the 1–100 range costs one multiply
 per pair.
+
+**Positions and velocities are `f64`** (`Pose::position`, `Body::Line`'s endpoints,
+`Prop::velocity_units_s`, all `DVec3`). They are the integrated state, and an `f32` loses
+what each substep adds. At Earth's `150` units an `f32` position resolves `15 km` along
+one axis, while a `5.6 s` substep moves Earth `168 km`. The rounding was the same every
+substep, so Earth drifted `18,640 km` and the Earth–Moon vector `70,739 km` in one
+simulated day, against an `f64` reference. Velocities drifted the same way, by up to
+`1.8 mm/s` a substep. Rotations, radii, half-extents, masses, and everything handed to
+Bevy stay `f32`: none of them is accumulated, and the render bridge narrows at the
+boundary.
 
 For reference at this scale: the `±50`-unit bounds span about 0.67 AU, an Earth
 radius is 0.0064 units, and the Earth–Sun distance is 150 units.

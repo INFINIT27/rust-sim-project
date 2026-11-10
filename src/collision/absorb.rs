@@ -98,18 +98,18 @@ use crate::core::scene::{Body, BodyId, Scene};
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{absorb_contacts, Body, Color, Pose, Prop, Quat, Scene, Vec3};
+/// use physics_sandbox::{absorb_contacts, Body, Color, DVec3, Pose, Prop, Quat, Scene};
 ///
-/// let ball = |x: f32, radius: f32| Body::Sphere {
-///     pose: Pose { position: Vec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY },
+/// let ball = |x: f64, radius: f32| Body::Sphere {
+///     pose: Pose { position: DVec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY },
 ///     radius,
 ///     color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
 /// };
 ///
 /// let mut scene = Scene::demo();
 /// // A black hole at the origin, and a star already touching it.
-/// scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, 10.0));
-/// scene.add(Prop::new(ball(1.5, 1.0), Vec3::new(1.0, 0.0, 0.0), 5.0));
+/// scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, 10.0));
+/// scene.add(Prop::new(ball(1.5, 1.0), DVec3::new(1.0, 0.0, 0.0), 5.0));
 ///
 /// assert_eq!(absorb_contacts(&mut scene), 1);
 /// assert_eq!(scene.props.len(), 2, "the floor and the black hole are left");
@@ -247,21 +247,14 @@ fn merge(scene: &mut Scene, absorber: usize, victim: usize) {
     // in `f32` exactly where the ratio between them matters.
     if combined_mass > 0.0 && combined_mass.is_finite() {
         if prop.immovable {
-            // An immovable prop has exactly `Vec3::ZERO` velocity, by `Prop`'s own
+            // An immovable prop has exactly `DVec3::ZERO` velocity, by `Prop`'s own
             // Validation_Rules. It takes the mass and discards the momentum rather than
             // breaking that invariant — see the module docs.
         } else {
             let total = f64::from(prop.mass_kg) + f64::from(victim_mass);
-            let blend = |a: f32, b: f32| {
-                ((f64::from(prop.mass_kg) * f64::from(a) + f64::from(victim_mass) * f64::from(b))
-                    / total) as f32
-            };
-
-            prop.velocity_units_s = crate::core::scene::Vec3::new(
-                blend(prop.velocity_units_s.x, victim_velocity.x),
-                blend(prop.velocity_units_s.y, victim_velocity.y),
-                blend(prop.velocity_units_s.z, victim_velocity.z),
-            );
+            prop.velocity_units_s = (prop.velocity_units_s * f64::from(prop.mass_kg)
+                + victim_velocity * f64::from(victim_mass))
+                / total;
         }
 
         // The horizon grows with mass: `r_s = 2GM/c²` is linear in `M`. Applied to the drawn

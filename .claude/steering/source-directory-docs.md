@@ -35,10 +35,12 @@ is checkable in one command, so it does not depend on reviewer diligence.
 ## Required content
 
 Name the file exactly `README.md` — that is what renders automatically in Code
-Browser, GitHub, and the VS Code explorer. Keep it to a screen or less, and
-include these six things:
+Browser, GitHub, and the VS Code explorer. Keep it to a screen or less. Open it
+with the lookup summary below, then include these six things:
 
-1. **What this directory is** — one sentence a newcomer can act on.
+1. **What this directory is**: one sentence a newcomer can act on. The lookup
+   summary's **Purpose** line covers this. Add more only if the directory needs
+   background.
 2. **What lives here** — a one-line-per-file table, with each file's job.
 3. **What its constants are** — the directory's `constants.rs` (see
    [`constants.md`](constants.md)) listed in the file table, and, where the
@@ -52,6 +54,41 @@ include these six things:
    wired in.
 6. **Adding a file here** — what a new file in this directory must satisfy, so
    the next person does not have to infer it.
+
+## The lookup summary: always the first paragraph
+
+The `README.md` files are the repository's index. Someone (or an agent) looking
+for where a change goes reads the root directory map, then only the **first
+paragraph** of each candidate `README.md`, and reads further only in the one that
+matches. That works only if the first paragraph always has the same shape and
+always answers the routing question, so it is fixed:
+
+```markdown
+# `src/<dir>/` — short title
+
+> **Purpose:** what this directory owns, in one or two sentences.
+> **Edit here to:** the typical changes that belong here, as a list of tasks.
+> **Not here:** the nearby concerns that live elsewhere, each with a link to the
+> directory that owns it.
+```
+
+- It comes **directly after the `#` heading**, on line 3, before any history or
+  rationale. Background prose goes after it.
+- It is one blockquote paragraph (every line starts with `> `), so the extraction
+  command below can find where it ends.
+- **Edit here to** names tasks ("change the landing law"), not files. The file
+  table answers "which file".
+- **Not here** is the most valuable line. It catches the wrong guess a reader is
+  most likely to make (for example, "the clock keys are in `input/`, not
+  `time/`"). For a `tst/` mirror it points at the `src/` directory under test.
+- Keep it to about eight wrapped lines. If it runs longer, the directory probably
+  does more than one job.
+- When the directory's responsibilities change (a file moves in or out, a
+  concern moves to another layer), update the summary **and** the matching row in
+  the root `README.md` map in the same commit.
+
+The root `README.md` is the one exception. Its first paragraph describes the
+project, and its directory map is the top of the index.
 
 ## Do not duplicate rustdoc
 
@@ -72,17 +109,22 @@ from the `README.md`.
 - Renaming, moving, splitting, or deleting a file means updating the affected
   `README.md` tables **in the same commit**. A stale table is worse than no
   table, because it is trusted.
-- The root `README.md` holds a directory map: one row per directory, linking its
-  `README.md`. When you add a directory, add its row too. The root stays to setup
-  and that map; anything more detailed belongs in a directory's own `README.md`.
+- The root `README.md` holds the directory map: one row per directory that has a
+  `README.md` (each `tst/` mirror is covered by the single `tst/` row), saying
+  what to go there to change. When you add a directory, add its row too. The root
+  stays to setup and that map; anything more detailed belongs in a directory's own
+  `README.md`.
 - A `README.md` that only restates the directory's name is not compliant. If
   there is genuinely nothing to say about a directory, that is a signal the
   directory should not exist.
 
 ## Checklist for a new source directory
 
-- [ ] `README.md` exists in the new directory and covers all six sections
+- [ ] `README.md` exists in the new directory, opens with the lookup summary
+      (**Purpose** / **Edit here to** / **Not here**), and covers all six sections
       above.
+- [ ] The **Not here** lines of neighbouring directories still point to the
+      right place now that this directory exists.
 - [ ] `constants.rs` exists if the directory has any tunable value, and every
       constant in the directory lives in it — see [`constants.md`](constants.md).
 - [ ] The corresponding `tst/` mirror directory exists and has its own
@@ -110,3 +152,22 @@ comm -23 \
 ```
 
 Empty output means compliant. Any line printed is a directory missing its doc.
+
+Every `README.md` except the root must open with the lookup summary:
+
+```bash
+for f in $(git ls-files '*README.md' | grep -v '^README.md$'); do
+  sed -n 3p "$f" | grep -q '^> \*\*Purpose:\*\*' || echo "$f"
+done
+```
+
+Empty output means compliant. Any path printed is a `README.md` whose first
+paragraph is not the summary.
+
+To read the whole index (every heading and summary, and nothing else):
+
+```bash
+for f in $(git ls-files '*README.md' | grep -v '^README.md$'); do
+  awk 'NR==1 {print; next} /^>/ {print; seen=1; next} seen {exit}' "$f"; echo
+done
+```

@@ -45,13 +45,13 @@ fn debug_ui_plugin_is_constructible() {
 // -----------------------------------------------------------------------
 
 use crate::constants::TWO_BODY_SEPARATION_UNITS;
-use crate::core::scene::{Body, Color, Pose, Prop, Quat, Vec3};
+use crate::core::scene::{Body, Color, DVec3, Pose, Prop, Quat, Vec3};
 
 /// A unit sphere at `position`, for building test props.
 fn ball_at(position: Vec3) -> Body {
     Body::Sphere {
         pose: Pose {
-            position,
+            position: position.as_dvec3(),
             rotation: Quat::IDENTITY,
         },
         radius: 1.0,
@@ -80,7 +80,10 @@ fn units_to_metres_scales_by_the_world_unit() {
 /// squared. Pinned against the scene's own constant.
 #[test]
 fn a_thirty_unit_separation_reads_as_three_times_ten_to_the_ten_metres() {
-    assert_eq!(units_to_metres(TWO_BODY_SEPARATION_UNITS), 3.0e10);
+    assert_eq!(
+        units_to_metres(f64::from(TWO_BODY_SEPARATION_UNITS)),
+        3.0e10
+    );
 }
 
 /// The shipped scene produces one row per prop, correctly labelled.
@@ -127,7 +130,7 @@ fn velocity_is_reported_in_metres_per_second() {
     let mut scene = Scene::demo();
     scene.add(Prop::new(
         ball_at(Vec3::ZERO),
-        Vec3::new(3.0, 0.0, -4.0),
+        DVec3::new(3.0, 0.0, -4.0),
         2.0,
     ));
 

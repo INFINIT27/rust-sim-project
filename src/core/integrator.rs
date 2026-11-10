@@ -65,7 +65,7 @@
 //! acceleration is divided back down before it touches a velocity. Mass is
 //! already in kilograms and time already in seconds, so neither is rescaled.
 
-use bevy::math::Vec3;
+use bevy::math::DVec3;
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::constants::GRAVITY_SOFTENING_UNITS;
@@ -103,7 +103,7 @@ fn usable_softening(softening_units: f32) -> f32 {
 /// acceleration is scaled back down before it is returned, so the value composes
 /// directly with a velocity in units per second.
 ///
-/// Sums the pull of every *other* prop. Returns `Vec3::ZERO` when the target
+/// Sums the pull of every *other* prop. Returns `DVec3::ZERO` when the target
 /// cannot be accelerated — immovable, or massless — and skips any source that is
 /// exactly coincident with the target, since the direction of the pull is
 /// undefined there.
@@ -118,19 +118,19 @@ fn usable_softening(softening_units: f32) -> f32 {
 /// # Preconditions and release behaviour
 ///
 /// `target < props.len()`, and every prop valid. Violations fire a
-/// `debug_assert!`; in release the function returns `Vec3::ZERO`, so a corrupt
+/// `debug_assert!`; in release the function returns `DVec3::ZERO`, so a corrupt
 /// scene coasts rather than exploding.
 ///
 /// # Examples
 ///
 /// ```
 /// use physics_sandbox::{
-///     gravitational_acceleration, Body, Color, Pose, Prop, Quat, Vec3, GRAVITY_SOFTENING_UNITS,
+///     gravitational_acceleration, Body, Color, DVec3, Pose, Prop, Quat, GRAVITY_SOFTENING_UNITS,
 /// };
 ///
-/// fn ball(x: f32) -> Body {
+/// fn ball(x: f64) -> Body {
 ///     Body::Sphere {
-///         pose: Pose { position: Vec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY },
+///         pose: Pose { position: DVec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY },
 ///         radius: 1.0,
 ///         color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
 ///     }
@@ -150,7 +150,7 @@ fn usable_softening(softening_units: f32) -> f32 {
 /// let b = gravitational_acceleration(&props, 1, GRAVITY_SOFTENING_UNITS);
 /// assert!((a.x + b.x).abs() < 1.0e-9 * a.x.abs().max(1.0));
 /// ```
-pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units: f32) -> Vec3 {
+pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units: f32) -> DVec3 {
     debug_assert!(
         target < props.len(),
         "gravitational_acceleration: target {} out of bounds for {} props",
@@ -159,7 +159,7 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
     );
 
     if target >= props.len() {
-        return Vec3::ZERO;
+        return DVec3::ZERO;
     }
 
     let subject = &props[target];
@@ -174,14 +174,14 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
     // by its mass — `acceleration_from_net_force` rejects a zero mass, and it is
     // right to.
     if !subject.responds_to_forces() || !subject.is_valid() {
-        return Vec3::ZERO;
+        return DVec3::ZERO;
     }
 
     let subject_center = subject.body.center();
     let subject_mass = subject.mass_kg as f64;
     let softening_m = usable_softening(softening_units) as f64 * METRES_PER_UNIT;
 
-    let mut acceleration = Vec3::ZERO;
+    let mut acceleration = DVec3::ZERO;
 
     for (index, source) in props.iter().enumerate() {
         if index == target || !source.is_valid() {
@@ -204,7 +204,7 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
         // the force at an effective separation of sqrt(r² + ε²). Passing that to
         // the unmodified force formula is exactly equivalent to dividing by
         // (r² + ε²), so no new formula is needed.
-        let separation_m = separation as f64 * METRES_PER_UNIT;
+        let separation_m = separation * METRES_PER_UNIT;
         let effective_separation_m =
             (separation_m * separation_m + softening_m * softening_m).sqrt();
 
@@ -222,7 +222,7 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
         // Direction from the *true* offset, magnitude from the softened
         // separation — which is what makes this Plummer softening rather than a
         // distance clamp.
-        acceleration += (offset / separation) * (magnitude_units as f32);
+        acceleration += (offset / separation) * magnitude_units;
     }
 
     acceleration
@@ -241,7 +241,7 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
 /// # Parameters
 ///
 /// - `props` — the scene's props, mutated in place. Immovable props are left
-///   untouched, so their `Vec3::ZERO` velocity invariant survives.
+///   untouched, so their `DVec3::ZERO` velocity invariant survives.
 /// - `step` — the interval to advance by, as a validated [`TimeStep`]. Its type
 ///   carries the "finite and non-negative" guarantee that used to be an assertion
 ///   here, and a zero-length step leaves every prop byte-identical, which is what
@@ -255,7 +255,7 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
 ///
 /// # Allocation
 ///
-/// Allocates one `Vec<Vec3>` per call to hold the first pass's accelerations.
+/// Allocates one `Vec<DVec3>` per call to hold the first pass's accelerations.
 /// Fine at the current scale; an integrator running thousands of props would
 /// want a scratch buffer carried across frames.
 pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f32) {
@@ -275,7 +275,7 @@ pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f3
 
     // Pass 1: accelerations from the current configuration, before anything
     // moves.
-    let accelerations: Vec<Vec3> = (0..props.len())
+    let accelerations: Vec<DVec3> = (0..props.len())
         .map(|index| gravitational_acceleration(props, index, softening_units))
         .collect();
 
@@ -293,20 +293,20 @@ pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f3
         // A massless movable prop has zero acceleration here, so both lines
         // reduce to uniform motion and it coasts in a straight line — correct,
         // not an oversight.
-        let new_velocity = Vec3::new(
-            velocity_after(velocity.x as f64, acceleration.x as f64, dt) as f32,
-            velocity_after(velocity.y as f64, acceleration.y as f64, dt) as f32,
-            velocity_after(velocity.z as f64, acceleration.z as f64, dt) as f32,
+        let new_velocity = DVec3::new(
+            velocity_after(velocity.x, acceleration.x, dt),
+            velocity_after(velocity.y, acceleration.y, dt),
+            velocity_after(velocity.z, acceleration.z, dt),
         );
 
         // Acceleration is passed as `0.0` deliberately: it has already been
         // folded into `new_velocity`, so what remains is uniform motion over the
         // step. Passing it again here would double-count it and give explicit
         // Euler's energy drift back.
-        let delta = Vec3::new(
-            displacement(new_velocity.x as f64, 0.0, dt) as f32,
-            displacement(new_velocity.y as f64, 0.0, dt) as f32,
-            displacement(new_velocity.z as f64, 0.0, dt) as f32,
+        let delta = DVec3::new(
+            displacement(new_velocity.x, 0.0, dt),
+            displacement(new_velocity.y, 0.0, dt),
+            displacement(new_velocity.z, 0.0, dt),
         );
 
         prop.body.translate(delta);

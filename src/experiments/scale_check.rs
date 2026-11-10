@@ -195,7 +195,7 @@ pub fn scale_check() -> Experiment {
     for (row, centre) in rows.iter().zip(&centres) {
         scene.add(Prop::immovable(Body::Sphere {
             pose: Pose {
-                position: *centre,
+                position: centre.as_dvec3(),
                 rotation: Quat::IDENTITY,
             },
             radius: radius_units(row.radius_m),

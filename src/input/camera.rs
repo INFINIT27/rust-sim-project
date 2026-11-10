@@ -29,7 +29,7 @@ use bevy::core_pipeline::core_3d::Camera3d;
 use bevy::ecs::component::Component;
 use bevy::ecs::event::EventReader;
 use bevy::ecs::query::With;
-use bevy::ecs::system::{Query, Res};
+use bevy::ecs::system::{Query, Res, Resource};
 use bevy::input::mouse::MouseMotion;
 use bevy::input::{keyboard::KeyCode, mouse::MouseButton, ButtonInput};
 use bevy::math::{EulerRot, Quat, Vec3};
@@ -42,6 +42,7 @@ use crate::input::constants::{
     LOCK_ZOOM_STEP_PER_LINE, LOOK_SENSITIVITY_RAD_PER_PX, PITCH_LIMIT_MARGIN_RAD,
 };
 use crate::input::menu::MenuState;
+use crate::input::popup::PopupState;
 use bevy::app::PostUpdate;
 use bevy::ecs::entity::Entity;
 use bevy::ecs::query::Without;
@@ -193,6 +194,60 @@ impl Default for FreeFlyController {
     }
 }
 
+/// The tuning every new camera's [`FreeFlyController`] starts with: speeds and look
+/// sensitivity, but none of its per-frame state (yaw, pitch, speed mode, capture).
+///
+/// A resource so that it can come from `config/camera.toml` (see `src/config/`) rather than only
+/// from [`crate::input::constants`]. `spawn_scene_entities` builds the camera's controller from
+/// it with [`controller`](Self::controller), and falls back to the defaults when it is absent.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::{CameraSettings, FreeFlyController};
+///
+/// let settings = CameraSettings { move_speed: 50.0, ..CameraSettings::default() };
+/// let controller = settings.controller();
+/// assert_eq!(controller.move_speed, 50.0);
+/// assert_eq!(controller.boost_mult, FreeFlyController::default().boost_mult);
+/// ```
+#[derive(Resource, Debug, Copy, Clone, PartialEq)]
+pub struct CameraSettings {
+    /// Translation speed in world units per second.
+    pub move_speed: f32,
+    /// What `Shift` multiplies `move_speed` by.
+    pub boost_mult: f32,
+    /// What the precision speed mode multiplies `move_speed` by.
+    pub precision_mult: f32,
+    /// Mouse-look sensitivity, in radians per pixel.
+    pub look_sensitivity: f32,
+}
+
+impl Default for CameraSettings {
+    fn default() -> Self {
+        let controller = FreeFlyController::default();
+        Self {
+            move_speed: controller.move_speed,
+            boost_mult: controller.boost_mult,
+            precision_mult: controller.precision_mult,
+            look_sensitivity: controller.look_sensitivity,
+        }
+    }
+}
+
+impl CameraSettings {
+    /// A fresh controller with this tuning and the default per-frame state.
+    pub fn controller(&self) -> FreeFlyController {
+        FreeFlyController {
+            move_speed: self.move_speed,
+            boost_mult: self.boost_mult,
+            precision_mult: self.precision_mult,
+            look_sensitivity: self.look_sensitivity,
+            ..FreeFlyController::default()
+        }
+    }
+}
+
 /// Clamp `pitch` into the open interval `(-π/2 + 1e-3, π/2 - 1e-3)`.
 ///
 /// Contract (Requirement 10.4 / task 8.2):
@@ -231,7 +286,8 @@ pub fn clamp_pitch(pitch: f32) -> f32 {
 /// `Update`-schedule system (matching the design's pseudocode):
 ///
 /// 0. **The menu gate** (amendment A13): while
-///    [`MenuState::is_open`](crate::input::menu::MenuState::is_open),
+///    [`MenuState::is_open`](crate::input::menu::MenuState::is_open) or
+///    [`PopupState::is_open`](crate::input::popup::PopupState::is_open),
 ///    the cursor is released and the system returns without capturing,
 ///    looking, or moving — after draining `MouseMotion`, which is what
 ///    stops buffered deltas snapping the view when the menu closes.
@@ -275,7 +331,9 @@ pub fn free_fly_camera_system(
     clock: Res<ObserverClock>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    menu: Option<Res<MenuState>>,
+    // The two panels that stand the camera down; one parameter so the system stays within
+    // clippy's argument limit.
+    (menu, popup): (Option<Res<MenuState>>, Option<Res<PopupState>>),
     mut mouse_motion: EventReader<MouseMotion>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
     mut camera: Query<
@@ -317,8 +375,12 @@ pub fn free_fly_camera_system(
     // free_fly_camera_system)` still runs: absent state means no menu, which means closed.
     // The same reasoning as `apply_experiment_trail_length`'s optional spec — most tests in
     // this crate build the smallest app that exercises one system.
+    //
+    // An open pop-up (`input/popup.rs`) closes the gate too, for the same reason: it has a close
+    // button to point at, and a click on that button must not capture the cursor.
     // ------------------------------------------------------------------
-    if menu.as_ref().is_some_and(|menu| menu.is_open()) {
+    let popup_open = popup.as_ref().is_some_and(|popup| popup.is_open());
+    if popup_open || menu.as_ref().is_some_and(|menu| menu.is_open()) {
         controller.captured = false;
         if let Some(window) = primary_window.as_mut() {
             window.cursor.grab_mode = CursorGrabMode::None;
@@ -700,6 +762,8 @@ impl Plugin for FreeFlyCameraPlugin {
         // without `MenuInputPlugin`. Idempotent, and the same call the other two gated
         // plugins make: adding any one of them in isolation must still run.
         app.init_resource::<crate::input::menu::MenuState>();
+        app.init_resource::<CameraSettings>();
+        app.init_resource::<PopupState>();
         app.add_event::<MouseWheel>();
         app.add_systems(
             Update,

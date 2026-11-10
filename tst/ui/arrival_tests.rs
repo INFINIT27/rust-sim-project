@@ -93,3 +93,22 @@ fn a_coasting_probe_has_no_engine_rows() {
     }
     assert!(labels.contains(&"Speed change (Δv)"));
 }
+
+#[test]
+fn the_popup_opens_once_per_landing_and_closes_when_it_ends() {
+    let mars = (BodyId(4), 7_u64);
+    let mars_again = (BodyId(4), 9_u64);
+    assert_eq!(popup_change(None, Some(mars)), PopupChange::Open);
+    assert_eq!(
+        popup_change(Some(mars), Some(mars)),
+        PopupChange::Keep,
+        "a pop-up dismissed with Esc or ✕ stays closed for the rest of its landing"
+    );
+    assert_eq!(popup_change(Some(mars), None), PopupChange::Close);
+    assert_eq!(popup_change(None, None), PopupChange::Keep);
+    assert_eq!(
+        popup_change(Some(mars), Some(mars_again)),
+        PopupChange::Open,
+        "a second trip to the same body is a new landing"
+    );
+}

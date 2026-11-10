@@ -32,7 +32,8 @@
 //!
 //! # It cannot steal input
 //!
-//! The crosshair is painted directly onto a foreground layer via
+//! The crosshair is painted directly onto the background layer (under every
+//! window, over the 3D scene) via
 //! `Context::layer_painter` rather than as a widget, so egui never registers it
 //! as interactive and it can never claim pointer or keyboard focus. That
 //! preserves Requirement 11.4 — the camera keeps receiving the input it needs —
@@ -198,7 +199,7 @@ fn to_egui_color(rgba: [u8; 4]) -> egui::Color32 {
 /// Paint the crosshair at the centre of the primary window, once per frame.
 ///
 /// Reads [`CrosshairConfig`], derives the geometry from
-/// [`crosshair_segments`], and strokes it onto a foreground egui layer. Draws
+/// [`crosshair_segments`], and strokes it onto the background egui layer. Draws
 /// nothing when the screen rect is degenerate — a zero-sized or minimised window
 /// — which keeps Requirement 14.1 satisfied.
 ///
@@ -220,9 +221,12 @@ pub fn crosshair_system(config: Res<CrosshairConfig>, mut contexts: EguiContexts
     let segments = crosshair_segments(center.x, center.y, config.arm_length_px, config.gap_px);
 
     // `layer_painter` paints directly rather than registering a widget, so the
-    // crosshair cannot claim pointer or keyboard focus from the camera.
+    // crosshair cannot claim pointer or keyboard focus from the camera. The
+    // background layer is under every window, so a centred panel (the menu, the
+    // arrival pop-up) covers the crosshair rather than being crossed by it. The 3D
+    // scene is not an egui layer, so the crosshair still draws over it.
     let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
+        egui::Order::Background,
         egui::Id::new("physics_sandbox_crosshair"),
     ));
     let stroke = egui::Stroke::new(config.thickness_px, to_egui_color(config.color));

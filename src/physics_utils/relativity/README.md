@@ -1,5 +1,10 @@
 # `src/physics_utils/relativity/` — special relativity
 
+> **Purpose:** Special relativity between two inertial frames: `c`, `β`, `γ`, time dilation,
+> length contraction, velocity addition, momentum, force, and energy.
+> **Edit here to:** add or fix a relativistic formula, or the speed of light.
+> **Not here:** Newtonian formulas and `G` are in [`physics_utils/`](../README.md).
+
 The kinematics of two frames in uniform relative motion. Everything here follows from two postulates —
 the laws of physics are the same in every inertial frame, and `c` is the same in every inertial frame —
 and none of it needs a force, a mass, or a `Scene`. It is geometry.

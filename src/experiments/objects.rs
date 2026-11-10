@@ -59,7 +59,7 @@
 pub use bevy::math::{Quat, Vec3};
 
 use crate::constants::METRES_PER_UNIT;
-use crate::core::scene::{Body, Color, Pose, Prop};
+use crate::core::scene::{Body, Color, DVec3, Pose, Prop};
 use crate::experiments::constants::{SOLAR_SYSTEM_SUN_MASS_KG, STELLAR_OBJECTS};
 
 /// One placeable object: what it weighs, how big it really is, how big it is drawn, and
@@ -176,16 +176,16 @@ impl StellarObject {
     /// # Examples
     ///
     /// ```
-    /// use physics_sandbox::{stellar_object, Vec3};
+    /// use physics_sandbox::{stellar_object, DVec3, Vec3};
     ///
     /// let hole = stellar_object("Black hole").unwrap();
-    /// let prop = hole.to_prop(Vec3::new(0.0, 30.0, 0.0));
+    /// let prop = hole.to_prop(DVec3::new(0.0, 30.0, 0.0));
     ///
     /// assert!(prop.is_valid());
     /// assert!(prop.absorbs, "a black hole swallows rather than bounces");
-    /// assert_eq!(prop.velocity_units_s, Vec3::ZERO);
+    /// assert_eq!(prop.velocity_units_s, DVec3::ZERO);
     /// ```
-    pub fn to_prop(&self, position: Vec3) -> Prop {
+    pub fn to_prop(&self, position: DVec3) -> Prop {
         debug_assert!(
             self.is_valid(),
             "StellarObject::to_prop: object fails Validation_Rules: {:?}",
@@ -208,7 +208,7 @@ impl StellarObject {
         let mass_kg = self.mass_kg as f32;
 
         let prop = if self.absorbs {
-            Prop::absorbing(body, Vec3::ZERO, mass_kg)
+            Prop::absorbing(body, DVec3::ZERO, mass_kg)
         } else {
             Prop::at_rest(body, mass_kg)
         };

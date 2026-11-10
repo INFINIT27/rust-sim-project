@@ -44,6 +44,11 @@ fn finite_vec3() -> impl Strategy<Value = Vec3> {
     (finite_f32(), finite_f32(), finite_f32()).prop_map(|(x, y, z)| Vec3::new(x, y, z))
 }
 
+/// Strategy: a finite `DVec3`, for the positions and velocities the simulation integrates.
+fn finite_dvec3() -> impl Strategy<Value = DVec3> {
+    finite_vec3().prop_map(|v| v.as_dvec3())
+}
+
 /// Strategy: a `Vec3` whose components are all strictly positive and finite,
 /// suitable for `Body::Cuboid.half_extents`.
 fn positive_vec3() -> impl Strategy<Value = Vec3> {
@@ -78,7 +83,7 @@ fn unit_quat() -> impl Strategy<Value = Quat> {
 
 /// Strategy: a `Pose` satisfying `Pose::is_valid`.
 fn valid_pose() -> impl Strategy<Value = Pose> {
-    (finite_vec3(), unit_quat()).prop_map(|(position, rotation)| Pose { position, rotation })
+    (finite_dvec3(), unit_quat()).prop_map(|(position, rotation)| Pose { position, rotation })
 }
 
 /// Strategy: a `Color` satisfying `Color::is_valid`
@@ -117,8 +122,8 @@ fn valid_cuboid() -> impl Strategy<Value = Body> {
 /// Strategy: a `Body::Line` with valid fields.
 fn valid_line() -> impl Strategy<Value = Body> {
     (
-        finite_vec3(),
-        finite_vec3(),
+        finite_dvec3(),
+        finite_dvec3(),
         non_negative_finite_f32(),
         valid_color(),
     )
@@ -155,7 +160,7 @@ fn valid_mass() -> impl Strategy<Value = f32> {
 
 /// Strategy: a movable `Prop` with a finite velocity and a valid mass.
 fn movable_prop() -> impl Strategy<Value = Prop> {
-    (valid_body(), finite_vec3(), valid_mass())
+    (valid_body(), finite_dvec3(), valid_mass())
         .prop_map(|(body, velocity_units_s, mass_kg)| Prop::new(body, velocity_units_s, mass_kg))
 }
 
@@ -488,7 +493,7 @@ proptest! {
 /// tests below so they only vary the field under test.
 fn baseline_pose() -> Pose {
     Pose {
-        position: Vec3::ZERO,
+        position: DVec3::ZERO,
         rotation: Quat::IDENTITY,
     }
 }
@@ -606,8 +611,8 @@ fn cuboid_with_non_finite_half_extents_is_invalid() {
 #[test]
 fn line_with_finite_endpoints_is_valid() {
     let body = Body::Line {
-        from: Vec3::ZERO,
-        to: Vec3::new(1.0, 0.0, 0.0),
+        from: DVec3::ZERO,
+        to: DVec3::new(1.0, 0.0, 0.0),
         width: 0.0,
         color: baseline_color(),
     };
@@ -618,8 +623,8 @@ fn line_with_finite_endpoints_is_valid() {
 #[test]
 fn line_with_non_finite_from_is_invalid() {
     let body = Body::Line {
-        from: Vec3::new(f32::INFINITY, 0.0, 0.0),
-        to: Vec3::ZERO,
+        from: DVec3::new(f64::INFINITY, 0.0, 0.0),
+        to: DVec3::ZERO,
         width: 0.0,
         color: baseline_color(),
     };
@@ -630,8 +635,8 @@ fn line_with_non_finite_from_is_invalid() {
 #[test]
 fn line_with_non_finite_to_is_invalid() {
     let body = Body::Line {
-        from: Vec3::ZERO,
-        to: Vec3::new(0.0, f32::NAN, 0.0),
+        from: DVec3::ZERO,
+        to: DVec3::new(0.0, f64::NAN, 0.0),
         width: 0.0,
         color: baseline_color(),
     };
@@ -642,8 +647,8 @@ fn line_with_non_finite_to_is_invalid() {
 #[test]
 fn line_with_negative_width_is_invalid() {
     let body = Body::Line {
-        from: Vec3::ZERO,
-        to: Vec3::X,
+        from: DVec3::ZERO,
+        to: DVec3::X,
         width: -0.1,
         color: baseline_color(),
     };
@@ -771,7 +776,7 @@ fn sphere_with_out_of_range_color_is_invalid() {
 #[test]
 fn pose_with_identity_rotation_is_valid() {
     let pose = Pose {
-        position: Vec3::new(1.0, 2.0, 3.0),
+        position: DVec3::new(1.0, 2.0, 3.0),
         rotation: Quat::IDENTITY,
     };
     assert!(pose.is_valid());
@@ -784,7 +789,7 @@ fn pose_with_identity_rotation_is_valid() {
 #[test]
 fn pose_with_non_unit_rotation_is_invalid() {
     let pose = Pose {
-        position: Vec3::ZERO,
+        position: DVec3::ZERO,
         rotation: Quat::from_xyzw(2.0, 0.0, 0.0, 0.0),
     };
     assert!(!pose.is_valid());
@@ -794,7 +799,7 @@ fn pose_with_non_unit_rotation_is_invalid() {
 #[test]
 fn pose_with_zero_rotation_is_invalid() {
     let pose = Pose {
-        position: Vec3::ZERO,
+        position: DVec3::ZERO,
         rotation: Quat::from_xyzw(0.0, 0.0, 0.0, 0.0),
     };
     assert!(!pose.is_valid());
@@ -804,7 +809,7 @@ fn pose_with_zero_rotation_is_invalid() {
 #[test]
 fn pose_with_non_finite_position_is_invalid() {
     let pose = Pose {
-        position: Vec3::new(f32::INFINITY, 0.0, 0.0),
+        position: DVec3::new(f64::INFINITY, 0.0, 0.0),
         rotation: Quat::IDENTITY,
     };
     assert!(!pose.is_valid());
@@ -814,7 +819,7 @@ fn pose_with_non_finite_position_is_invalid() {
 #[test]
 fn pose_with_nan_position_is_invalid() {
     let pose = Pose {
-        position: Vec3::new(0.0, f32::NAN, 0.0),
+        position: DVec3::new(0.0, f64::NAN, 0.0),
         rotation: Quat::IDENTITY,
     };
     assert!(!pose.is_valid());
@@ -826,7 +831,7 @@ fn pose_with_nan_position_is_invalid() {
 fn sphere_with_non_finite_pose_position_is_invalid() {
     let body = Body::Sphere {
         pose: Pose {
-            position: Vec3::new(f32::NAN, 0.0, 0.0),
+            position: DVec3::new(f64::NAN, 0.0, 0.0),
             rotation: Quat::IDENTITY,
         },
         radius: 1.0,
@@ -841,7 +846,7 @@ fn sphere_with_non_finite_pose_position_is_invalid() {
 fn sphere_with_non_unit_rotation_is_invalid() {
     let body = Body::Sphere {
         pose: Pose {
-            position: Vec3::ZERO,
+            position: DVec3::ZERO,
             // Length 2.0, far outside the 1e-4 tolerance.
             rotation: Quat::from_xyzw(2.0, 0.0, 0.0, 0.0),
         },
@@ -936,7 +941,7 @@ fn baseline_body() -> Body {
 /// `Prop::new` is movable, keeps its velocity and mass, and validates.
 #[test]
 fn prop_new_is_movable_and_keeps_its_attributes() {
-    let velocity = Vec3::new(1.0, -2.0, 3.0);
+    let velocity = DVec3::new(1.0, -2.0, 3.0);
     let prop = Prop::new(baseline_body(), velocity, 2.5);
 
     assert_eq!(prop.velocity_units_s, velocity);
@@ -950,7 +955,7 @@ fn prop_new_is_movable_and_keeps_its_attributes() {
 fn prop_at_rest_has_zero_velocity() {
     let prop = Prop::at_rest(baseline_body(), 4.0);
 
-    assert_eq!(prop.velocity_units_s, Vec3::ZERO);
+    assert_eq!(prop.velocity_units_s, DVec3::ZERO);
     assert_eq!(prop.mass_kg, 4.0);
     assert!(!prop.immovable);
     assert_eq!(prop.speed(), 0.0);
@@ -963,7 +968,7 @@ fn prop_immovable_is_flagged_and_stationary() {
     let prop = Prop::immovable(baseline_body());
 
     assert!(prop.immovable);
-    assert_eq!(prop.velocity_units_s, Vec3::ZERO);
+    assert_eq!(prop.velocity_units_s, DVec3::ZERO);
     assert!(prop.is_valid());
 }
 
@@ -974,10 +979,10 @@ fn prop_immovable_is_flagged_and_stationary() {
 #[test]
 fn the_velocity_vector_carries_both_speed_and_heading() {
     // (3, 4, 0) has length exactly 5.
-    let prop = Prop::new(baseline_body(), Vec3::new(3.0, 4.0, 0.0), 1.0);
+    let prop = Prop::new(baseline_body(), DVec3::new(3.0, 4.0, 0.0), 1.0);
 
     assert_eq!(prop.speed(), 5.0);
-    assert_eq!(prop.heading(), Some(Vec3::new(0.6, 0.8, 0.0)));
+    assert_eq!(prop.heading(), Some(DVec3::new(0.6, 0.8, 0.0)));
 }
 
 /// A prop at rest has no heading.
@@ -996,7 +1001,7 @@ fn a_prop_at_rest_has_no_heading() {
 /// still travels at its velocity, it simply cannot be accelerated by a force.
 #[test]
 fn zero_mass_means_massless_not_static() {
-    let photon_like = Prop::new(baseline_body(), Vec3::new(0.0, 0.0, -1.0), 0.0);
+    let photon_like = Prop::new(baseline_body(), DVec3::new(0.0, 0.0, -1.0), 0.0);
 
     assert!(photon_like.is_valid(), "a massless prop is valid");
     assert!(photon_like.is_massless());
@@ -1034,10 +1039,10 @@ fn an_immovable_prop_is_not_massless() {
 fn a_non_finite_velocity_is_invalid() {
     let mut prop = Prop::at_rest(baseline_body(), 1.0);
 
-    prop.velocity_units_s = Vec3::new(f32::NAN, 0.0, 0.0);
+    prop.velocity_units_s = DVec3::new(f64::NAN, 0.0, 0.0);
     assert!(!prop.is_valid());
 
-    prop.velocity_units_s = Vec3::new(0.0, f32::INFINITY, 0.0);
+    prop.velocity_units_s = DVec3::new(0.0, f64::INFINITY, 0.0);
     assert!(!prop.is_valid());
 }
 
@@ -1067,7 +1072,7 @@ fn a_negative_or_non_finite_mass_is_invalid() {
 #[test]
 fn an_immovable_prop_with_a_velocity_is_invalid() {
     let mut wall = Prop::immovable(baseline_body());
-    wall.velocity_units_s = Vec3::new(0.0, 1.0, 0.0);
+    wall.velocity_units_s = DVec3::new(0.0, 1.0, 0.0);
 
     assert!(!wall.is_valid());
 }
@@ -1132,7 +1137,7 @@ fn demo_is_exactly_one_ground_plane() {
         } => {
             assert_eq!(
                 pose.position,
-                Vec3::ZERO,
+                DVec3::ZERO,
                 "the container plane must sit at the origin"
             );
             assert_eq!(
@@ -1181,17 +1186,18 @@ fn the_container_plane_covers_the_scene_bounds() {
     };
 
     assert!(
-        pose.position.y >= scene.bounds.min.y && pose.position.y <= scene.bounds.max.y,
+        pose.position.y >= f64::from(scene.bounds.min.y)
+            && pose.position.y <= f64::from(scene.bounds.max.y),
         "the floor at y = {} must be inside bounds y ∈ [{}, {}]",
         pose.position.y,
         scene.bounds.min.y,
         scene.bounds.max.y
     );
     assert!(
-        pose.position.x - half_size <= scene.bounds.min.x
-            && pose.position.x + half_size >= scene.bounds.max.x
-            && pose.position.z - half_size <= scene.bounds.min.z
-            && pose.position.z + half_size >= scene.bounds.max.z,
+        pose.position.x - f64::from(*half_size) <= f64::from(scene.bounds.min.x)
+            && pose.position.x + f64::from(*half_size) >= f64::from(scene.bounds.max.x)
+            && pose.position.z - f64::from(*half_size) <= f64::from(scene.bounds.min.z)
+            && pose.position.z + f64::from(*half_size) >= f64::from(scene.bounds.max.z),
         "the floor's {}×{} footprint must cover bounds {:?}..{:?}",
         2.0 * half_size,
         2.0 * half_size,
@@ -1392,7 +1398,7 @@ fn a_removed_id_is_never_handed_out_again() {
         let fresh = scene.add(Prop::at_rest(
             Body::Sphere {
                 pose: Pose {
-                    position: Vec3::new(0.0, 50.0, 0.0),
+                    position: DVec3::new(0.0, 50.0, 0.0),
                     rotation: Quat::IDENTITY,
                 },
                 radius: 1.0,
@@ -1421,7 +1427,7 @@ fn remove_preserves_the_order_of_what_is_left() {
         added.push(scene.add(Prop::at_rest(
             Body::Sphere {
                 pose: Pose {
-                    position: Vec3::new(index as f32 * 10.0, 20.0, 0.0),
+                    position: DVec3::new(f64::from(index) * 10.0, 20.0, 0.0),
                     rotation: Quat::IDENTITY,
                 },
                 radius: 1.0,
@@ -1463,7 +1469,7 @@ fn luminosity_defaults_to_dark_and_is_validated() {
     // existing prop is unaffected.
     let ball = Body::Sphere {
         pose: Pose {
-            position: Vec3::ZERO,
+            position: DVec3::ZERO,
             rotation: Quat::IDENTITY,
         },
         radius: 1.0,
@@ -1546,7 +1552,7 @@ fn step_steered_applies_the_controllers_kick_before_gravity() {
     let mut scene = solar_system_scene();
     let (id, _) = scene.iter().find(|(_, p)| !p.immovable).unwrap();
     let start = scene.get(id).unwrap().body.center();
-    let kick = Vec3::new(1.0e-3, 0.0, 0.0);
+    let kick = DVec3::new(1.0e-3, 0.0, 0.0);
     let mut first = true;
     scene.step_steered(
         seconds(1.0),

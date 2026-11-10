@@ -1,5 +1,15 @@
 # `src/render/` — model → Bevy ECS boundary
 
+> **Purpose:** Where the model meets Bevy. It mirrors `Scene` onto ECS entities every frame and
+> owns the per-frame system order, lighting and eclipse shadows, the floor grid, trails, and
+> carrying out rocket missions and `B` placements in the world.
+> **Edit here to:** change how a body is drawn or sized, system ordering, trails, the grid,
+> shadows, how a picked flight is run and drawn, or how a `B` object enters the scene.
+> **Not here:** screen-space UI is in [`ui/`](../ui/README.md), the camera in
+> [`input/`](../input/README.md), and the flight physics in
+> [`spacecraft/`](../spacecraft/README.md). The shader source is in
+> [`assets/`](../../assets/README.md).
+
 Where the GUI-free model crosses into Bevy. Everything Bevy-specific about
 *drawing the scene* lives here, so `core/` never learns that a renderer exists.
 

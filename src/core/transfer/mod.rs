@@ -76,9 +76,9 @@ pub use self::voyage::Voyage;
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransferPlan {
     /// Where the craft starts, in world units.
-    pub position_units: Vec3,
+    pub position_units: DVec3,
     /// The craft's velocity in the scene's frame, in units per second.
-    pub velocity_units_s: Vec3,
+    pub velocity_units_s: DVec3,
     /// The predicted path from the start to the closest approach, in world units.
     pub path_units: Vec<Vec3>,
     /// Seconds from the start to the closest approach.
@@ -427,12 +427,12 @@ pub fn physical_radius_m(prop: &Prop) -> f64 {
     f64::from(units) * METRES_PER_UNIT
 }
 
-fn to_metres(units: Vec3) -> DVec3 {
-    units.as_dvec3() * METRES_PER_UNIT
+fn to_metres(units: DVec3) -> DVec3 {
+    units * METRES_PER_UNIT
 }
 
-fn to_units(metres: DVec3) -> Vec3 {
-    (metres / METRES_PER_UNIT).as_vec3()
+fn to_units(metres: DVec3) -> DVec3 {
+    metres / METRES_PER_UNIT
 }
 
 #[cfg(test)]

@@ -30,6 +30,8 @@ path = "tst/headless_app.rs"
 bevy = "0.14"
 # The `bevy_egui` line that targets Bevy 0.14. `src/ui/` is the only module that imports it.
 bevy_egui = "0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.2.1"
 
 [dev-dependencies]
 proptest = "1"

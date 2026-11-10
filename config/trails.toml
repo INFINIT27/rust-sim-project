@@ -1,0 +1,13 @@
+# Motion trails behind moving bodies.
+
+# Shown at launch (T toggles them).
+visible = true
+# Trail length, world units. An experiment that sets its own length overrides this.
+length_units = 10.0
+# Smallest distance between two recorded points, world units.
+min_spacing_units = 0.05
+# Most points one trail keeps.
+max_samples = 512
+# Opacity at the body and at the far end, each 0-1.
+head_alpha = 1.0
+tail_alpha = 0.0

@@ -39,7 +39,7 @@ fn seconds(value: f64) -> TimeStep {
 }
 
 /// A unit sphere at `position`, for building props without repeating geometry.
-fn ball_at(position: Vec3) -> Body {
+fn ball_at(position: DVec3) -> Body {
     Body::Sphere {
         pose: Pose {
             position,
@@ -62,7 +62,7 @@ fn axis_bodies(props: &[Prop], axis: usize) -> Vec<(f64, f64)> {
     props
         .iter()
         .filter(|p| !p.immovable)
-        .map(|p| (p.mass_kg as f64, p.velocity_units_s[axis] as f64))
+        .map(|p| (p.mass_kg as f64, p.velocity_units_s[axis]))
         .collect()
 }
 
@@ -78,8 +78,8 @@ fn testable_mass() -> impl Strategy<Value = f32> {
 }
 
 /// Positions within the scene bounds, in world units.
-fn scene_position() -> impl Strategy<Value = Vec3> {
-    (-20.0..20.0_f32, 0.0..20.0_f32, -20.0..20.0_f32).prop_map(|(x, y, z)| Vec3::new(x, y, z))
+fn scene_position() -> impl Strategy<Value = DVec3> {
+    (-20.0..20.0_f64, 0.0..20.0_f64, -20.0..20.0_f64).prop_map(|(x, y, z)| DVec3::new(x, y, z))
 }
 
 /// Timesteps a frame might plausibly produce, scaled.
@@ -103,15 +103,15 @@ proptest! {
     fn the_pair_forces_are_equal_and_opposite(
         mass_a in testable_mass(),
         mass_b in testable_mass(),
-        offset in 1.0..30.0_f32,
+        offset in 1.0..30.0_f64,
     ) {
         let props = [
-            Prop::at_rest(ball_at(Vec3::ZERO), mass_a),
-            Prop::at_rest(ball_at(Vec3::new(offset, 0.0, 0.0)), mass_b),
+            Prop::at_rest(ball_at(DVec3::ZERO), mass_a),
+            Prop::at_rest(ball_at(DVec3::new(offset, 0.0, 0.0)), mass_b),
         ];
 
-        let force_on_a = gravitational_acceleration(&props, 0, GRAVITY_SOFTENING_UNITS) * mass_a;
-        let force_on_b = gravitational_acceleration(&props, 1, GRAVITY_SOFTENING_UNITS) * mass_b;
+        let force_on_a = gravitational_acceleration(&props, 0, GRAVITY_SOFTENING_UNITS) * f64::from(mass_a);
+        let force_on_b = gravitational_acceleration(&props, 1, GRAVITY_SOFTENING_UNITS) * f64::from(mass_b);
 
         let scale = force_on_a.length().max(1.0e-30);
         prop_assert!(
@@ -131,7 +131,7 @@ proptest! {
         mass_b in testable_mass(),
         position_b in scene_position(),
     ) {
-        let position_a = Vec3::new(-30.0, 0.0, 0.0);
+        let position_a = DVec3::new(-30.0, 0.0, 0.0);
         let props = [
             Prop::at_rest(ball_at(position_a), mass_a),
             Prop::at_rest(ball_at(position_b), mass_b),
@@ -164,15 +164,15 @@ proptest! {
     #[test]
     fn acceleration_obeys_the_inverse_square_law(
         mass in testable_mass(),
-        separation in 50.0..200.0_f32,
+        separation in 50.0..200.0_f64,
     ) {
         let near = [
-            Prop::at_rest(ball_at(Vec3::ZERO), mass),
-            Prop::at_rest(ball_at(Vec3::new(separation, 0.0, 0.0)), mass),
+            Prop::at_rest(ball_at(DVec3::ZERO), mass),
+            Prop::at_rest(ball_at(DVec3::new(separation, 0.0, 0.0)), mass),
         ];
         let far = [
-            Prop::at_rest(ball_at(Vec3::ZERO), mass),
-            Prop::at_rest(ball_at(Vec3::new(2.0 * separation, 0.0, 0.0)), mass),
+            Prop::at_rest(ball_at(DVec3::ZERO), mass),
+            Prop::at_rest(ball_at(DVec3::new(2.0 * separation, 0.0, 0.0)), mass),
         ];
 
         let a_near = gravitational_acceleration(&near, 0, GRAVITY_SOFTENING_UNITS).length();
@@ -202,8 +202,8 @@ proptest! {
         dt in small_dt(),
     ) {
         let mut props = vec![
-            Prop::at_rest(ball_at(Vec3::ZERO), mass_a),
-            Prop::at_rest(ball_at(position_b + Vec3::new(0.0, 0.0, 30.0)), mass_b),
+            Prop::at_rest(ball_at(DVec3::ZERO), mass_a),
+            Prop::at_rest(ball_at(position_b + DVec3::new(0.0, 0.0, 30.0)), mass_b),
         ];
 
         let before: Vec<Vec<(f64, f64)>> = (0..3).map(|axis| axis_bodies(&props, axis)).collect();
@@ -225,8 +225,8 @@ proptest! {
         position in scene_position(),
         dt in small_dt(),
     ) {
-        let wall = Prop::immovable_with_mass(ball_at(Vec3::ZERO), mass);
-        let mut props = vec![wall.clone(), Prop::at_rest(ball_at(position + Vec3::X * 25.0), mass)];
+        let wall = Prop::immovable_with_mass(ball_at(DVec3::ZERO), mass);
+        let mut props = vec![wall.clone(), Prop::at_rest(ball_at(position + DVec3::X * 25.0), mass)];
 
         integrate_gravity(&mut props, seconds(f64::from(dt)), GRAVITY_SOFTENING_UNITS);
 
@@ -268,8 +268,8 @@ proptest! {
         position_b in scene_position(),
     ) {
         let original = vec![
-            Prop::at_rest(ball_at(Vec3::ZERO), mass_a),
-            Prop::at_rest(ball_at(position_b + Vec3::X * 25.0), mass_b),
+            Prop::at_rest(ball_at(DVec3::ZERO), mass_a),
+            Prop::at_rest(ball_at(position_b + DVec3::X * 25.0), mass_b),
         ];
         let mut props = original.clone();
 
@@ -284,11 +284,11 @@ proptest! {
 /// A lone prop feels nothing.
 #[test]
 fn a_lone_prop_has_no_acceleration() {
-    let props = [Prop::at_rest(ball_at(Vec3::ZERO), EARTH_MASS_KG)];
+    let props = [Prop::at_rest(ball_at(DVec3::ZERO), EARTH_MASS_KG)];
 
     assert_eq!(
         gravitational_acceleration(&props, 0, GRAVITY_SOFTENING_UNITS),
-        Vec3::ZERO
+        DVec3::ZERO
     );
 }
 
@@ -299,13 +299,13 @@ fn a_lone_prop_has_no_acceleration() {
 #[test]
 fn a_massless_prop_is_not_accelerated_but_still_coasts() {
     let mut props = vec![
-        Prop::new(ball_at(Vec3::ZERO), Vec3::new(1.0, 0.0, 0.0), 0.0),
-        Prop::at_rest(ball_at(Vec3::new(5.0, 0.0, 0.0)), EARTH_MASS_KG),
+        Prop::new(ball_at(DVec3::ZERO), DVec3::new(1.0, 0.0, 0.0), 0.0),
+        Prop::at_rest(ball_at(DVec3::new(5.0, 0.0, 0.0)), EARTH_MASS_KG),
     ];
 
     assert_eq!(
         gravitational_acceleration(&props, 0, GRAVITY_SOFTENING_UNITS),
-        Vec3::ZERO,
+        DVec3::ZERO,
         "a massless prop cannot be accelerated"
     );
 
@@ -313,12 +313,12 @@ fn a_massless_prop_is_not_accelerated_but_still_coasts() {
 
     assert_eq!(
         props[0].velocity_units_s,
-        Vec3::new(1.0, 0.0, 0.0),
+        DVec3::new(1.0, 0.0, 0.0),
         "its velocity must be unchanged"
     );
     assert_eq!(
         props[0].body.center(),
-        Vec3::new(1.0, 0.0, 0.0),
+        DVec3::new(1.0, 0.0, 0.0),
         "but it must still have travelled at that velocity"
     );
 }
@@ -336,12 +336,12 @@ fn the_ground_plane_pulls_on_nothing() {
 
     let props = [
         floor,
-        Prop::at_rest(ball_at(Vec3::new(0.0, 3.0, 0.0)), 1.0e12),
+        Prop::at_rest(ball_at(DVec3::new(0.0, 3.0, 0.0)), 1.0e12),
     ];
 
     assert_eq!(
         gravitational_acceleration(&props, 1, GRAVITY_SOFTENING_UNITS),
-        Vec3::ZERO,
+        DVec3::ZERO,
         "an inert floor must not accelerate anything"
     );
 }
@@ -353,8 +353,8 @@ fn the_ground_plane_pulls_on_nothing() {
 #[test]
 fn an_immovable_prop_with_mass_still_attracts() {
     let props = [
-        Prop::immovable_with_mass(ball_at(Vec3::ZERO), EARTH_MASS_KG),
-        Prop::at_rest(ball_at(Vec3::new(10.0, 0.0, 0.0)), 1.0),
+        Prop::immovable_with_mass(ball_at(DVec3::ZERO), EARTH_MASS_KG),
+        Prop::at_rest(ball_at(DVec3::new(10.0, 0.0, 0.0)), 1.0),
     ];
 
     let acceleration = gravitational_acceleration(&props, 1, GRAVITY_SOFTENING_UNITS);
@@ -368,13 +368,13 @@ fn an_immovable_prop_with_mass_still_attracts() {
 #[test]
 fn coincident_props_produce_no_acceleration() {
     let props = [
-        Prop::at_rest(ball_at(Vec3::ZERO), EARTH_MASS_KG),
-        Prop::at_rest(ball_at(Vec3::ZERO), EARTH_MASS_KG),
+        Prop::at_rest(ball_at(DVec3::ZERO), EARTH_MASS_KG),
+        Prop::at_rest(ball_at(DVec3::ZERO), EARTH_MASS_KG),
     ];
 
     let acceleration = gravitational_acceleration(&props, 0, GRAVITY_SOFTENING_UNITS);
 
-    assert_eq!(acceleration, Vec3::ZERO);
+    assert_eq!(acceleration, DVec3::ZERO);
     assert!(acceleration.is_finite());
 }
 
@@ -386,10 +386,10 @@ fn coincident_props_produce_no_acceleration() {
 #[test]
 fn softening_bounds_the_acceleration_at_tiny_separations() {
     let mass = EARTH_MASS_KG;
-    let tiny = GRAVITY_SOFTENING_UNITS * 1.0e-3;
+    let tiny = f64::from(GRAVITY_SOFTENING_UNITS) * 1.0e-3;
     let props = [
-        Prop::at_rest(ball_at(Vec3::ZERO), mass),
-        Prop::at_rest(ball_at(Vec3::new(tiny, 0.0, 0.0)), mass),
+        Prop::at_rest(ball_at(DVec3::ZERO), mass),
+        Prop::at_rest(ball_at(DVec3::new(tiny, 0.0, 0.0)), mass),
     ];
 
     let acceleration = gravitational_acceleration(&props, 0, GRAVITY_SOFTENING_UNITS).length();
@@ -398,7 +398,7 @@ fn softening_bounds_the_acceleration_at_tiny_separations() {
     // into units per second squared the same way the integrator does.
     let softening_m = GRAVITY_SOFTENING_UNITS as f64 * METRES_PER_UNIT;
     let softened_limit =
-        (6.674_30e-11_f64 * mass as f64 / (softening_m * softening_m) / METRES_PER_UNIT) as f32;
+        6.674_30e-11_f64 * mass as f64 / (softening_m * softening_m) / METRES_PER_UNIT;
 
     assert!(acceleration.is_finite(), "must not diverge");
     assert!(
@@ -417,17 +417,17 @@ fn softening_bounds_the_acceleration_at_tiny_separations() {
 #[test]
 fn a_lone_moving_prop_travels_in_a_straight_line() {
     let mut props = vec![Prop::new(
-        ball_at(Vec3::ZERO),
-        Vec3::new(2.0, 0.0, -1.0),
+        ball_at(DVec3::ZERO),
+        DVec3::new(2.0, 0.0, -1.0),
         5.0,
     )];
 
     integrate_gravity(&mut props, seconds(3.0), GRAVITY_SOFTENING_UNITS);
 
-    assert_eq!(props[0].body.center(), Vec3::new(6.0, 0.0, -3.0));
+    assert_eq!(props[0].body.center(), DVec3::new(6.0, 0.0, -3.0));
     assert_eq!(
         props[0].velocity_units_s,
-        Vec3::new(2.0, 0.0, -1.0),
+        DVec3::new(2.0, 0.0, -1.0),
         "no force means no change in velocity"
     );
 }
@@ -437,8 +437,8 @@ fn a_lone_moving_prop_travels_in_a_straight_line() {
 fn two_props_released_from_rest_fall_together() {
     let mass = EARTH_MASS_KG;
     let mut props = vec![
-        Prop::at_rest(ball_at(Vec3::new(-5.0, 0.0, 0.0)), mass),
-        Prop::at_rest(ball_at(Vec3::new(5.0, 0.0, 0.0)), mass),
+        Prop::at_rest(ball_at(DVec3::new(-5.0, 0.0, 0.0)), mass),
+        Prop::at_rest(ball_at(DVec3::new(5.0, 0.0, 0.0)), mass),
     ];
 
     // A day of simulated time: at this scale, gravitation needs a big `dt` to move
@@ -488,7 +488,7 @@ fn the_shipped_scene_falls_together_along_one_axis() {
 
     let start_separation = separation_of(&scene);
     assert!(
-        (start_separation - TWO_BODY_SEPARATION_UNITS).abs() < 1.0e-3,
+        (start_separation - f64::from(TWO_BODY_SEPARATION_UNITS)).abs() < 1.0e-3,
         "expected a {}-unit start, got {}",
         TWO_BODY_SEPARATION_UNITS,
         start_separation
@@ -518,7 +518,7 @@ fn the_shipped_scene_falls_together_along_one_axis() {
     // fall time is ~10.6 units, so anything in this window is the right shape.
     let end_separation = separation_of(&scene);
     assert!(
-        end_separation > 5.0 && end_separation < 0.5 * TWO_BODY_SEPARATION_UNITS,
+        end_separation > 5.0 && end_separation < 0.5 * f64::from(TWO_BODY_SEPARATION_UNITS),
         "expected to close to roughly a third of the start, got {}",
         end_separation
     );
@@ -529,7 +529,8 @@ fn the_shipped_scene_falls_together_along_one_axis() {
 
         // Purely radial: no angular velocity was given, so none may appear.
         assert_eq!(
-            centre.y, TWO_BODY_HEIGHT_UNITS,
+            centre.y,
+            f64::from(TWO_BODY_HEIGHT_UNITS),
             "prop {} left its starting height",
             index
         );
@@ -627,7 +628,7 @@ fn a_negative_timestep_cannot_be_constructed() {
     assert_eq!(TimeStep::from_seconds(-1.0), None);
 
     // And the legal zero-length step leaves every prop exactly where it was.
-    let mut props = vec![Prop::at_rest(ball_at(Vec3::ZERO), 1.0)];
+    let mut props = vec![Prop::at_rest(ball_at(DVec3::ZERO), 1.0)];
     let before = props.clone();
     integrate_gravity(&mut props, TimeStep::ZERO, GRAVITY_SOFTENING_UNITS);
     assert_eq!(props, before);
@@ -637,7 +638,7 @@ fn a_negative_timestep_cannot_be_constructed() {
 #[cfg(debug_assertions)]
 #[should_panic(expected = "gravitational_acceleration: target")]
 fn an_out_of_bounds_target_panics_in_debug() {
-    let props = [Prop::at_rest(ball_at(Vec3::ZERO), 1.0)];
+    let props = [Prop::at_rest(ball_at(DVec3::ZERO), 1.0)];
     let _ = gravitational_acceleration(&props, 7, GRAVITY_SOFTENING_UNITS);
 }
 
@@ -646,7 +647,7 @@ fn an_out_of_bounds_target_panics_in_debug() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn precondition_violations_are_inert_in_release() {
-    let original = vec![Prop::new(ball_at(Vec3::ZERO), Vec3::X, 1.0)];
+    let original = vec![Prop::new(ball_at(DVec3::ZERO), DVec3::X, 1.0)];
 
     // The invalid-duration half of this test is gone: a negative or non-finite
     // duration cannot be built into a `TimeStep`, so there is no release fallback
@@ -659,6 +660,6 @@ fn precondition_violations_are_inert_in_release() {
     // An out-of-bounds target still has a release fallback, and still must not panic.
     assert_eq!(
         gravitational_acceleration(&original, 7, GRAVITY_SOFTENING_UNITS),
-        Vec3::ZERO
+        DVec3::ZERO
     );
 }

@@ -1,0 +1,10 @@
+# The free-fly camera's tuning.
+
+# Movement speed, world units per second (1 unit = 1,000,000 km, 1e9 m).
+move_speed_units_s = 20.0
+# What Shift multiplies the speed by.
+boost_multiplier = 3.0
+# What the precision speed mode (C) multiplies the speed by.
+precision_multiplier = 0.02
+# Mouse-look sensitivity, radians per pixel moved.
+look_sensitivity_rad_per_px = 0.002

@@ -1,5 +1,11 @@
 # `tst/experiments/` — tests for the experiment catalog
 
+> **Purpose:** Tests for [`src/experiments/`](../../src/experiments/README.md): catalog
+> hygiene, scenes checked against published astronomy, argument parsing, and the random
+> generator.
+> **Edit here to:** add or fix a test of an experiment, its data, or the command line.
+> **Not here:** the scenes and their data, in `src/experiments/`.
+
 Mirrors `src/experiments/`, one file per source file. All six are `#[path]`-included
 unit-test modules compiled *inside* their subject, so they use `crate::…` paths and can
 reach private helpers.

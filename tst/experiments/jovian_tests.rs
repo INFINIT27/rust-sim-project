@@ -366,7 +366,7 @@ fn every_moon_starts_at_its_real_distance_with_a_tangential_velocity() {
 
     for (moon, prop) in JOVIAN_MOONS.into_iter().zip(moons_of(&experiment)) {
         let offset = prop.body.center();
-        let expected = (moon.semi_major_axis_m / METRES_PER_UNIT) as f32;
+        let expected = moon.semi_major_axis_m / METRES_PER_UNIT;
 
         assert!(
             (offset.length() / expected - 1.0).abs() < 1.0e-4,
@@ -428,7 +428,7 @@ fn the_moons_start_spread_and_not_symmetrically() {
     let experiment = built();
     let directions: Vec<Vec3> = moons_of(&experiment)
         .iter()
-        .map(|prop| prop.body.center().normalize())
+        .map(|prop| prop.body.center().as_vec3().normalize())
         .collect();
 
     for (index, direction) in directions.iter().enumerate() {
@@ -452,13 +452,13 @@ fn the_system_has_no_net_momentum() {
         .scene
         .props
         .iter()
-        .map(|prop| prop.velocity_units_s * prop.mass_kg)
+        .map(|prop| prop.velocity_units_s.as_vec3() * prop.mass_kg)
         .sum();
     let largest = experiment
         .scene
         .props
         .iter()
-        .map(|prop| (prop.velocity_units_s * prop.mass_kg).length())
+        .map(|prop| (prop.velocity_units_s.as_vec3() * prop.mass_kg).length())
         .fold(0.0_f32, f32::max);
 
     assert!(
@@ -467,7 +467,7 @@ fn the_system_has_no_net_momentum() {
     );
     assert_ne!(
         experiment.scene.props[JUPITER_INDEX].velocity_units_s,
-        Vec3::ZERO,
+        DVec3::ZERO,
         "Jupiter must carry the compensating momentum"
     );
 }
@@ -507,7 +507,7 @@ fn the_bounds_contain_every_body() {
     assert!(experiment.scene.bounds.is_valid());
 
     for prop in &experiment.scene.props {
-        let centre = prop.body.center();
+        let centre = prop.body.center().as_vec3();
         let bounds = experiment.scene.bounds;
 
         assert!(
@@ -648,7 +648,7 @@ fn all_four_moons_stay_on_their_circles_for_several_orbits() {
     } = jovian_system();
     let mut clock = SimulationClock::new(spec.time_scale);
 
-    let starting_radii: Vec<f32> = scene.props[1..]
+    let starting_radii: Vec<f64> = scene.props[1..]
         .iter()
         .map(|prop| prop.body.center().length())
         .collect();

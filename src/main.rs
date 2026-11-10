@@ -22,11 +22,11 @@
 use bevy::prelude::*;
 use physics_sandbox::constants::{WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE, WINDOW_WIDTH_PX};
 use physics_sandbox::{
-    catalog_lines, help_text, parse_args, ArrivalPopupPlugin, Command, CompassPlugin,
-    CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, LaunchInputPlugin,
-    MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin, PerformanceSettings,
-    PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin, Selection,
-    SimulationControlsPlugin, TrailPlugin,
+    catalog_lines, config_dir, help_text, parse_args, ArrivalPopupPlugin, Command, CompassPlugin,
+    Config, CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin,
+    LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin,
+    PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin,
+    Selection, SimulationControlsPlugin, TrailPlugin,
 };
 
 fn main() {
@@ -52,9 +52,21 @@ fn main() {
         }
     };
 
+    // The configuration files (`config/*.toml`; see `src/config/`). Same contract again: a bad
+    // file stops the run, naming the file and the key, rather than running on a setting that
+    // silently did nothing.
+    let config = match Config::load(&config_dir()) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("error: {error}");
+            std::process::exit(2);
+        }
+    };
+
     // Same contract as a bad argument: a misspelt switch stops the run rather than quietly
-    // benchmarking a configuration nobody asked for.
-    let performance = match PerformanceSettings::from_env() {
+    // benchmarking a configuration nobody asked for. The variables override
+    // `config/performance.toml` for this run.
+    let performance = match PerformanceSettings::from_env_over(config.performance) {
         Ok(performance) => performance,
         Err(error) => {
             eprintln!("error: {error}");
@@ -63,7 +75,7 @@ fn main() {
     };
 
     point_bevy_at_the_assets_directory();
-    run(selection, performance);
+    run(selection, config, performance);
 }
 
 /// Make `assets/` findable however the binary was started.
@@ -102,57 +114,61 @@ fn point_bevy_at_the_assets_directory() {
     }
 }
 
-/// Build and run the app for `selection`, with the switches in `performance`.
+/// Build and run the app for `selection`, with the settings in `config` and the switches in
+/// `performance`.
 ///
 /// Split from `main` so the argument handling above reads as a decision and this reads
 /// as the wiring it always was.
-fn run(selection: Selection, performance: PerformanceSettings) {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: WINDOW_TITLE.into(),
-                present_mode: performance.present_mode(),
-                // Full-screen on launch. `resolution` still matters: it is the size the
-                // window takes if `WINDOW_MODE` is ever set back to `Windowed`, and it is
-                // the aspect ratio every camera-framing constant was derived against.
-                mode: WINDOW_MODE,
-                resolution: (WINDOW_WIDTH_PX, WINDOW_HEIGHT_PX).into(),
-                ..default()
-            }),
+fn run(selection: Selection, config: Config, performance: PerformanceSettings) {
+    let mut app = App::new();
+    // Before any plugin: each one `init_resource`s its settings, which keeps a resource that is
+    // already there, so inserting the configured ones first is what makes them take effect.
+    config.insert_into(&mut app);
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: WINDOW_TITLE.into(),
+            present_mode: performance.present_mode(),
+            // Full-screen on launch. `resolution` still matters: it is the size the
+            // window takes if `WINDOW_MODE` is ever set back to `Windowed`, and it is
+            // the aspect ratio every camera-framing constant was derived against.
+            mode: WINDOW_MODE,
+            resolution: (WINDOW_WIDTH_PX, WINDOW_HEIGHT_PX).into(),
             ..default()
-        }))
-        .add_plugins(ScenePlugin::new(selection))
-        // The tracing grid goes after `ScenePlugin`, which inserts the `Scene` the grid
-        // measures its floor from.
-        .add_plugins(FloorGridPlugin)
-        // Motion trails, after `ScenePlugin` for the same reason as the grid: it reads the
-        // `Scene` that plugin inserts.
-        .add_plugins(TrailPlugin)
-        .add_plugins(FreeFlyCameraPlugin)
-        .add_plugins(DebugUiPlugin)
-        .add_plugins(CrosshairPlugin)
-        // The orientation compass, top-right. Like the crosshair, it guards against
-        // double-adding `EguiPlugin`, so plugin order among the egui users is free.
-        .add_plugins(CompassPlugin)
-        // Clock control (pause, single-step, speed) goes after `ScenePlugin`, which is
-        // what inserts the `SimulationClock` these keys mutate.
-        .add_plugins(SimulationControlsPlugin)
-        // The `Esc` menu, in two halves: the input mode and the key binding, then the panel
-        // that draws it. `MenuInputPlugin` goes before the camera's plugin only for
-        // readability — it declares its own ordering against `free_fly_camera_system`, so
-        // the gate closes on the same frame as the keypress whatever order these are added.
-        .add_plugins(MenuInputPlugin)
-        .add_plugins(MenuPanelPlugin)
-        // The object placer, in three halves for the same reason the menu is in two: the
-        // keys are input, the picker is UI, and only `render` may write to the `Scene`.
-        .add_plugins(PlacementInputPlugin)
-        .add_plugins(PlacementPanelPlugin)
-        .add_plugins(PlacementPlugin)
-        .add_plugins(LaunchInputPlugin)
-        .add_plugins(MissionPlugin)
-        // The report shown when a spacecraft lands, after the mission that flies it.
-        .add_plugins(ArrivalPopupPlugin)
-        // Anti-aliasing, the floor-eclipse switch, and the benchmark; see `src/performance/`.
-        .add_plugins(PerformancePlugin::new(performance))
-        .run();
+        }),
+        ..default()
+    }))
+    .add_plugins(ScenePlugin::new(selection))
+    // The tracing grid goes after `ScenePlugin`, which inserts the `Scene` the grid
+    // measures its floor from.
+    .add_plugins(FloorGridPlugin)
+    // Motion trails, after `ScenePlugin` for the same reason as the grid: it reads the
+    // `Scene` that plugin inserts.
+    .add_plugins(TrailPlugin)
+    .add_plugins(FreeFlyCameraPlugin)
+    .add_plugins(DebugUiPlugin)
+    .add_plugins(CrosshairPlugin)
+    // The orientation compass, top-right. Like the crosshair, it guards against
+    // double-adding `EguiPlugin`, so plugin order among the egui users is free.
+    .add_plugins(CompassPlugin)
+    // Clock control (pause, single-step, speed) goes after `ScenePlugin`, which is
+    // what inserts the `SimulationClock` these keys mutate.
+    .add_plugins(SimulationControlsPlugin)
+    // The `Esc` menu, in two halves: the input mode and the key binding, then the panel
+    // that draws it. `MenuInputPlugin` goes before the camera's plugin only for
+    // readability — it declares its own ordering against `free_fly_camera_system`, so
+    // the gate closes on the same frame as the keypress whatever order these are added.
+    .add_plugins(MenuInputPlugin)
+    .add_plugins(MenuPanelPlugin)
+    // The object placer, in three halves for the same reason the menu is in two: the
+    // keys are input, the picker is UI, and only `render` may write to the `Scene`.
+    .add_plugins(PlacementInputPlugin)
+    .add_plugins(PlacementPanelPlugin)
+    .add_plugins(PlacementPlugin)
+    .add_plugins(LaunchInputPlugin)
+    .add_plugins(MissionPlugin)
+    // The report shown when a spacecraft lands, after the mission that flies it.
+    .add_plugins(ArrivalPopupPlugin)
+    // Anti-aliasing, the floor-eclipse switch, and the benchmark; see `src/performance/`.
+    .add_plugins(PerformancePlugin::new(performance))
+    .run();
 }

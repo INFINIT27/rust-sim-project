@@ -30,8 +30,8 @@ pub struct Voyage {
     /// Total speed change of every correction burn, in m/s.
     pub correction_delta_v_m_s: f64,
     /// Where on the target the craft touched down, as an offset from its centre in world units.
-    pub touchdown_offset_units: Option<Vec3>,
-    previous_offset_units: Option<Vec3>,
+    pub touchdown_offset_units: Option<DVec3>,
+    previous_offset_units: Option<DVec3>,
     /// The route's flybys, with `time_s` on the scene's clock rather than from the plan's start.
     pub flybys: Vec<Flyby>,
     /// The flybys as the launch plan had them, times from launch, for the status line's route.
@@ -63,9 +63,9 @@ impl Voyage {
             };
         }
         craft.velocity_units_s = plan.velocity_units_s;
-        let path_spacing_units = scene.get(target).map_or(0.0, |target| {
+        let path_spacing_units = (scene.get(target).map_or(0.0, |target| {
             (target.body.center() - plan.position_units).length()
-        }) / TRANSFER_PATH_POINTS as f32;
+        }) / TRANSFER_PATH_POINTS) as f32;
         let craft = scene.add(craft);
         Voyage {
             origin,
@@ -75,7 +75,7 @@ impl Voyage {
             target,
             launched_at_s: now_s,
             arrival_at_s: now_s + plan.flight_seconds,
-            flown_path_units: vec![plan.position_units],
+            flown_path_units: vec![plan.position_units.as_vec3()],
             planned_path_units: plan.path_units,
             corrections: 0,
             correction_delta_v_m_s: 0.0,
@@ -147,7 +147,7 @@ impl Voyage {
             return;
         };
         let burn = plan.velocity_units_s - scene.props[index].velocity_units_s;
-        self.correction_delta_v_m_s += f64::from(burn.length()) * METRES_PER_UNIT;
+        self.correction_delta_v_m_s += burn.length() * METRES_PER_UNIT;
         scene.props[index].velocity_units_s = plan.velocity_units_s;
         self.arrival_at_s = now_s + plan.flight_seconds;
         self.planned_path_units = plan.path_units;
@@ -171,16 +171,16 @@ impl Voyage {
         let craft_position = craft.body.center();
         let target_position = target.body.center();
         let offset = craft_position - target_position;
-        let radius = (physical_radius_m(target) / METRES_PER_UNIT) as f32;
+        let radius = physical_radius_m(target) / METRES_PER_UNIT;
 
         if let Some(previous) = self.previous_offset_units {
             if let Some(entry) = segment_entry(previous, offset, radius) {
                 self.touchdown_offset_units = Some(entry);
                 self.touchdown_speed_m_s = Some(
-                    f64::from((craft.velocity_units_s - target.velocity_units_s).length())
-                        * METRES_PER_UNIT,
+                    (craft.velocity_units_s - target.velocity_units_s).length() * METRES_PER_UNIT,
                 );
-                self.flown_path_units.push(target_position + entry);
+                self.flown_path_units
+                    .push((target_position + entry).as_vec3());
                 return;
             }
         }
@@ -200,7 +200,8 @@ impl Voyage {
         }
     }
 
-    fn record_point(&mut self, craft_position: Vec3) {
+    fn record_point(&mut self, craft_position: DVec3) {
+        let craft_position = craft_position.as_vec3();
         let moved = self
             .flown_path_units
             .last()
@@ -213,7 +214,7 @@ impl Voyage {
 
 /// The first point at which the segment `from → to` enters the sphere of `radius` about the
 /// origin, or `None` if it never does.
-pub(super) fn segment_entry(from: Vec3, to: Vec3, radius: f32) -> Option<Vec3> {
+pub(super) fn segment_entry(from: DVec3, to: DVec3, radius: f64) -> Option<DVec3> {
     if from.length() <= radius {
         return Some(from);
     }

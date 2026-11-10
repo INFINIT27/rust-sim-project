@@ -1,0 +1,9 @@
+# Quality-versus-frame-time switches. The RGA_AA, RGA_FLOOR_ECLIPSE and
+# RGA_VSYNC environment variables override these for one run.
+
+# msaa4, msaa2, smaa, fxaa, or off.
+anti_aliasing = "msaa4"
+# Eclipse shadows on the floor. Spheres always get them.
+floor_eclipse = true
+# Wait for the display's refresh.
+vsync = true

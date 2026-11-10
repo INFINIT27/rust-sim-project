@@ -1,5 +1,13 @@
 # `src/ui/` — on-screen UI
 
+> **Purpose:** Everything drawn in screen space with `bevy_egui`, its only importer: the debug
+> overlay, crosshair, compass, `Esc` menu panel, `B` picker panel, and arrival pop-up.
+> **Edit here to:** change what an on-screen panel shows, its layout, or how its numbers are
+> formatted.
+> **Not here:** the keys and input modes that open panels are in
+> [`input/`](../input/README.md). World-space drawing (trails, grid, flight paths) is in
+> [`render/`](../render/README.md).
+
 The debug overlay, and the quarantine for the `bevy_egui` dependency.
 
 ## What lives here
@@ -13,7 +21,7 @@ The debug overlay, and the quarantine for the `bevy_egui` dependency.
 | `compass.rs` | `CompassPlugin`, `compass_system`, `CompassConfig`, `CompassAxis`, and the pure `compass_axes` projection. Draws the three world axes in the top-right corner, rotating with the camera. |
 | `menu.rs` | `MenuPanelPlugin`, `menu_system`, `SettingsRow`, and the pure `settings_rows` / `binding_rows`. The `Esc` panel: current settings and the key bindings, centred, with the crate's only interactive widget. |
 | `placement.rs` | `PlacementPanelPlugin`, `placement_panel_system`, `PlacementRow`, and the pure `placement_rows`. The `B` picker, bottom-centre: five interstellar objects with their masses. Non-interactive — the arrow keys drive it. |
-| `arrival.rs` | `ArrivalPopupPlugin`, `arrival_popup_system`, and the pure `arrival_rows`, `duration_label`, `energy_label`. The pop-up when a spacecraft lands: route, time of travel, top speed (and fraction of light), Δv, engine time, peak g, energy (with its TNT equivalent), propellant, touchdown speed, corrections. Not interactive: it shows while the craft is landed, and the next `R` closes it. |
+| `arrival.rs` | `ArrivalPopupPlugin`, `arrival_popup_system`, `ArrivalPopupConfig` (its sizes, from `config/ui.toml`), and the pure `arrival_rows`, `duration_label`, `energy_label`. The pop-up when a spacecraft lands: route, time of travel, top speed (and fraction of light), Δv, engine time, peak g, energy (with its TNT equivalent), propellant, touchdown speed, corrections. Releases the cursor while open (`PopupState`); its title-bar ✕ or `Esc` dismisses it for that landing, and the next `R` also closes it. Drawn above the crosshair, which paints on egui's background layer. |
 
 ## Constants
 
@@ -75,10 +83,11 @@ agree. Y is green: it is the one axis with no line on the floor, because it poin
 - **Nothing else here may consume input the camera needs** (Requirement 11.4). The
   overlay holds because it uses `ui.label` exclusively — labels are
   non-interactive, so egui never claims focus. The crosshair holds more strongly:
-  it paints onto a foreground layer via `Context::layer_painter` rather than
-  registering a widget at all, so egui has nothing to give focus to. Adding any
-  interactive widget to either breaks the guarantee and requires an explicit
-  `wants_pointer_input` / `wants_keyboard_input` gate in `input/camera.rs`.
+  it paints onto the background layer (under every window, so centred panels cover it) via
+  `Context::layer_painter` rather than registering a widget at all, so egui has nothing to
+  give focus to. Adding any interactive widget to either breaks the guarantee. The two
+  panels that do take clicks, the menu's Close button and the arrival pop-up's ✕, are
+  safe because the camera stands down while `MenuState` or `PopupState` is open.
 - **The panel's content is pure, because the painting cannot be tested.**
   `settings_rows` and `binding_rows` are plain functions over the resources, and they carry
   the tests; `menu_system` is kept thin enough to read. The same split the crosshair,

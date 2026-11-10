@@ -159,7 +159,7 @@ fn every_experiment_frames_its_own_scene() {
             .props
             .iter()
             .filter(|prop| !matches!(prop.body, Body::Plane { .. }))
-            .map(|prop| (prop.body.center() - spec.camera_target_units).length())
+            .map(|prop| (prop.body.center().as_vec3() - spec.camera_target_units).length())
             .fold(f32::INFINITY, f32::min);
 
         assert!(
@@ -243,7 +243,7 @@ fn the_ring_has_three_bodies_on_a_circle() {
     let centre = Vec3::new(0.0, THREE_BODY_HEIGHT_UNITS, 0.0);
 
     for prop in &bodies {
-        let offset = prop.body.center() - centre;
+        let offset = prop.body.center().as_vec3() - centre;
 
         // On the circle: the right radius, and in the ring's horizontal plane.
         assert!(
@@ -270,7 +270,7 @@ fn the_ring_bodies_are_evenly_spaced() {
 
     for i in 0..3 {
         for j in (i + 1)..3 {
-            let separation = (bodies[i].body.center() - bodies[j].body.center()).length();
+            let separation = (bodies[i].body.center() - bodies[j].body.center()).length() as f32;
             assert!(
                 (separation - expected_chord).abs() < 1.0e-2,
                 "bodies {i} and {j} are {separation} apart, expected {expected_chord}"
@@ -282,7 +282,7 @@ fn the_ring_bodies_are_evenly_spaced() {
     // to zero for three vectors at 120°.
     let radial_sum: Vec3 = bodies
         .iter()
-        .map(|prop| (prop.body.center() - centre).normalize())
+        .map(|prop| (prop.body.center().as_vec3() - centre).normalize())
         .sum();
     assert!(
         radial_sum.length() < 1.0e-3,
@@ -299,8 +299,8 @@ fn every_ring_velocity_is_exactly_tangential() {
 
     for seed in [1_u64, 2, 3, 42, 9999] {
         for prop in ring_bodies(seed) {
-            let radial = (prop.body.center() - centre).normalize();
-            let velocity = prop.velocity_units_s;
+            let radial = (prop.body.center().as_vec3() - centre).normalize();
+            let velocity = prop.velocity_units_s.as_vec3();
             let direction = velocity.normalize();
 
             assert!(
@@ -323,7 +323,7 @@ fn ring_speeds_are_inside_the_documented_window() {
 
     for seed in [1_u64, 5, 77, 12345, u64::MAX] {
         for prop in ring_bodies(seed) {
-            let factor = prop.speed() / reference;
+            let factor = (prop.speed() as f32) / reference;
             assert!(
                 (THREE_BODY_MIN_SPEED_FACTOR..=THREE_BODY_MAX_SPEED_FACTOR).contains(&factor),
                 "seed {seed}: speed factor {factor} is outside \
@@ -339,7 +339,7 @@ fn the_ring_bodies_do_not_all_get_the_same_speed() {
     // rather than a rotating rigid triangle. One shared factor would be a much duller
     // experiment that looked identical in the code.
     let bodies = ring_bodies(4242);
-    let speeds: Vec<f32> = bodies.iter().map(Prop::speed).collect();
+    let speeds: Vec<f64> = bodies.iter().map(Prop::speed).collect();
 
     assert!(
         (speeds[0] - speeds[1]).abs() > 1.0e-9 || (speeds[1] - speeds[2]).abs() > 1.0e-9,
@@ -549,13 +549,13 @@ proptest! {
         for prop in bodies {
             prop_assert!(prop.is_valid());
 
-            let offset = prop.body.center() - centre;
+            let offset = prop.body.center().as_vec3() - centre;
             prop_assert!((offset.length() - THREE_BODY_RING_RADIUS_UNITS).abs() < 1.0e-3);
 
-            let direction = prop.velocity_units_s.normalize();
+            let direction = prop.velocity_units_s.as_vec3().normalize();
             prop_assert!(direction.dot(offset.normalize()).abs() < 1.0e-3);
 
-            let factor = prop.speed() / reference;
+            let factor = (prop.speed() as f32) / reference;
             prop_assert!(factor >= THREE_BODY_MIN_SPEED_FACTOR - 1.0e-4);
             prop_assert!(factor <= THREE_BODY_MAX_SPEED_FACTOR + 1.0e-4);
         }

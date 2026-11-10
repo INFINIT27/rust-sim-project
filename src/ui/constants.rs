@@ -319,10 +319,10 @@ pub const JOULES_PER_TONNE_OF_TNT: f64 = 4.184e9;
 
 /// The arrival pop-up's last line, telling the viewer how it goes away.
 ///
-/// **Why this value.** The pop-up has no button (a click would capture the cursor for mouse-look),
-/// so it says what closes it: the next `R`, which starts a new route.
+/// **Why this value.** It says every way the pop-up closes: `Esc` or its ✕ dismisses it, and the
+/// next `R` starts a new route, which also closes it.
 ///
 /// **Used by.** [`crate::ui::arrival::arrival_popup_system`].
 ///
 /// **If you change it.** Keep it true to how the pop-up closes; it is the only place that says.
-pub const ARRIVAL_HINT: &str = "R picks the next departure body and closes this.";
+pub const ARRIVAL_HINT: &str = "Esc or ✕ closes this. R picks the next departure body.";

@@ -5,7 +5,7 @@
 //! [`crate::spacecraft::constants`]; anything else (a menu, a saved file) can build its own.
 
 use crate::constants::METRES_PER_UNIT;
-use crate::core::scene::{Body, Color, Pose, Prop, Quat, Vec3};
+use crate::core::scene::{Body, Color, DVec3, Pose, Prop, Quat};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::spacecraft::constants::{
     AEROJET_260_EXHAUST_SPEED_M_S, AEROJET_260_THRUST_N, CRAFT_COLOR, CRAFT_RADIUS_M,
@@ -170,13 +170,13 @@ impl Spacecraft {
         Prop::new(
             Body::Sphere {
                 pose: Pose {
-                    position: Vec3::ZERO,
+                    position: DVec3::ZERO,
                     rotation: Quat::IDENTITY,
                 },
                 radius: (self.radius_m / METRES_PER_UNIT) as f32,
                 color: self.color,
             },
-            Vec3::ZERO,
+            DVec3::ZERO,
             self.mass_kg as f32,
         )
     }

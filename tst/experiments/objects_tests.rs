@@ -18,6 +18,7 @@
 //! chosen deliberately comes to look like a scale everyone assumes is real.
 
 use super::*;
+use crate::core::scene::DVec3;
 use crate::experiments::constants::STELLAR_OBJECTS;
 
 const G: f64 = 6.674e-11;
@@ -295,7 +296,7 @@ fn the_compact_objects_are_genuinely_invisible_at_range_and_that_is_the_truth() 
 
 #[test]
 fn every_object_becomes_a_valid_prop_at_rest() {
-    let at = Vec3::new(1.0, 2.0, 3.0);
+    let at = DVec3::new(1.0, 2.0, 3.0);
 
     for candidate in STELLAR_OBJECTS {
         let prop = candidate.to_prop(at);
@@ -304,7 +305,7 @@ fn every_object_becomes_a_valid_prop_at_rest() {
         assert_eq!(prop.body.center(), at);
         assert_eq!(
             prop.velocity_units_s,
-            Vec3::ZERO,
+            DVec3::ZERO,
             "a placed object falls from rest"
         );
         assert!(
@@ -319,7 +320,7 @@ fn every_object_becomes_a_valid_prop_at_rest() {
 #[test]
 fn the_prop_carries_the_true_radius_and_the_capture_radius_separately() {
     for candidate in STELLAR_OBJECTS {
-        let prop = candidate.to_prop(Vec3::ZERO);
+        let prop = candidate.to_prop(DVec3::ZERO);
 
         match prop.body {
             Body::Sphere { radius, .. } => assert_eq!(radius, candidate.radius_units()),
@@ -349,7 +350,7 @@ fn only_the_black_holes_absorb() {
             "{} has absorbs = {}",
             candidate.name, candidate.absorbs
         );
-        assert_eq!(candidate.to_prop(Vec3::ZERO).absorbs, expected);
+        assert_eq!(candidate.to_prop(DVec3::ZERO).absorbs, expected);
     }
 }
 
@@ -388,7 +389,7 @@ fn an_invalid_object_panics_in_debug_rather_than_placing_a_broken_prop() {
     let mut broken = STELLAR_OBJECTS[0];
     broken.radius_m = 0.0;
 
-    let _ = broken.to_prop(Vec3::ZERO);
+    let _ = broken.to_prop(DVec3::ZERO);
 }
 
 #[test]
@@ -425,7 +426,7 @@ fn the_three_stars_light_the_scene_and_the_black_holes_do_not() {
             "{name} emits the wrong amount of light"
         );
         assert_eq!(
-            candidate.to_prop(Vec3::ZERO).luminosity_solar,
+            candidate.to_prop(DVec3::ZERO).luminosity_solar,
             luminosity,
             "{name}'s prop must carry it through to the renderer"
         );
@@ -434,13 +435,13 @@ fn the_three_stars_light_the_scene_and_the_black_holes_do_not() {
     // An accretion disc would emit; this crate does not model one, so a hole is dark.
     for name in ["Black hole", "Sgr A*"] {
         assert!(
-            !object(name).to_prop(Vec3::ZERO).is_luminous(),
+            !object(name).to_prop(DVec3::ZERO).is_luminous(),
             "{name} must be dark"
         );
     }
     for name in ["Red dwarf", "White dwarf", "Neutron star"] {
         assert!(
-            object(name).to_prop(Vec3::ZERO).is_luminous(),
+            object(name).to_prop(DVec3::ZERO).is_luminous(),
             "{name} must be a light source"
         );
     }

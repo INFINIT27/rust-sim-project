@@ -15,7 +15,7 @@
 //! than no scene, because you would be reading a ruler that had bent.
 
 use super::*;
-use crate::core::scene::Prop;
+use crate::core::scene::{DVec3, Prop};
 use crate::experiments::constants::{
     SCALE_CHECK_CAMERA_OFFSET_UNITS, SCALE_CHECK_FRAMED_RADIUS_UNITS, SCALE_CHECK_GAP_UNITS,
     SOLAR_SYSTEM_PLANETS, SOLAR_SYSTEM_SUN_RADIUS_M,
@@ -212,7 +212,7 @@ fn nothing_can_move_and_nothing_pulls() {
     for prop in &experiment.scene.props {
         assert!(prop.immovable, "every body in a ruler must be fixed");
         assert_eq!(prop.mass_kg, 0.0, "and gravitationally inert");
-        assert_eq!(prop.velocity_units_s, Vec3::ZERO);
+        assert_eq!(prop.velocity_units_s, DVec3::ZERO);
         assert!(prop.is_valid());
     }
 }
@@ -270,7 +270,7 @@ fn the_bounds_enclose_the_whole_row() {
 
     assert!(bounds.is_valid());
     for prop in &experiment.scene.props {
-        let centre = prop.body.center();
+        let centre = prop.body.center().as_vec3();
         assert!(
             centre.x >= bounds.min.x
                 && centre.x <= bounds.max.x

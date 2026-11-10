@@ -63,7 +63,7 @@ use bevy::transform::components::Transform;
 use crate::core::scene::{Body, BodyId, Color, Prop, Scene};
 use crate::experiments::catalog::{BodyNames, Experiment, ExperimentSpec};
 use crate::experiments::selection::Selection;
-use crate::input::camera::{CameraLock, CameraTarget, FreeFlyController};
+use crate::input::camera::{CameraLock, CameraSettings, CameraTarget};
 use crate::performance::PerformanceSettings;
 use crate::render::bridge::{sync_scene_to_ecs_system, transform_from};
 use crate::render::constants::{
@@ -263,7 +263,7 @@ fn to_bevy_color(c: Color) -> BevyColor {
 ///
 /// - Spawns exactly **one** `Camera3dBundle` entity, positioned at
 ///   `(5, 5, 5)` and looking at the origin, with a
-///   [`FreeFlyController::default()`] component attached so task 8's
+///   controller from [`CameraSettings`] (its defaults when absent) attached so task 8's
 ///   camera systems have an entity to drive.
 /// - Spawns **at least one** `DirectionalLightBundle` so the scene has
 ///   visible 3D shading (the PBR default material is matte-white and
@@ -302,6 +302,7 @@ pub fn spawn_scene_entities(
     mut commands: Commands,
     scene: Res<Scene>,
     spec: Res<ExperimentSpec>,
+    camera_settings: Option<Res<CameraSettings>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BodyMaterial>>,
 ) {
@@ -313,7 +314,7 @@ pub fn spawn_scene_entities(
     // 17 / tan(22.5 deg) ≈ 41 units away. (0, 18, 42) looking at (0, 3, 0) is
     // ~44.6 units out, leaving margin for the spheres to swing past each other
     // without leaving the frame.
-    // Attaching `FreeFlyController::default()` here — rather than in
+    // Attaching the controller (from `CameraSettings`, see `config/camera.toml`) here — rather than in
     // a separate system — is what lets task 8.1's controller defaults
     // take effect without any additional wiring (Requirement 10.1).
     commands.spawn((
@@ -334,7 +335,9 @@ pub fn spawn_scene_entities(
             .into(),
             ..Default::default()
         },
-        FreeFlyController::default(),
+        camera_settings
+            .map(|settings| settings.controller())
+            .unwrap_or_default(),
         CameraLock::default(),
     ));
 
@@ -540,7 +543,7 @@ pub fn update_eclipse_occluders_system(
         .iter()
         .find(|(_, prop)| prop.is_luminous())
         .and_then(|(id, prop)| match &prop.body {
-            Body::Sphere { radius, .. } => Some((id, prop.body.center(), *radius)),
+            Body::Sphere { radius, .. } => Some((id, prop.body.center().as_vec3(), *radius)),
             _ => None,
         });
 
@@ -555,7 +558,7 @@ pub fn update_eclipse_occluders_system(
         .filter(|(id, _)| *id != star_id)
         .filter_map(|(id, prop)| match &prop.body {
             Body::Sphere { radius, .. } if *radius > 0.0 => {
-                Some((id, prop.body.center().extend(*radius)))
+                Some((id, prop.body.center().as_vec3().extend(*radius)))
             }
             _ => None,
         })

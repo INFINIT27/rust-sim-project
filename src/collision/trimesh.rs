@@ -169,10 +169,10 @@ impl Triangle {
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{collision_mesh, Body, Color, Pose, Quat, Vec3};
+/// use physics_sandbox::{collision_mesh, Body, Color, Pose, Quat, DVec3, Vec3};
 ///
 /// let cube = Body::Cuboid {
-///     pose: Pose { position: Vec3::ZERO, rotation: Quat::IDENTITY },
+///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
 ///     half_extents: Vec3::splat(1.0),
 ///     color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
 /// };
@@ -352,10 +352,10 @@ impl TriMesh {
     /// # Examples
     ///
     /// ```
-    /// use physics_sandbox::{collision_mesh, Body, Color, Pose, Quat, Vec3};
+    /// use physics_sandbox::{collision_mesh, Body, Color, Pose, Quat, DVec3, Vec3};
     ///
     /// let ball = Body::Sphere {
-    ///     pose: Pose { position: Vec3::ZERO, rotation: Quat::IDENTITY },
+    ///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
     ///     radius: 2.0,
     ///     color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
     /// };

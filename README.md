@@ -53,7 +53,15 @@ used, peak g, and touchdown speed.
 `G` cycles to the other built-in craft: the same ship at **full thrust** (`178 g`, uncrewed), which
 burns straight at the target, flips, and brakes (Mercury to Jupiter in 13 hours at 12% of light
 speed), and a **coasting probe** that leaves at up to Voyager 2's `15.4 km/s` and can use gravity
-assists. The craft are plain data (`src/spacecraft/config.rs`), ready for a settings menu.
+assists. The craft are plain data (`src/spacecraft/config.rs`), and the fleet is read from
+`config/spacecraft.toml` at launch: edit it to change a craft or add your own.
+
+### Settings
+
+The files in [`config/`](config/README.md) are read when the app starts: the spacecraft fleet,
+camera speed and look sensitivity, crosshair, compass and pop-up sizes, trails, and the performance
+switches. Edit one and relaunch; no rebuild is needed. Every file and key is optional, and a
+misspelt key or out-of-range value stops the app with a message naming it.
 
 The engine is idealised: it never runs out of propellant, and the mass never changes, so the
 propellant reported is what it would have burned. The simulation is Newtonian throughout.
@@ -79,21 +87,39 @@ These run headlessly, so you need no window or GPU.
 
 ## Where the details are
 
-Every source directory has a `README.md` that covers its design, invariants, and known gaps:
+Every source directory has a `README.md` that covers its design, invariants, and known gaps. The
+table below is the **index**: one row per directory. To decide where a change goes, start here,
+then read only the first paragraph of the candidate `README.md`. That paragraph always says what
+the directory is for (**Purpose**), what to change there (**Edit here to**), and where nearby
+concerns live instead (**Not here**).
 
-| Directory | What it covers |
+| Directory | Go here to change |
 | --- | --- |
-| [`src/`](src/README.md) | How the layers fit together, and the window |
-| [`src/experiments/`](src/experiments/README.md) | Every experiment, including what is real in the solar system and what is not |
-| [`src/spacecraft/`](src/spacecraft/README.md) | The spacecraft: configurations, the least-energy transfer, steering, and the flight report |
-| [`src/core/`](src/core/README.md) | The world model and units (1 world unit = 10⁹ m) |
-| [`src/time/`](src/time/README.md) | The simulation and observer clocks, and why time is scaled |
-| [`src/collision/`](src/collision/README.md) | Solid bodies, contact, and elastic response |
-| [`src/render/`](src/render/README.md) | Lighting, eclipse shadows, the grid, and trails |
-| [`src/input/`](src/input/README.md) | Camera, controls, and the full key map |
-| [`src/ui/`](src/ui/README.md) | The overlay, and how to read its numbers |
-| [`src/physics_utils/`](src/physics_utils/README.md) | Physical constants and formulas |
-| [`tst/`](tst/README.md) | How the tests are laid out and wired in |
+| [`src/`](src/README.md) | Crate root, app wiring and the window, key bindings, constants shared by layers |
+| [`src/core/`](src/core/README.md) | The world model: `Scene`, `Prop`, `Body`, units (1 world unit = 10⁹ m), the step loop, gravity |
+| [`src/core/transfer/`](src/core/transfer/README.md) | The coasting-path search between two bodies, gravity assists, the prediction the spacecraft use |
+| [`src/collision/`](src/collision/README.md) | Hulls, contact detection, elastic bounces, black-hole absorption |
+| [`src/time/`](src/time/README.md) | The simulation and observer clocks, `TimeStep`, time scaling |
+| [`src/experiments/`](src/experiments/README.md) | The experiments, planet and moon data, starting cameras, command-line arguments |
+| [`src/spacecraft/`](src/spacecraft/README.md) | The craft, flight planning, steering and landing, the flight report |
+| [`src/render/`](src/render/README.md) | The Scene→ECS mirror, the frame pipeline, lighting, eclipse shadows, the grid, trails, missions |
+| [`src/input/`](src/input/README.md) | The camera, what each key does, input modes |
+| [`src/ui/`](src/ui/README.md) | On-screen panels: the overlay, crosshair, compass, menu, picker, arrival pop-up |
+| [`src/physics_utils/`](src/physics_utils/README.md) | Physical constants and Newtonian formulas |
+| [`src/physics_utils/relativity/`](src/physics_utils/relativity/README.md) | Special-relativity formulas and `c` |
+| [`src/performance/`](src/performance/README.md) | The `RGA_*` frame-time switches and the benchmark |
+| [`src/config/`](src/config/README.md) | Loading the settings files: what each may contain, its validation, where the directory is found |
+| [`config/`](config/README.md) | The settings files themselves: fleet, camera, UI sizes, trails, performance. Edit and relaunch |
+| [`assets/`](assets/README.md) | The eclipse-shadow shader |
+| [`tst/`](tst/README.md) | How tests are laid out and wired in. `tst/<layer>/` holds the tests for `src/<layer>/` and has its own `README.md` |
+
+To print every directory's summary at once (the whole index, without opening any file in full):
+
+```bash
+for f in $(git ls-files '*README.md' | grep -v '^README.md$'); do
+  awk 'NR==1 {print; next} /^>/ {print; seen=1; next} seen {exit}' "$f"; echo
+done
+```
 
 The history of changes is in [`CHANGELOG.md`](CHANGELOG.md). Contribution rules are in
 [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`.claude/steering/`](.claude/steering/).

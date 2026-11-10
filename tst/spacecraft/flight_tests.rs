@@ -100,8 +100,8 @@ fn a_correction_turns_a_cruise_into_a_burn_toward_its_velocity() {
     let mut fix = flight.voyage.planned_path_units.clone();
     fix.truncate(1);
     let plan = crate::core::transfer::TransferPlan {
-        position_units: Vec3::ZERO,
-        velocity_units_s: Vec3::new(1.0e-5, 0.0, 0.0),
+        position_units: DVec3::ZERO,
+        velocity_units_s: DVec3::new(1.0e-5, 0.0, 0.0),
         path_units: fix,
         flight_seconds: 1.0e5,
         miss_m: 0.0,

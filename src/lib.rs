@@ -29,14 +29,15 @@
 //!
 //! No constant is declared in an implementation file. Each layer keeps its own in
 //! `constants.rs` ([`core::constants`], [`collision::constants`],
-//! [`render::constants`], [`input::constants`], [`ui::constants`], and
-//! [`physics_utils::physics_constants`]), and values read by more than one layer —
+//! [`render::constants`], [`input::constants`], [`ui::constants`], [`config::constants`],
+//! and [`physics_utils::physics_constants`]), and values read by more than one layer —
 //! or by `main.rs`, which has no layer of its own — live in [`constants`]. Every
 //! one documents why it holds that value, who reads it, and what changes if it
 //! moves; the rule is `.claude/steering/constants.md`.
 
 pub mod bindings;
 pub mod collision;
+pub mod config;
 pub mod constants;
 pub mod core;
 pub mod experiments;
@@ -99,7 +100,7 @@ pub use crate::experiments::solar_system::{
 // Re-export the public scene API at the crate root so consumers can write
 // `physics_sandbox::{Body, Scene, ...}` per the design's `Example Usage`.
 pub use crate::core::scene::{
-    moon_primary, Aabb, Body, BodyId, Color, Pose, Prop, Quat, Scene, Vec3,
+    moon_primary, Aabb, Body, BodyId, Color, DVec3, Pose, Prop, Quat, Scene, Vec3,
 };
 
 // Cross-layer constants: the unit scale, the shipped scene's configuration, and
@@ -153,6 +154,13 @@ pub use crate::spacecraft::guidance::{
     blocking, braking_m_s2, match_velocity, segment_entry_m, steer, Law, Sighting, Steering,
 };
 pub use crate::spacecraft::lambert::lambert;
+// Configuration files: `config/*.toml`, read once at startup into the resources above.
+pub use crate::config::constants::{
+    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, PERFORMANCE_FILE, SPACECRAFT_FILE, TRAILS_FILE,
+    UI_FILE,
+};
+pub use crate::config::{config_dir, Config, ConfigError};
+
 pub use crate::spacecraft::{
     central_body, departure_burn, plan_correction_for, plan_flight, plan_transfer_correction,
     surface_gravity_m_s2, Engine, Fleet, Flight, FlightPlan, FlightReport, NoFlight, Phase,
@@ -239,7 +247,7 @@ pub use crate::render::constants::{
 // contract are reachable from the crate root.
 pub use crate::input::camera::{
     cycle_camera_speed_system, orbit_camera_system, toggle_camera_lock_system, CameraLock,
-    CameraSpeed, CameraTarget, FreeFlyCameraPlugin, FreeFlyController, Orbit,
+    CameraSettings, CameraSpeed, CameraTarget, FreeFlyCameraPlugin, FreeFlyController, Orbit,
 };
 
 // Keyboard control of the simulation clock: pause, single-step, speed.
@@ -247,6 +255,7 @@ pub use crate::input::controls::{simulation_controls_system, SimulationControlsP
 
 // The menu's two halves: the input mode and the `Esc` binding here, the panel in `ui`.
 pub use crate::input::menu::{menu_toggle_system, MenuInputPlugin, MenuState};
+pub use crate::input::popup::PopupState;
 
 // The object placer's three halves: state and keys here, the panel in `ui`, the spawn in
 // `render`.
@@ -279,7 +288,8 @@ pub use crate::ui::overlay::{
 
 // The `ui` layer's own constants: overlay row budgets and crosshair appearance.
 pub use crate::ui::arrival::{
-    arrival_popup_system, arrival_rows, duration_label, energy_label, ArrivalPopupPlugin,
+    arrival_popup_system, arrival_rows, duration_label, energy_label, ArrivalPopupConfig,
+    ArrivalPopupPlugin,
 };
 pub use crate::ui::constants::{
     ARRIVAL_LABEL_COLUMN_PX, ARRIVAL_POPUP_WIDTH_PX, COMPASS_DIM_ALPHA, COMPASS_LABEL_SIZE_PX,

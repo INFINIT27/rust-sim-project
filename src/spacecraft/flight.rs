@@ -12,7 +12,7 @@
 //!   when the target's own `f32` position jumps, so the approach stays smooth. The scene's copy is
 //!   then set so the scene's step ends where the craft really is, for drawing and for the path.
 
-use bevy::math::{DVec3, Vec3};
+use bevy::math::DVec3;
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::integrator::gravitational_acceleration;
@@ -98,12 +98,12 @@ pub struct Flight {
     last_correction_s: Option<f64>,
 }
 
-fn to_metres(units: Vec3) -> DVec3 {
-    units.as_dvec3() * METRES_PER_UNIT
+fn to_metres(units: DVec3) -> DVec3 {
+    units * METRES_PER_UNIT
 }
 
-fn to_units(metres: DVec3) -> Vec3 {
-    (metres / METRES_PER_UNIT).as_vec3()
+fn to_units(metres: DVec3) -> DVec3 {
+    metres / METRES_PER_UNIT
 }
 
 impl Flight {
@@ -282,7 +282,7 @@ impl Flight {
             let pull = gravitational_acceleration(&scene.props, index, softening);
             (
                 to_metres(prop.body.center()),
-                to_metres(prop.velocity_units_s + pull * dt as f32),
+                to_metres(prop.velocity_units_s + pull * dt),
             )
         };
         let target_prop = &scene.props[target_index];
@@ -463,10 +463,10 @@ impl Flight {
         if let Body::Sphere { pose, .. } | Body::Cuboid { pose, .. } | Body::Plane { pose, .. } =
             &mut craft.body
         {
-            pose.position = end_position - end_velocity * dt as f32;
+            pose.position = end_position - end_velocity * dt;
         }
         let pull = gravitational_acceleration(&scene.props, craft_index, softening);
-        scene.props[craft_index].velocity_units_s = end_velocity - pull * dt as f32;
+        scene.props[craft_index].velocity_units_s = end_velocity - pull * dt;
     }
 }
 

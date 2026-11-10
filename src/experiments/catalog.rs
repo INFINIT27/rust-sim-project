@@ -405,13 +405,13 @@ pub fn three_body_ring(seed: u64) -> Experiment {
         scene.add(Prop::new(
             Body::Sphere {
                 pose: Pose {
-                    position,
+                    position: position.as_dvec3(),
                     rotation: Quat::IDENTITY,
                 },
                 radius: THREE_BODY_VISUAL_RADIUS_UNITS,
                 color: ring_body_color(index),
             },
-            tangent * (reference_speed * factor),
+            (tangent * (reference_speed * factor)).as_dvec3(),
             THREE_BODY_MASS_KG,
         ));
     }

@@ -3,18 +3,19 @@
 //!
 //! It reads the landed flight's [`FlightReport`] from the
 //! [`Mission`] and shows it for as long as the craft sits landed: the next `R` starts picking a new
-//! route, which ends that phase and closes the pop-up. It is deliberately not interactive. A click
-//! anywhere in the window captures the cursor for mouse-look (see `input/camera.rs`), so a button
-//! here would grab the cursor as it was pressed, and while flying the cursor is usually captured
-//! already. The rows are built by [`arrival_rows`], a pure function, so they can be tested without
+//! route, which ends that phase and closes the pop-up. While it is open the cursor is released (it
+//! opens [`PopupState`]), and its title bar ✕ or `Esc` dismisses it for the rest of that landing.
+//! The rows are built by [`arrival_rows`], a pure function, so they can be tested without
 //! a window.
 
 use bevy::app::{App, Plugin, Update};
-use bevy::ecs::system::Res;
+use bevy::ecs::schedule::IntoSystemConfigs;
+use bevy::ecs::system::{Local, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::core::scene::BodyId;
 use crate::experiments::catalog::BodyNames;
+use crate::input::popup::PopupState;
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
 use crate::render::mission::{Mission, MissionPhase};
@@ -170,7 +171,60 @@ pub fn arrival_rows(
     rows
 }
 
-/// Paint the arrival pop-up while the mission's craft is landed.
+/// The arrival pop-up's sizes, in logical pixels. A resource so they can come from
+/// `config/ui.toml` (see `src/config/`); the defaults are [`ARRIVAL_POPUP_WIDTH_PX`] and
+/// [`ARRIVAL_LABEL_COLUMN_PX`].
+#[derive(Resource, Debug, Copy, Clone, PartialEq)]
+pub struct ArrivalPopupConfig {
+    /// The pop-up's width.
+    pub width_px: f32,
+    /// The width of its label column.
+    pub label_column_px: f32,
+}
+
+impl Default for ArrivalPopupConfig {
+    fn default() -> Self {
+        Self {
+            width_px: ARRIVAL_POPUP_WIDTH_PX,
+            label_column_px: ARRIVAL_LABEL_COLUMN_PX,
+        }
+    }
+}
+
+/// Which landing a pop-up is about: the flight's target and the bits of its launch time, so two
+/// trips to the same body are two landings.
+pub type Landing = (BodyId, u64);
+
+/// What the pop-up's open state should do this frame, given the landing it last opened for and
+/// the landing the mission is in now (if any).
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PopupChange {
+    /// A new landing: open the pop-up.
+    Open,
+    /// The landing it was showing is over: close it.
+    Close,
+    /// Nothing changed. A pop-up dismissed with `Esc` or ✕ stays closed for the rest of its
+    /// landing.
+    Keep,
+}
+
+/// Decide [`PopupChange`] from the landing last opened for and the current one.
+pub fn popup_change(opened_for: Option<Landing>, landed: Option<Landing>) -> PopupChange {
+    match (opened_for, landed) {
+        (_, Some(now)) if opened_for != Some(now) => PopupChange::Open,
+        (Some(_), None) => PopupChange::Close,
+        _ => PopupChange::Keep,
+    }
+}
+
+/// Paint the arrival pop-up while the mission's craft is landed, until it is dismissed.
+///
+/// Opens [`PopupState`] when a new landing starts, which releases the cursor (see
+/// `input/camera.rs`). The title bar's ✕ and `Esc` close it; so does leaving the landing with `R`.
+/// Runs after the camera system, so the click on ✕ is seen by the camera while the pop-up is
+/// still open and does not capture the cursor.
+///
+/// Drawn on the default window layer, which is above the crosshair's (see `ui/crosshair.rs`).
 ///
 /// # Panics
 ///
@@ -180,13 +234,28 @@ pub fn arrival_popup_system(
     mut contexts: EguiContexts,
     mission: Option<Res<Mission>>,
     names: Option<Res<BodyNames>>,
+    config: Option<Res<ArrivalPopupConfig>>,
+    mut popup: ResMut<PopupState>,
+    mut opened_for: Local<Option<Landing>>,
 ) {
-    let Some(mission) = mission else {
+    let landed = mission.as_deref().and_then(|mission| match &mission.phase {
+        MissionPhase::Landed { flight, .. } => Some(flight),
+        _ => None,
+    });
+    let landing =
+        landed.map(|flight| (flight.voyage.target, flight.voyage.launched_at_s.to_bits()));
+    match popup_change(*opened_for, landing) {
+        PopupChange::Open => popup.open(),
+        PopupChange::Close => popup.close(),
+        PopupChange::Keep => {}
+    }
+    *opened_for = landing;
+    let Some(flight) = landed else {
         return;
     };
-    let MissionPhase::Landed { flight, .. } = &mission.phase else {
+    if !popup.is_open() {
         return;
-    };
+    }
     let names = names.map(|names| names.clone()).unwrap_or_default();
     let rows = arrival_rows(
         flight.report(),
@@ -194,16 +263,19 @@ pub fn arrival_popup_system(
         flight.voyage.target,
         &names,
     );
+    let config = config.map(|config| *config).unwrap_or_default();
+    let mut open = true;
     let ctx = contexts.ctx_mut();
     egui::Window::new(format!("Arrived at {}", names.label(flight.voyage.target)))
-        .default_width(ARRIVAL_POPUP_WIDTH_PX)
+        .open(&mut open)
+        .default_width(config.width_px)
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .show(ctx, |ui| {
             egui::Grid::new("arrival_report")
                 .num_columns(2)
-                .min_col_width(ARRIVAL_LABEL_COLUMN_PX)
+                .min_col_width(config.label_column_px)
                 .show(ui, |ui| {
                     for (label, value) in &rows {
                         ui.label(*label);
@@ -214,6 +286,9 @@ pub fn arrival_popup_system(
             ui.separator();
             ui.label(ARRIVAL_HINT);
         });
+    if !open {
+        popup.close();
+    }
 }
 
 /// Plugin that shows the arrival pop-up. Needs [`MissionPlugin`](crate::render::mission::MissionPlugin)
@@ -225,7 +300,12 @@ impl Plugin for ArrivalPopupPlugin {
         if !app.is_plugin_added::<EguiPlugin>() {
             app.add_plugins(EguiPlugin);
         }
-        app.add_systems(Update, arrival_popup_system);
+        app.init_resource::<ArrivalPopupConfig>();
+        app.init_resource::<PopupState>();
+        app.add_systems(
+            Update,
+            arrival_popup_system.after(crate::input::camera::free_fly_camera_system),
+        );
     }
 }
 

@@ -206,7 +206,7 @@ fn the_placed_prop_joins_the_simulation_properly() {
 
     assert!(placed.is_valid());
     assert!(placed.responds_to_forces());
-    assert_eq!(placed.velocity_units_s, Vec3::ZERO);
+    assert_eq!(placed.velocity_units_s.as_vec3(), Vec3::ZERO);
     assert!(placed.body.center().is_finite());
 }
 

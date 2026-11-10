@@ -1,5 +1,13 @@
 # `src/core/transfer/` — planning a craft's path between two bodies
 
+> **Purpose:** Finds a coasting path between two bodies, including gravity assists, by flying
+> candidate paths through a prediction of the scene (no conics). Keeps a live craft on that path.
+> **Edit here to:** change the direct or gravity-assist search, the ephemeris and `Forecast` the
+> spacecraft layer reads, the correction-burn schedule (`Voyage`), or touchdown detection.
+> **Not here:** burns, steering, craft definitions, and the least-energy Lambert transfer are in
+> [`src/spacecraft/`](../../spacecraft/README.md). The live integrator is
+> `src/core/integrator.rs`.
+
 Finds a coasting path for a craft from one body to another under the scene's own gravity, and keeps
 it on that path once it is flying, and opens the prediction it uses to the layer above
 ([`src/spacecraft/`](../../spacecraft/README.md)), which decides when a craft burns and how hard. No
@@ -55,20 +63,28 @@ prediction of the scene made with the same integrator the live scene uses.
 
 ## Known gaps
 
-- **A route that leaves a moon from low altitude can be chaotic, and corrections cannot always
-  recover it.** In `a_gravity_assisted_voyage_flown_live_passes_its_planet_and_lands`
-  (Europa → Ganymede → Callisto), the live flight is `45,000 km` and `440 m/s` off the plan by
-  the first correction, two days in. That drift is not step-size error: frames `16×` shorter
-  barely change the substep (`9.1 s` to `8.8 s`) yet move the rocket a further `15,000 km`, and
-  re-flying the plan through a slightly different ephemeris moves its Ganymede pass from
-  `6,421 km` to `2,624 km`. With no burn, the drifted craft's closest pass of Ganymede in the flyby
-  window is `625,000 km` out. No correction can find the planned pass from there, so with the two
-  rules above every burn is refused and the craft never lands, and the test fails. Without them,
-  the first burn locked onto a pass `30` hours late and missed Callisto by `942,666 km`. The route
-  the planner picks depends on the platform's `sin`/`cos`, and a route recorded on another machine
-  (Ganymede at `4,798 km`) did land, so whether this bites depends on the route. A fix would have to
-  either keep corrections from depending on the departure arc (for example, re-plan the whole
-  assisted route from the craft's state), or make the live and planned departures agree.
+- **A plan is only as good as `fly`'s integration, and nothing checks that it converged.**
+  `fly` is now second order (leapfrog), which makes a close pass of a planet accurate at its
+  current step rule. But no plan is re-flown at a finer step before it is accepted, so a route
+  through a pass tighter than any measured so far could still be a discretisation artefact. A
+  cheap guard would re-fly the chosen route at half the step and refuse it if the outcome moves
+  by more than the aim tolerance.
+
+### Resolved: the "chaotic" Europa → Ganymede → Callisto voyage
+
+`a_gravity_assisted_voyage_flown_live_passes_its_planet_and_lands` failed because the route was
+not real, not because it was chaotic. It passes Jupiter at `2.1` radii and `40 km/s` about nine
+hours out. `fly` then used first-order symplectic Euler at `TRANSFER_STEP_FRACTION` (`0.02` rad
+a step), whose velocity error is about half that angle: `1%`, or `520 m/s` a day after the pass.
+The same launch integrated accurately (steps at or under `10 s`; `1 s` and `0.1 s` agree) passes
+Ganymede `500,000 km` out rather than at the planned `6,421 km`, and misses Callisto by
+`54,683 km`. Moving the start by `1`–`30 m` or `1 cm/s` changes the outcome by at most `23 km`,
+so it is not chaos. The earlier step-size experiment shortened the live *frame*, which leaves
+the live substep unchanged (`orbital_substeps` sets it), and never varied the planner's step.
+`fly` becoming leapfrog fixed it, and the test passes. Before the change, the forecast also put
+Ganymede `2,387 km` from the live Ganymede at the flyby, because both advanced `f32` positions.
+Positions and velocities are now `f64` (see `src/core/README.md`), but that gap has not been
+re-measured since.
 
 ## Tests
 

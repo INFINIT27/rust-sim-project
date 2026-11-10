@@ -1,5 +1,11 @@
 # `src/performance/` — frame-time switches and the benchmark
 
+> **Purpose:** The `RGA_*` environment switches that trade image quality for frame time
+> (anti-aliasing, floor eclipse, vsync), plus the frame-time benchmark and its scripts.
+> **Edit here to:** add a switch, change a default, or change how the benchmark measures.
+> **Not here:** the eclipse shading the switch controls is in
+> [`render/`](../render/README.md) and [`assets/`](../../assets/README.md).
+
 The switches that trade image quality or fidelity for frame time, and the benchmark that measures
 them. Everything is chosen by environment variable at launch,
 so two configurations can be compared without a rebuild. The API is documented in `mod.rs`.
@@ -9,7 +15,7 @@ so two configurations can be compared without a rebuild. The API is documented i
 | File | Job |
 | --- | --- |
 | `mod.rs` | `PerformancePlugin`: inserts the settings, sets MSAA, adds SMAA/FXAA to cameras, runs the benchmark. |
-| `settings.rs` | `PerformanceSettings` and `AntiAliasing`, parsed from the environment; a misspelt value is an error. |
+| `settings.rs` | `PerformanceSettings` and `AntiAliasing`, parsed from the environment over a base (`from_env_over`), which `main.rs` takes from `config/performance.toml`; a misspelt value is an error. |
 | `bench.rs` | The benchmark: warm up, record frame times, print one `BENCH …` line, exit. |
 | `constants.rs` | Defaults and variable names, each with the measurement behind it. |
 | `scripts/bench.sh` | Runs the benchmark N times per experiment and appends results to a TSV. |

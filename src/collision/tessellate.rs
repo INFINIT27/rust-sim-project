@@ -75,16 +75,16 @@ use crate::core::scene::{Body, Prop};
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{collision_mesh, Body, Color, Vec3};
+/// use physics_sandbox::{collision_mesh, Body, Color, DVec3, Vec3};
 ///
 /// let white = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 ///
 /// // A zero-width line is a curve: no interior, so no hull.
-/// let curve = Body::Line { from: Vec3::ZERO, to: Vec3::X, width: 0.0, color: white };
+/// let curve = Body::Line { from: DVec3::ZERO, to: DVec3::X, width: 0.0, color: white };
 /// assert!(collision_mesh(&curve).is_none());
 ///
 /// // Give it width and it becomes a solid rod.
-/// let rod = Body::Line { from: Vec3::ZERO, to: Vec3::X, width: 0.2, color: white };
+/// let rod = Body::Line { from: DVec3::ZERO, to: DVec3::X, width: 0.2, color: white };
 /// let mesh = collision_mesh(&rod).expect("a rod bounds a volume");
 /// assert!(mesh.is_closed());
 /// ```
@@ -121,10 +121,10 @@ use crate::core::scene::{Body, Prop};
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{contact_mesh, Body, Color, Pose, Prop, Quat, Vec3};
+/// use physics_sandbox::{contact_mesh, Body, Color, Pose, Prop, Quat, DVec3, Vec3};
 ///
 /// let drawn_big = Body::Sphere {
-///     pose: Pose { position: Vec3::ZERO, rotation: Quat::IDENTITY },
+///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
 ///     radius: 10.0,
 ///     color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
 /// };
@@ -159,7 +159,7 @@ pub fn collision_mesh(body: &Body) -> Option<TriMesh> {
 
     match body {
         Body::Sphere { pose, radius, .. } => Some(sphere_hull(
-            pose.position,
+            pose.position.as_vec3(),
             pose.rotation,
             *radius,
             SPHERE_SUBDIVISIONS,
@@ -170,7 +170,7 @@ pub fn collision_mesh(body: &Body) -> Option<TriMesh> {
         }
         Body::Line {
             from, to, width, ..
-        } => line_hull(*from, *to, *width),
+        } => line_hull(from.as_vec3(), to.as_vec3(), *width),
     }
 }
 
@@ -193,7 +193,7 @@ pub(crate) fn hull_box(body: &Body) -> Option<HullBox> {
         Body::Cuboid {
             pose, half_extents, ..
         } => Some(HullBox {
-            centre: pose.position,
+            centre: pose.position.as_vec3(),
             rotation: pose.rotation,
             half_extents: *half_extents,
         }),
@@ -205,7 +205,8 @@ pub(crate) fn hull_box(body: &Body) -> Option<HullBox> {
             // floor thickens into itself rather than into the world's down.
             let half_thickness = 0.5 * PLANE_THICKNESS_UNITS;
             Some(HullBox {
-                centre: pose.position + pose.rotation * Vec3::new(0.0, -half_thickness, 0.0),
+                centre: pose.position.as_vec3()
+                    + pose.rotation * Vec3::new(0.0, -half_thickness, 0.0),
                 rotation: pose.rotation,
                 half_extents: Vec3::new(*half_size, half_thickness, *half_size),
             })

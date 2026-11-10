@@ -37,7 +37,10 @@ impl AntiAliasing {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    /// Parse a mode by name, case-insensitively: `msaa4` (or `msaa`), `msaa2`, `smaa`, `fxaa`, or
+    /// `off` (or `none`). The names [`name`](Self::name) gives, and the ones `config/performance.toml`
+    /// and `RGA_AA` take.
+    pub fn parse(value: &str) -> Option<Self> {
         match value.to_ascii_lowercase().as_str() {
             "msaa4" | "msaa" => Some(Self::Msaa4),
             "msaa2" => Some(Self::Msaa2),
@@ -45,6 +48,17 @@ impl AntiAliasing {
             "fxaa" => Some(Self::Fxaa),
             "off" | "none" => Some(Self::Off),
             _ => None,
+        }
+    }
+
+    /// The mode's canonical name, the one [`parse`](Self::parse) reads back.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Msaa4 => "msaa4",
+            Self::Msaa2 => "msaa2",
+            Self::Smaa => "smaa",
+            Self::Fxaa => "fxaa",
+            Self::Off => "off",
         }
     }
 }
@@ -106,13 +120,28 @@ impl PerformanceSettings {
     /// error rather than a silent default, because a benchmark that quietly ran the wrong
     /// configuration is worse than one that refused to start.
     pub fn from_env() -> Result<Self, SettingsError> {
-        Self::from_lookup(|key| std::env::var(key).ok())
+        Self::from_env_over(Self::default())
+    }
+
+    /// [`Self::from_env`], with the variables that are unset taking their values from `base`
+    /// rather than from [`Default`]. `main.rs` passes `config/performance.toml` here, so an
+    /// environment variable overrides the file for one run.
+    pub fn from_env_over(base: Self) -> Result<Self, SettingsError> {
+        Self::from_lookup_over(base, |key| std::env::var(key).ok())
     }
 
     /// [`Self::from_env`] against any lookup, so the parsing is testable without touching the
     /// process environment.
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, SettingsError> {
-        let mut settings = Self::default();
+        Self::from_lookup_over(Self::default(), lookup)
+    }
+
+    /// [`Self::from_env_over`] against any lookup.
+    pub fn from_lookup_over(
+        base: Self,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, SettingsError> {
+        let mut settings = base;
 
         if let Some(value) = lookup(ANTI_ALIASING_VAR) {
             settings.anti_aliasing = AntiAliasing::parse(&value).ok_or(SettingsError {

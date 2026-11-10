@@ -16,7 +16,7 @@
 //! departure is *now*, when `R` is pressed: the search finds the cheapest arc from where the
 //! planets are, not the cheapest launch window.
 
-use bevy::math::{DVec3, Vec3};
+use bevy::math::DVec3;
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::scene::{moon_primary, BodyId, Scene};
@@ -191,12 +191,12 @@ fn check_gravity(
     Ok(())
 }
 
-fn to_metres(units: Vec3) -> DVec3 {
-    units.as_dvec3() * METRES_PER_UNIT
+fn to_metres(units: DVec3) -> DVec3 {
+    units * METRES_PER_UNIT
 }
 
-fn to_units(metres: DVec3) -> Vec3 {
-    (metres / METRES_PER_UNIT).as_vec3()
+fn to_units(metres: DVec3) -> DVec3 {
+    metres / METRES_PER_UNIT
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -255,7 +255,7 @@ fn plan_direct(
 
     let spacing = gap / crate::core::constants::TRANSFER_PATH_POINTS;
     let (mut r, mut v, mut t) = (start, start_velocity, 0.0);
-    let mut path = vec![to_units(r)];
+    let mut path = vec![to_units(r).as_vec3()];
     let mut peak_speed = v.length();
     let mut delta_v = 0.0;
     let mut steps: u64 = 0;
@@ -289,7 +289,7 @@ fn plan_direct(
             r_next - goal_next.position_m,
             goal.radius_m,
         ) {
-            path.push(to_units(goal_next.position_m + entry));
+            path.push(to_units(goal_next.position_m + entry).as_vec3());
             return Ok(FlightPlan {
                 transfer: TransferPlan {
                     position_units: to_units(start),
@@ -318,8 +318,8 @@ fn plan_direct(
 
         (r, v, t) = (r_next, v_next, t_next);
         peak_speed = peak_speed.max(v.length());
-        if (r - to_metres(*path.last().unwrap_or(&Vec3::ZERO))).length() >= spacing {
-            path.push(to_units(r));
+        if (r - to_metres(path.last().map_or(DVec3::ZERO, |p| p.as_dvec3()))).length() >= spacing {
+            path.push(to_units(r).as_vec3());
         }
     }
 }
@@ -607,7 +607,9 @@ fn plan_transfer(
         // is no guide to the speed at the surface.
         let delta_v_in = arc.delta_v_in_m_s;
         let mut transfer = coast.plan;
-        transfer.path_units.insert(0, to_units(arc.launch_m));
+        transfer
+            .path_units
+            .insert(0, to_units(arc.launch_m).as_vec3());
         transfer.position_units = to_units(arc.launch_m);
         transfer.velocity_units_s = to_units(vo0);
         transfer.departure_speed_m_s = delta_v_out;

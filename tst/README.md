@@ -1,5 +1,11 @@
 # `tst/` — all test code
 
+> **Purpose:** All test code. It mirrors `src/` directory for directory, and this file covers
+> how Cargo finds it: `#[path]` stubs, `[[test]]` targets, and proptest seed files.
+> **Edit here to:** change how tests are wired in, the headless integration test
+> (`headless_app.rs`), or the key-binding tests. A layer's tests are in `tst/<layer>/`.
+> **Not here:** the code under test, in [`src/`](../src/README.md).
+
 Mirrors `src/` directory for directory. It is named `tst/`, not Cargo's
 conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 
@@ -17,6 +23,7 @@ conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 | `physics_utils/` | Unit + property tests for `src/physics_utils/`. |
 | `time/` | Unit + property tests for `src/time/` — the `TimeStep` guarantee and both clocks. |
 | `performance/` | Unit tests for `src/performance/` — switch parsing, the benchmark summary, and the ignored floor-eclipse measurement. |
+| `config/` | Unit tests for `src/config/`: the shipped files equal the defaults, optional files and keys, and errors naming the file and key. |
 | `experiments/` | Unit + property tests for `src/experiments/` — catalog hygiene, the three-body premise, argument parsing, the generator. |
 | `spacecraft/` | Unit tests for `src/spacecraft/`: the built-in craft and fleet, the Lambert solver, the steering laws, the flight report, and whole flights flown live, from the crewed transfer to the Moon to full-thrust Mercury to Jupiter. Two opt-in sweeps. |
 

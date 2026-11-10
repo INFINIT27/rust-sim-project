@@ -1,5 +1,13 @@
 # `assets/` — the one thing that is not Rust
 
+> **Purpose:** The only runtime file that is not Rust: the fragment shader that draws eclipse
+> shadows.
+> **Edit here to:** change how eclipse shadows look on the GPU, and make the same change to
+> `star_visible_fraction` in `src/render/eclipse.rs`.
+> **Not here:** the material and the CPU copy of the shadow math, in
+> [`src/render/`](../src/render/README.md). The floor-eclipse switch is in
+> [`src/performance/`](../src/performance/README.md).
+
 Bevy resolves `ShaderRef::Path` against this directory, and it exists for exactly one file:
 
 | File | Job |

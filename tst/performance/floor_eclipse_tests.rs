@@ -27,7 +27,7 @@ fn darkest_floor_eclipse() {
             .find_map(|prop| match &prop.body {
                 Body::Plane {
                     pose, half_size, ..
-                } => Some((pose.position, *half_size)),
+                } => Some((pose.position.as_vec3(), *half_size)),
                 _ => None,
             })
             .expect("experiment_3 has a floor");
@@ -36,7 +36,7 @@ fn darkest_floor_eclipse() {
             .iter()
             .find(|prop| prop.is_luminous())
             .and_then(|prop| match &prop.body {
-                Body::Sphere { pose, radius, .. } => Some((pose.position, *radius)),
+                Body::Sphere { pose, radius, .. } => Some((pose.position.as_vec3(), *radius)),
                 _ => None,
             })
             .expect("experiment_3 has a star");
@@ -47,13 +47,14 @@ fn darkest_floor_eclipse() {
             };
             // The darkest floor point lies under the shadow's axis, so the search runs along it at
             // log-spaced distances, with a few lateral offsets for the penumbra's width.
-            let axis = (pose.position - star_centre).normalize();
+            let position = pose.position.as_vec3();
+            let axis = (position - star_centre).normalize();
             let across = axis.cross(Vec3::Y).normalize();
             for step in 0..DISTANCE_SAMPLES {
                 let distance = 1e-3_f32 * 1e7_f32.powf(step as f32 / (DISTANCE_SAMPLES - 1) as f32);
                 for offset in -4..=4 {
                     let mut point =
-                        pose.position + axis * distance + across * (offset as f32 * radius * 0.5);
+                        position + axis * distance + across * (offset as f32 * radius * 0.5);
                     point.y = floor_centre.y;
                     let local = point - floor_centre;
                     if local.x.abs() > half_size || local.z.abs() > half_size {
@@ -63,7 +64,7 @@ fn darkest_floor_eclipse() {
                         point,
                         star_centre,
                         star_radius,
-                        pose.position,
+                        position,
                         *radius,
                     ));
                 }

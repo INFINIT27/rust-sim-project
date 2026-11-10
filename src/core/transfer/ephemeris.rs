@@ -308,7 +308,7 @@ pub(super) fn fold_distant_moons(scene: &mut Scene, origin: Option<BodyId>, targ
         let primary = &mut scene.props[index];
         let moon_mass = f64::from(moon.mass_kg);
         let total = moon_mass + f64::from(primary.mass_kg);
-        let weight = (moon_mass / total) as f32;
+        let weight = moon_mass / total;
         let shift = (moon.body.center() - primary.body.center()) * weight;
         primary.velocity_units_s += (moon.velocity_units_s - primary.velocity_units_s) * weight;
         primary.body.translate(shift);

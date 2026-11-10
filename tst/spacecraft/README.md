@@ -1,5 +1,11 @@
 # `tst/spacecraft/` — tests for `src/spacecraft/`
 
+> **Purpose:** Tests for [`src/spacecraft/`](../../src/spacecraft/README.md): the built-in
+> craft, Lambert, the steering and landing laws, the flight report, and whole flights flown
+> live. Two opt-in sweeps.
+> **Edit here to:** add or fix a test of a craft, a planner, or a guidance law.
+> **Not here:** the flight code, in `src/spacecraft/`.
+
 Unit tests, one file per source file, each `#[path]`-included at the end of its subject, so they
 compile inside the module and see its private items through `use super::*`.
 

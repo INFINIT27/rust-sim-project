@@ -45,6 +45,8 @@ use bevy::ecs::schedule::IntoSystemConfigs;
 use bevy::ecs::system::{Res, ResMut, Resource};
 use bevy::input::{keyboard::KeyCode, ButtonInput};
 
+use crate::input::popup::PopupState;
+
 /// Whether the menu is open.
 ///
 /// The field is private and changed only through [`open`](Self::open),
@@ -105,7 +107,11 @@ impl MenuState {
     }
 }
 
-/// Bevy system that opens and closes the menu on `Esc`.
+/// Bevy system that opens and closes the menu on `Esc`, or closes an open pop-up instead.
+///
+/// While a [`PopupState`] pop-up is open and the menu is closed, `Esc` closes the pop-up and
+/// does not open the menu: `Esc` means "get me out of whatever this is", and the pop-up is what
+/// is in front. The next `Esc` opens the menu as usual.
 ///
 /// Edge-triggered (`just_pressed`), like every other binding in the crate: a held `Esc`
 /// must not flicker the menu sixty times a second, which would leave its state a coin toss
@@ -122,10 +128,21 @@ impl MenuState {
 /// [`free_fly_camera_system`](super::camera::free_fly_camera_system), so opening the menu
 /// takes effect on the same frame as the keypress rather than the next one. Registered the
 /// other way round, one frame of movement would leak through after `Esc`.
-pub fn menu_toggle_system(keys: Res<ButtonInput<KeyCode>>, mut menu: ResMut<MenuState>) {
-    if keys.just_pressed(KeyCode::Escape) {
-        menu.toggle();
+pub fn menu_toggle_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut menu: ResMut<MenuState>,
+    popup: Option<ResMut<PopupState>>,
+) {
+    if !keys.just_pressed(KeyCode::Escape) {
+        return;
     }
+    if let Some(mut popup) = popup {
+        if popup.is_open() && !menu.is_open() {
+            popup.close();
+            return;
+        }
+    }
+    menu.toggle();
 }
 
 /// Plugin that inserts [`MenuState`] and registers the `Esc` binding.
@@ -156,6 +173,7 @@ pub struct MenuInputPlugin;
 impl Plugin for MenuInputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MenuState>();
+        app.init_resource::<PopupState>();
         app.add_systems(
             Update,
             menu_toggle_system.before(super::camera::free_fly_camera_system),

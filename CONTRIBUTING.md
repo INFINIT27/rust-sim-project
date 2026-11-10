@@ -33,7 +33,7 @@ A change to `assets/shaders/eclipse.wgsl` is not verified by the tests alone. Se
 | --- | --- |
 | Every change that alters behaviour, structure, or the documented contract gets a bullet under today's date in [`CHANGELOG.md`](CHANGELOG.md), in the same change, with the reason. | [`changelog.md`](.claude/steering/changelog.md) |
 | No named constant in an implementation file. Each layer's constants live in its `constants.rs` (values shared across layers go in `src/constants.rs`), and each one documents why it has its value, who uses it, and what changes if it moves. | [`constants.md`](.claude/steering/constants.md) |
-| Every directory holding code has a `README.md` covering its design, invariants, and known gaps. | [`source-directory-docs.md`](.claude/steering/source-directory-docs.md) |
+| Every directory holding code has a `README.md` covering its design, invariants, and known gaps. Its first paragraph is a fixed lookup summary (**Purpose** / **Edit here to** / **Not here**), and the root `README.md` directory map indexes them all. | [`source-directory-docs.md`](.claude/steering/source-directory-docs.md) |
 
 And from [`src/README.md`](src/README.md) and [`tst/README.md`](tst/README.md):
 

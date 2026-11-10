@@ -1,5 +1,10 @@
 # `tst/time/` — tests for the two clocks
 
+> **Purpose:** Tests for [`src/time/`](../../src/time/README.md): `TimeStep` as a guarantee and
+> both clocks as a policy (clamp, scale, pause, single-step).
+> **Edit here to:** add or fix a clock or `TimeStep` test.
+> **Not here:** the clocks, in `src/time/`.
+
 Mirrors `src/time/`, one file per source file. Both are `#[path]`-included unit-test
 modules compiled *inside* their subject, so they use `crate::…` paths and can reach
 private fields (`elapsed_s`, `single_step_pending`).

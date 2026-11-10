@@ -63,7 +63,7 @@ use crate::render::plugin::MirroredBody;
 pub fn transform_from(body: &Body) -> Transform {
     match body {
         Body::Sphere { pose, radius, .. } => Transform {
-            translation: pose.position,
+            translation: pose.position.as_vec3(),
             rotation: pose.rotation,
             // The body's **true** radius, with nothing added. Amendment A17 removed the
             // apparent-size floor that used to sit here: a body at real scale is sub-pixel from
@@ -75,14 +75,14 @@ pub fn transform_from(body: &Body) -> Transform {
         Body::Cuboid {
             pose, half_extents, ..
         } => Transform {
-            translation: pose.position,
+            translation: pose.position.as_vec3(),
             rotation: pose.rotation,
             scale: 2.0 * *half_extents,
         },
         Body::Plane {
             pose, half_size, ..
         } => Transform {
-            translation: pose.position,
+            translation: pose.position.as_vec3(),
             rotation: pose.rotation,
             scale: Vec3::new(2.0 * *half_size, 1.0, 2.0 * *half_size),
         },
@@ -92,11 +92,11 @@ pub fn transform_from(body: &Body) -> Transform {
             // the X axis by `|to - from|`. `normalize_or_zero` keeps this
             // total on degenerate inputs (`from == to`) — see the
             // degenerate-line note in the doc comment above.
-            let dir = *to - *from;
+            let dir = (*to - *from).as_vec3();
             let len = dir.length();
             let rotation = Quat::from_rotation_arc(Vec3::X, dir.normalize_or_zero());
             Transform {
-                translation: 0.5 * (*from + *to),
+                translation: (0.5 * (*from + *to)).as_vec3(),
                 rotation,
                 scale: Vec3::new(len, 1.0, 1.0),
             }

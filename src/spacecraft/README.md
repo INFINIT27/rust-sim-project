@@ -1,5 +1,14 @@
 # `src/spacecraft/` — what a craft is, and how it flies
 
+> **Purpose:** What a craft is and how it flies: the fleet `G` cycles, flight planning by
+> propulsion (the least-energy Lambert transfer by default), steering and landing, correction
+> burns, and the flight report.
+> **Edit here to:** add or change a craft or engine, the crew g-limit, burns, the guidance or
+> landing law, or what the report counts.
+> **Not here:** body prediction and the coasting-path search are in
+> [`core/transfer/`](../core/transfer/README.md). Picking the route and drawing the flight are
+> in `render/mission.rs`. The arrival pop-up is `ui/arrival.rs`.
+
 Everything about a spacecraft, as opposed to the orbital mechanics around it. `core` answers
 where each body will be and what coasts from here to there; this layer decides when to burn, how
 hard, and toward what, and counts what the flight cost.

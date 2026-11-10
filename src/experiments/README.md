@@ -1,5 +1,13 @@
 # `src/experiments/` — which simulation to run
 
+> **Purpose:** The catalog of runnable simulations (two-body, three-body ring, solar system,
+> Jovian moons, size ruler), each one's clock scale and starting camera, the command-line
+> parsing, and the objects the `B` key places.
+> **Edit here to:** add or change an experiment, change planet or moon data, starting camera
+> poses, CLI arguments or `--help`, the random seed, or the `B`-key objects.
+> **Not here:** how the world steps is in [`core/`](../core/README.md), how a scene is drawn in
+> [`render/`](../render/README.md), and the spacecraft in [`spacecraft/`](../spacecraft/README.md).
+
 An **experiment** is a scene plus the settings that make it watchable: the clock scale
 it wants and where the camera should start. Before this layer the app could run exactly
 one — `ScenePlugin` hard-coded `Scene::two_body_gravity()` and the shipped time scale,
@@ -92,7 +100,7 @@ off the screen:
 | Orbits | Circular and coplanar — real eccentricities reach `0.206` (Mercury), inclinations `7°` |
 | Relativity | None, so Mercury's perihelion precession is absent |
 | Integrator | First-order symplectic Euler: momentum exact at any step, energy is not, so orbits precess |
-| Precision | `f32` positions — a `61 km` quantum at Jupiter's distance |
+| Precision | `f64` positions and velocities (the integrated state); shapes, rotations, masses, and everything drawn stay `f32` |
 | Timestep | Frame-rate dependent; `MAX_SUBSTEPS` caps very close encounters |
 | Absent | The asteroid belt, Pluto, the other ~285 moons, tides, rotation, radiation pressure |
 

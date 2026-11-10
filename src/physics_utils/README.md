@@ -1,5 +1,13 @@
 # `src/physics_utils/` — physics constants and formulas
 
+> **Purpose:** Physical constants and closed-form formulas in `f64`: gravitation, Newton's
+> laws, conservation laws, and kinematics, with special relativity in
+> [`relativity/`](relativity/README.md).
+> **Edit here to:** add or fix a Newtonian formula or a physical constant (`G`, `g₀`).
+> **Not here:** applying these to the scene is done in `core/integrator.rs` and
+> [`collision/`](../collision/README.md). `c` and relativity are in
+> [`relativity/`](relativity/README.md).
+
 Physical constants and closed-form formulas, in `f64`. Bevy-free like `core/`,
 and the intended home for the math that will eventually be driven from
 `Scene::step`, which is still a no-op seam.

@@ -46,7 +46,8 @@ fn spawn_targets(app: &mut App, bodies: &[BodyId]) {
             .get(id)
             .unwrap()
             .body
-            .center();
+            .center()
+            .as_vec3();
         app.world_mut().spawn((
             Transform::from_translation(at),
             MirroredBody(id),
@@ -64,7 +65,8 @@ fn aim_at(app: &mut App, id: BodyId) {
         .get(id)
         .unwrap()
         .body
-        .center();
+        .center()
+        .as_vec3();
     let mut cameras = app
         .world_mut()
         .query_filtered::<&mut Transform, With<Camera3d>>();
@@ -212,7 +214,7 @@ fn r_on_two_bodies_plans_with_the_clock_paused_then_flies_a_rocket_between_them(
     // The launch point is where the plan put it: 200 km above Earth's surface, Earth as it is now.
     // A plan made from a snapshot the scene has since stepped past would put it where Earth was.
     let earth_now = app.world().resource::<Scene>().get(earth).unwrap();
-    let altitude_m = f64::from((launched_at - earth_now.body.center()).length())
+    let altitude_m = (launched_at - earth_now.body.center()).length()
         * crate::constants::METRES_PER_UNIT
         - f64::from(
             earth_now

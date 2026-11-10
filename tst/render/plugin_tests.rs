@@ -13,7 +13,7 @@
 
 use super::*;
 use crate::constants::TWO_BODY_TIME_SCALE;
-use crate::core::scene::BodyId;
+use crate::core::scene::{BodyId, DVec3};
 use crate::experiments::catalog::{ExperimentId, ExperimentSpec};
 use crate::render::eclipse::BodyMaterial;
 use bevy::app::App;
@@ -695,7 +695,7 @@ fn the_plugin_spawns_every_catalog_experiment() {
 fn the_mirror_follows_props_appearing_and_disappearing() {
     use bevy::MinimalPlugins;
 
-    use crate::core::scene::{Body, Color, Pose, Prop, Quat, Vec3};
+    use crate::core::scene::{Body, Color, Pose, Prop, Quat};
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -718,7 +718,7 @@ fn the_mirror_follows_props_appearing_and_disappearing() {
     let added = app.world_mut().resource_mut::<Scene>().add(Prop::at_rest(
         Body::Sphere {
             pose: Pose {
-                position: Vec3::new(0.0, 40.0, 0.0),
+                position: DVec3::new(0.0, 40.0, 0.0),
                 rotation: Quat::IDENTITY,
             },
             radius: 1.0,
@@ -798,7 +798,7 @@ fn a_prop_added_at_runtime_is_drawn_where_it_actually_is() {
     let added = app.world_mut().resource_mut::<Scene>().add(Prop::at_rest(
         Body::Sphere {
             pose: Pose {
-                position: at,
+                position: at.as_dvec3(),
                 rotation: Quat::IDENTITY,
             },
             radius: 2.0,

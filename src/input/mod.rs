@@ -17,3 +17,4 @@ pub mod controls;
 pub mod menu;
 pub mod mission;
 pub mod placement;
+pub mod popup;

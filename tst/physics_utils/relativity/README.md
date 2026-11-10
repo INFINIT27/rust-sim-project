@@ -1,5 +1,12 @@
 # `tst/physics_utils/relativity/` — tests for the relativity sub-layer
 
+> **Purpose:** Tests for [`src/physics_utils/relativity/`](../../../src/physics_utils/relativity/README.md),
+> checked against published figures (GPS, the ISS, the LHC, muons) and against numerical
+> derivatives.
+> **Edit here to:** add or fix a relativity test. Its proptest seeds are in
+> `../proptest-regressions/`.
+> **Not here:** the formulas, in `src/physics_utils/relativity/`.
+
 Mirrors `src/physics_utils/relativity/`, one file per source file. All five are `#[path]`-included unit
 test modules compiled *inside* their subject.
 

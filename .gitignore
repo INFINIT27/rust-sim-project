@@ -10,6 +10,7 @@ bench.tsv
 *.swp
 .DS_Store
 Thumbs.db
+notes.md
 
 # Note: Cargo.lock is committed on purpose. This is an application, and the lockfile pins the
 # exact Bevy build the tests and measurements were taken with.

@@ -111,6 +111,15 @@ pub struct Mission {
 }
 
 impl Mission {
+    /// A mission with nothing flying and `fleet` to launch from, such as the fleet in
+    /// `config/spacecraft.toml`.
+    pub fn with_fleet(fleet: Fleet) -> Self {
+        Self {
+            fleet,
+            ..Self::default()
+        }
+    }
+
     /// Show the mission one substep of the live scene, after it steps. Called by
     /// `step_scene_system`.
     pub fn observe(&mut self, scene: &Scene) {
@@ -569,7 +578,7 @@ pub fn draw_mission_system(
         | MissionPhase::Requested { origin, .. }
         | MissionPhase::Planning { origin, .. } => {
             if let Some(body) = scene.get(*origin) {
-                ring(body.body.center());
+                ring(body.body.center().as_vec3());
             }
             return;
         }
@@ -582,12 +591,14 @@ pub fn draw_mission_system(
     let landing = voyage
         .touchdown_offset_units
         .zip(scene.get(voyage.target))
-        .map(|(offset, target)| target.body.center() + offset);
+        .map(|(offset, target)| (target.body.center() + offset).as_vec3());
     if let Some(spot) = landing {
         ring(spot);
     }
 
-    let rocket = scene.get(voyage.craft).map(|prop| prop.body.center());
+    let rocket = scene
+        .get(voyage.craft)
+        .map(|prop| prop.body.center().as_vec3());
     gizmos.linestrip(voyage.flown_path_units.iter().copied().chain(rocket), color);
     if landing.is_none() {
         gizmos.linestrip(

@@ -1,5 +1,11 @@
 # `tst/render/` — tests for `src/render/`
 
+> **Purpose:** Tests for [`src/render/`](../../src/render/README.md): the ECS mirror and
+> sizing, the plugin's pipeline, missions driven through a headless `App`, eclipses, the grid,
+> and trails.
+> **Edit here to:** add or fix a test of drawing, mirroring, or mission handling.
+> **Not here:** the render layer and its sizing contract, in `src/render/`.
+
 Unit and property tests for the model → ECS boundary. See
 `src/render/README.md` for the invariants under test, especially the three-file
 sizing contract.

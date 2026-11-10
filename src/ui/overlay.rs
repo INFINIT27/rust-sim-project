@@ -221,7 +221,10 @@ pub fn camera_speed_line(speed: CameraSpeed, controller: &FreeFlyController) -> 
 pub fn camera_lock_line(lock: &CameraLock) -> String {
     match lock.0 {
         None => "lock  off".to_string(),
-        Some(orbit) => format!("lock  orbit {:.2e} m", units_to_metres(orbit.distance)),
+        Some(orbit) => format!(
+            "lock  orbit {:.2e} m",
+            units_to_metres(f64::from(orbit.distance))
+        ),
     }
 }
 
@@ -261,8 +264,8 @@ pub fn human_duration(seconds: f64) -> String {
 /// because a scene-sized length in metres — `3e10` and up — has no useful
 /// precision left in `f32`.
 #[inline]
-pub fn units_to_metres(units: f32) -> f64 {
-    units as f64 * METRES_PER_UNIT
+pub fn units_to_metres(units: f64) -> f64 {
+    units * METRES_PER_UNIT
 }
 
 /// One row per prop: id, shape, mass in kg, speed and velocity in m/s.

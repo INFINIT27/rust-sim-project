@@ -1,5 +1,12 @@
 # `tst/physics_utils/` — tests for `src/physics_utils/`
 
+> **Purpose:** Tests for [`src/physics_utils/`](../../src/physics_utils/README.md): constants
+> pinned, and the Newtonian formulas checked by unit and property tests. Holds the proptest seeds
+> for this tree, the relativity ones included.
+> **Edit here to:** add or fix a test of a constant or a Newtonian formula. Relativity tests
+> are in [`relativity/`](relativity/README.md).
+> **Not here:** the formulas and the `f64` rules, in `src/physics_utils/`.
+
 Unit and property tests for the physics constants and formulas. See
 `src/physics_utils/README.md` for the `f64` rationale and the float-grouping
 rule these tests enforce.

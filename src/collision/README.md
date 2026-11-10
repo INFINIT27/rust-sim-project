@@ -1,5 +1,12 @@
 # `src/collision/` — body physics: surfaces, contacts, and bounces
 
+> **Purpose:** What happens when bodies touch: each prop's triangle hull, the overlap test,
+> elastic bounces, and absorption by black holes.
+> **Edit here to:** change hull shape or resolution, contact detection, restitution,
+> substepping, or how absorption merges props.
+> **Not here:** gravity and the step loop are in [`core/`](../core/README.md), body shapes and
+> sizes as data in `core/scene.rs`, and drawing in [`render/`](../render/README.md).
+
 Where a prop *ends*. Before this layer, props were gravitational point masses
 that phased through each other and a sphere's radius was decoration. This layer
 gives every prop a closed triangle hull, tests those hulls for overlap, and

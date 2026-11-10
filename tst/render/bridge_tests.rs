@@ -73,7 +73,10 @@ fn unit_quat() -> impl Strategy<Value = Quat> {
 
 /// A `Pose` satisfying `Pose::is_valid`.
 fn valid_pose() -> impl Strategy<Value = Pose> {
-    (finite_vec3(), unit_quat()).prop_map(|(position, rotation)| Pose { position, rotation })
+    (finite_vec3(), unit_quat()).prop_map(|(position, rotation)| Pose {
+        position: position.as_dvec3(),
+        rotation,
+    })
 }
 
 /// A `Color` satisfying `Color::is_valid`.
@@ -119,8 +122,8 @@ fn valid_line() -> impl Strategy<Value = Body> {
         valid_color(),
     )
         .prop_map(|(from, to, width, color)| Body::Line {
-            from,
-            to,
+            from: from.as_dvec3(),
+            to: to.as_dvec3(),
             width,
             color,
         })
@@ -224,8 +227,9 @@ proptest! {
             _ => unreachable!("valid_sphere must produce Body::Sphere"),
         };
 
-        // Pose is passed through bit-exact by `transform_from`.
-        prop_assert_eq!(t.translation, pose.position);
+        // Pose is passed through by `transform_from`, narrowed to the `f32` Bevy draws with; the
+        // strategy draws `f32` positions, so the round trip is exact.
+        prop_assert_eq!(t.translation, pose.position.as_vec3());
         prop_assert_eq!(t.rotation, pose.rotation);
         // Sphere scale formula (Requirement 8.3).
         prop_assert!(
@@ -255,7 +259,7 @@ proptest! {
             _ => unreachable!("valid_cuboid must produce Body::Cuboid"),
         };
 
-        prop_assert_eq!(t.translation, pose.position);
+        prop_assert_eq!(t.translation, pose.position.as_vec3());
         prop_assert_eq!(t.rotation, pose.rotation);
         // Cuboid scale formula (Requirement 8.4).
         prop_assert!(
@@ -286,7 +290,7 @@ proptest! {
             _ => unreachable!("valid_plane must produce Body::Plane"),
         };
 
-        prop_assert_eq!(t.translation, pose.position);
+        prop_assert_eq!(t.translation, pose.position.as_vec3());
         prop_assert_eq!(t.rotation, pose.rotation);
         // Plane scale formula (Requirement 8.5).
         let expected = Vec3::new(2.0 * half_size, 1.0, 2.0 * half_size);
@@ -312,8 +316,8 @@ proptest! {
         to in finite_vec3(),
     ) {
         let body = Body::Line {
-            from,
-            to,
+            from: from.as_dvec3(),
+            to: to.as_dvec3(),
             width: 0.0,
             color: BLACK,
         };
@@ -359,8 +363,8 @@ proptest! {
 fn transform_from_degenerate_line_is_total() {
     let p = Vec3::new(1.0, 2.0, -3.0);
     let body = Body::Line {
-        from: p,
-        to: p,
+        from: p.as_dvec3(),
+        to: p.as_dvec3(),
         width: 0.0,
         color: BLACK,
     };
@@ -427,7 +431,7 @@ use bevy::MinimalPlugins;
 fn demo_scene_with_sphere(position: Vec3, radius: f32) -> (Scene, BodyId, Body) {
     let body = Body::Sphere {
         pose: Pose {
-            position,
+            position: position.as_dvec3(),
             rotation: Quat::IDENTITY,
         },
         radius,

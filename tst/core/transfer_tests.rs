@@ -83,7 +83,7 @@ fn rocket() -> Prop {
     Prop::new(
         Body::Sphere {
             pose: Pose {
-                position: Vec3::ZERO,
+                position: DVec3::ZERO,
                 rotation: Quat::IDENTITY,
             },
             radius: 1.0e-8,
@@ -94,7 +94,7 @@ fn rocket() -> Prop {
                 a: 1.0,
             },
         },
-        Vec3::ZERO,
+        DVec3::ZERO,
         722.0,
     )
 }
@@ -121,8 +121,7 @@ fn a_departure_plan_passes_through_the_targets_centre_at_its_chosen_speed_under_
 
     // The speed relative to Earth at 200 km is what leaves 15.4 km/s once clear of Earth's pull.
     let earth_prop = scene.get(earth).unwrap();
-    let relative =
-        (plan.velocity_units_s - earth_prop.velocity_units_s).length() as f64 * METRES_PER_UNIT;
+    let relative = (plan.velocity_units_s - earth_prop.velocity_units_s).length() * METRES_PER_UNIT;
     let launch_radius = physical_radius_m(earth_prop) + LAUNCH_ALTITUDE_M;
     let mu = GRAVITATIONAL_CONSTANT * f64::from(earth_prop.mass_kg);
     let v_infinity = (relative * relative - 2.0 * mu / launch_radius).sqrt();
@@ -135,8 +134,10 @@ fn a_departure_plan_passes_through_the_targets_centre_at_its_chosen_speed_under_
 
     let last = *plan.path_units.last().unwrap();
     let first = plan.path_units[0];
+    // The drawn path is `f32`, the launch point `f64`: at Earth's `150` units an `f32` resolves
+    // `1.5e-5` units, so the path starts at the launch point to within that.
     assert!(
-        (first - plan.position_units).length() < 1.0e-6,
+        (first.as_dvec3() - plan.position_units).length() < 2.0e-5,
         "the path starts at the launch point"
     );
     assert!(
@@ -151,7 +152,7 @@ fn assert_landed(scene: &Scene, voyage: &Voyage) {
         .expect("the rocket reaches its target");
     let radius = physical_radius_m(scene.get(voyage.target).unwrap()) / METRES_PER_UNIT;
     assert!(
-        (f64::from(offset.length()) - radius).abs() < 1.0e-3 * radius,
+        (offset.length() - radius).abs() < 1.0e-3 * radius,
         "on the surface"
     );
     assert!(voyage.corrections > TRANSFER_CORRECTION_FRACTIONS.len());
@@ -220,7 +221,7 @@ fn distant_moon_systems_fold_into_their_planet_and_conserve_mass_and_momentum() 
         scene
             .props
             .iter()
-            .map(|p| p.velocity_units_s.as_dvec3() * f64::from(p.mass_kg))
+            .map(|p| p.velocity_units_s * f64::from(p.mass_kg))
             .sum::<DVec3>()
     };
     let (mass_before, momentum_before) = (mass(&scene), momentum(&scene));
@@ -243,7 +244,7 @@ fn distant_moon_systems_fold_into_their_planet_and_conserve_mass_and_momentum() 
     let largest = scene
         .props
         .iter()
-        .map(|p| f64::from(p.velocity_units_s.length()) * f64::from(p.mass_kg))
+        .map(|p| p.velocity_units_s.length() * f64::from(p.mass_kg))
         .fold(0.0, f64::max);
     let drift = (momentum(&scene) - momentum_before).length();
     assert!(
@@ -264,27 +265,27 @@ fn a_hop_between_moons_keeps_their_siblings() {
 
 #[test]
 fn a_segment_entering_a_sphere_is_caught_where_it_enters() {
-    let entry = segment_entry(Vec3::new(-2.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0), 1.0).unwrap();
-    assert!((entry - Vec3::new(-1.0, 0.0, 0.0)).length() < 1.0e-6);
+    let entry = segment_entry(DVec3::new(-2.0, 0.0, 0.0), DVec3::new(2.0, 0.0, 0.0), 1.0).unwrap();
+    assert!((entry - DVec3::new(-1.0, 0.0, 0.0)).length() < 1.0e-6);
 }
 
 #[test]
 fn a_segment_passing_beside_a_sphere_or_stopping_short_is_not_an_entry() {
     assert_eq!(
-        segment_entry(Vec3::new(-2.0, 1.5, 0.0), Vec3::new(2.0, 1.5, 0.0), 1.0),
+        segment_entry(DVec3::new(-2.0, 1.5, 0.0), DVec3::new(2.0, 1.5, 0.0), 1.0),
         None
     );
     assert_eq!(
-        segment_entry(Vec3::new(-3.0, 0.0, 0.0), Vec3::new(-2.0, 0.0, 0.0), 1.0),
+        segment_entry(DVec3::new(-3.0, 0.0, 0.0), DVec3::new(-2.0, 0.0, 0.0), 1.0),
         None
     );
 }
 
 #[test]
 fn a_segment_starting_inside_is_caught_at_its_start() {
-    let start = Vec3::new(0.5, 0.0, 0.0);
+    let start = DVec3::new(0.5, 0.0, 0.0);
     assert_eq!(
-        segment_entry(start, Vec3::new(3.0, 0.0, 0.0), 1.0),
+        segment_entry(start, DVec3::new(3.0, 0.0, 0.0), 1.0),
         Some(start)
     );
 }

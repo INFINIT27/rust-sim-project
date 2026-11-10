@@ -1,5 +1,13 @@
 # `src/input/` — input → camera motion
 
+> **Purpose:** Turns keyboard and mouse input into intent: the free-fly and orbit camera, the
+> clock keys, the `Esc` menu's and pop-ups' input mode, and the `R`/`G`/`B` requests.
+> **Edit here to:** change camera movement, look sensitivity, or the orbit lock, what a key
+> does, or whether a panel is modal.
+> **Not here:** the key-binding table is `src/bindings.rs` and `src/constants.rs`. On-screen
+> panels are in [`ui/`](../ui/README.md). Launch and placement requests are carried out in
+> [`render/`](../render/README.md).
+
 Turns keyboard, mouse, and window state into camera movement. Separate from
 `render/` because it drives the camera entity's `Transform` directly and never
 touches `Scene`.
@@ -10,11 +18,12 @@ touches `Scene`.
 | --- | --- |
 | `mod.rs` | Declares the layer. |
 | `constants.rs` | Every constant the layer reads: the `FreeFlyController` defaults (`CAMERA_MOVE_SPEED_UNITS_S`, `CAMERA_BOOST_MULTIPLIER`, `LOOK_SENSITIVITY_RAD_PER_PX`), the pitch clamp's `PITCH_LIMIT_MARGIN_RAD`, and `TIME_SCALE_KEY_FACTOR`. |
-| `camera.rs` | `FreeFlyController` (per-entity tuning + yaw/pitch/captured state), the pure `clamp_pitch` helper, `free_fly_camera_system`, and `FreeFlyCameraPlugin`. Also the camera lock: `CameraTarget`, `CameraLock(Option<Orbit>)`, `toggle_camera_lock_system` (`F`), and `orbit_camera_system`, which places a locked camera on its orbit after scroll zoom in `PostUpdate`. Moves on **observer** time, so the camera is unaffected by the simulation being paused or rescaled. |
+| `camera.rs` | `FreeFlyController` (per-entity tuning + yaw/pitch/captured state), `CameraSettings` (the tuning a new camera starts with, from `config/camera.toml`), the pure `clamp_pitch` helper, `free_fly_camera_system`, and `FreeFlyCameraPlugin`. Also the camera lock: `CameraTarget`, `CameraLock(Option<Orbit>)`, `toggle_camera_lock_system` (`F`), and `orbit_camera_system`, which places a locked camera on its orbit after scroll zoom in `PostUpdate`. Moves on **observer** time, so the camera is unaffected by the simulation being paused or rescaled. |
 | `controls.rs` | `SimulationControlsPlugin`, `simulation_controls_system`. The clock keys: `P`, `.`, `]`, `[`, `\`. |
 | `menu.rs` | `MenuState`, `menu_toggle_system`, `MenuInputPlugin`. Whether the `Esc` menu is open — the layer's **input mode** — and the key that toggles it. The panel itself is `ui/menu.rs`. |
 | `mission.rs` | `LaunchRequest`, `launch_input_system`, `LaunchInputPlugin`. `R` asks to pick the body at the crosshair as a rocket's origin or destination, and `G` asks for the next spacecraft in the fleet; `render/mission.rs` does the picking and flies it. |
 | `placement.rs` | `PlacementState`, `placement_input_system`, `PlacementInputPlugin`. The `B` picker: which interstellar object is selected, and whether a placement has been asked for. |
+| `popup.rs` | `PopupState`. Whether a dismissible pop-up (the arrival report) is open. While it is, the camera releases the cursor and stands down as it does for the menu, and `Esc` closes the pop-up before it opens the menu. Other keys stay bound. Opened and closed by `ui/arrival.rs`. |
 
 ### Two families of movement axis
 

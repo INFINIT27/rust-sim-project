@@ -135,7 +135,7 @@ pub(super) fn fly(
     };
     let mut last_point = r;
     if keep_path {
-        flight.path_units.push(to_units(r));
+        flight.path_units.push(to_units(r).as_vec3());
         flight.samples.push((t, r, v));
     }
     // Per body: whether the craft has been outside its Hill sphere yet, and the closest it has
@@ -144,6 +144,9 @@ pub(super) fn fly(
     let mut left = vec![false; bodies];
     let mut nearest_pass: Vec<Option<Encounter>> = vec![None; bodies];
 
+    // The acceleration at the current state. Each step ends by computing it at the new state,
+    // and the next step starts from it, so a step costs one evaluation.
+    let mut a = ephemeris.acceleration(r, t);
     let mut steps: u32 = 0;
     while t < horizon {
         steps = steps.wrapping_add(1);
@@ -162,11 +165,19 @@ pub(super) fn fly(
             )
             .min(horizon - t);
 
-        // Symplectic Euler, the order `integrate_gravity` uses: accelerate from the current
-        // configuration, then move at the new velocity.
-        v += ephemeris.acceleration(r, t) * dt;
+        // Kick-drift-kick leapfrog: half the step's speed change, the whole move at that
+        // mid-step velocity, then the other half from the acceleration where the craft ends up.
+        // It is second order, so its error falls with the square of the step. Symplectic Euler,
+        // which `integrate_gravity` uses, is first order. Its velocity error is about half the
+        // angle a step sweeps about the nearest body, and this step rule sweeps
+        // `TRANSFER_STEP_FRACTION` = 0.02 rad, so the error was about 1%. Through a pass of
+        // Jupiter at 2.1 radii and 40 km/s that is about 500 m/s, enough to plan a Ganymede flyby
+        // that the true path misses by 500,000 km. See `src/core/transfer/README.md`.
+        v += a * (0.5 * dt);
         r += v * dt;
         t += dt;
+        a = ephemeris.acceleration(r, t);
+        v += a * (0.5 * dt);
 
         let offset = r - ephemeris.position(toward, t);
         let relative_velocity = (offset - previous_offset) / dt;
@@ -196,7 +207,7 @@ pub(super) fn fly(
 
         if keep_path {
             if (r - last_point).length() >= spacing {
-                flight.path_units.push(to_units(r));
+                flight.path_units.push(to_units(r).as_vec3());
                 flight.samples.push((t, r, v));
                 last_point = r;
             }
@@ -245,7 +256,7 @@ pub(super) fn fly(
         if let Some(a) = approach {
             flight
                 .path_units
-                .push(to_units(ephemeris.position(toward, a.time_s) + a.offset_m));
+                .push(to_units(ephemeris.position(toward, a.time_s) + a.offset_m).as_vec3());
         }
         flight.encounters = nearest_pass
             .into_iter()

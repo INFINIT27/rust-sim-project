@@ -11,6 +11,27 @@ one exists. The convention is specified in
 
 ### Added
 
+- **Settings files, read at startup: `config/*.toml`, loaded by the new `src/config/` layer.**
+  Settings that were compile-time defaults can now be changed by editing a file and relaunching,
+  with no rebuild. See [`config/README.md`](config/README.md) and
+  [`src/config/README.md`](src/config/README.md).
+  - **Five files.** `spacecraft.toml` (the fleet `G` cycles through, with engines given by thrust
+    and specific impulse, and limits in g), `camera.toml`, `ui.toml` (crosshair, compass, arrival
+    pop-up), `trails.toml`, and `performance.toml`.
+  - **Optional, and strict.** Every file and every key is optional, and the shipped files hold
+    exactly the built-in values; a test keeps them in step with the code. A misspelt key, a wrong
+    type, or an out-of-range value stops the app with status 2, naming the file and key, the same
+    contract as a bad argument or `RGA_*` variable.
+  - **The environment still wins.** `RGA_AA`, `RGA_FLOOR_ECLIPSE` and `RGA_VSYNC` override
+    `performance.toml` for one run (`PerformanceSettings::from_env_over`). An experiment that sets
+    its own trail length still overrides `trails.toml`. `RGA_CONFIG` points the app at another
+    directory.
+  - **New resources** so these settings can be inserted: `CameraSettings` (the tuning a new
+    camera's `FreeFlyController` starts with) and `ArrivalPopupConfig`. Also new:
+    `Mission::with_fleet`, and the public `AntiAliasing::parse` and `AntiAliasing::name`.
+  - **New dependencies:** `serde` and `toml`. Only `src/config/` uses them, and the runtime types
+    carry no `serde` derives, so the file format is that layer's choice.
+
 - **`src/spacecraft/`, a new layer for everything about a craft.** `core` keeps the orbital
   mechanics (where each body will be, what coasts from here to there); the new layer decides when a
   craft burns, how hard, and toward what, and counts what it cost. Bevy-free but for `bevy::math`,
@@ -96,6 +117,59 @@ one exists. The convention is specified in
 - **`NoTransfer::Blocked` and `NoTransfer::NoArrival` moved to `spacecraft::NoFlight`**, with
   `TooMuchGravity` (a `3 g` craft can neither lift off from nor land on the Sun, at `28 g`) and
   `NoArc`.
+- **Positions and velocities are `f64`.** `Pose::position`, `Body::Line`'s endpoints,
+  `Prop::velocity_units_s`, `TransferPlan`'s start, and `gravitational_acceleration`'s result are
+  `DVec3`, and `integrate_gravity` steps in `f64`. They are the integrated state, and `f32` lost
+  what each substep added. At Earth's distance an `f32` position resolves `15 km`, and a `5.6 s`
+  substep (forced on the whole scene by a craft near Earth) moves Earth `168 km`, rounded the same
+  way every time. Measured against `f64` over one simulated day, Earth drifted `18,640 km` and
+  the Earth–Moon vector `70,739 km`. Velocities lost up to `1.8 mm/s` a substep the same way.
+  Shapes, rotations, masses, collision hulls, drawn paths, and everything handed to Bevy stay
+  `f32` and are narrowed at the boundary. `DVec3` is re-exported at the crate root. See
+  [`src/core/README.md`](src/core/README.md).
+- **`fly` integrates with kick-drift-kick leapfrog**, second order, instead of symplectic Euler,
+  at the same cost of one force evaluation a step. Every planner search goes through it, so
+  every plan shifts slightly.
+
+### Fixed
+
+- **`a_gravity_assisted_voyage_flown_live_passes_its_planet_and_lands` passes.** The route was
+  not chaotic, as recorded on 2026-11-08: it did not exist. It passes Jupiter at `2.1` radii and
+  `40 km/s`, where first-order steps of `0.02` rad gave `fly` a `1%` velocity error, `520 m/s` a
+  day later. Integrated accurately, the planned launch passes Ganymede `500,000 km` out and misses
+  Callisto by `54,683 km`, and a `30 m` change of start moves that by at most `23 km`. The
+  leapfrog `fly` fixed it. See "Resolved" in
+  [`src/core/transfer/README.md`](src/core/transfer/README.md).
+- **The crewed Earth→Moon trip flown through the app lands.** It used to climb to
+  `87,000 km`, fall back, and reach the Moon only because an unplanned close pass of Earth threw
+  it there. The live scene's `f32` drift near Earth was costing it about `300 m/s`.
+  `a_rocket_flown_through_the_app_lands_where_it_was_aimed` passed before only because of that
+  pass, and failed once the leapfrog `fly` moved it. With `f64` state it passes.
+- **A transfer plan's start was rounded to `f32`**, `5 km` off the planned launch altitude at
+  Earth's distance. On the straight climb to the Moon, `5 km` moves the top of the climb by about
+  `40,000 km`. Fixed by the `f64` `TransferPlan`.
+- **The arrival pop-up can be dismissed, and frees the cursor.** It used to appear under the
+  crosshair with the cursor still captured, and stayed until the next `R`. Now it opens a new
+  `PopupState` (`src/input/popup.rs`). While that is open, the camera releases the cursor and
+  stands down as it does for the `Esc` menu. The pop-up's title-bar ✕, or `Esc`, closes it for
+  that landing; `Esc` closes a pop-up before it opens the menu. It runs after the camera system,
+  so the click on ✕ does not capture the cursor. The crosshair now paints on egui's background
+  layer, under every window, so the pop-up and the menu cover it rather than being crossed by it.
+
+### Docs
+
+- **The `README.md` files are now an index.** Every directory `README.md` opens with a fixed
+  lookup summary (**Purpose** / **Edit here to** / **Not here**) right under its heading, so
+  finding where a change goes means reading one paragraph per candidate directory instead of
+  the whole file. The **Not here** line names the wrong guess a reader is most likely to make
+  and points to the right directory. The rule, its audit, and a one-command dump of the whole
+  index are in
+  [`.claude/steering/source-directory-docs.md`](.claude/steering/source-directory-docs.md).
+- **The root `README.md` directory map lists every directory.** It was missing
+  `src/core/transfer/`, `src/physics_utils/relativity/`, `src/performance/`, and `assets/`.
+  Its column now says what to go to each directory to change, not what the directory covers.
+- **Fixed two stale facts.** `src/README.md` said the crate has eight layers; it has ten.
+  `src/core/README.md` listed `transfer.rs`, which is now the `transfer/` directory.
 
 ## 2026-11-08
 

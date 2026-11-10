@@ -1,6 +1,12 @@
 # `src/` — crate sources
 
-The `physics-sandbox` crate root and its eight layer directories. Every layer is a
+> **Purpose:** The crate root (`lib.rs`, `main.rs`), the files shared by every layer
+> (`constants.rs`, `bindings.rs`), and the map of the ten layer directories.
+> **Edit here to:** add a layer, change the window or app wiring, add a key binding, add a
+> constant two layers read, or re-export a new public item.
+> **Not here:** anything a single layer owns. Find the layer in the table below.
+
+The `physics-sandbox` crate root and its ten layer directories. Every layer is a
 module directory with its own `README.md`; this file explains how they relate
 and where a new one would go.
 
@@ -8,10 +14,10 @@ and where a new one would go.
 
 | Path | Job |
 | --- | --- |
-| `lib.rs` | Crate root. Declares the eight layers and re-exports every public item at the crate root. |
+| `lib.rs` | Crate root. Declares the ten layers and re-exports every public item at the crate root. |
 | `constants.rs` | Constants read by **more than one layer** — the unit scale, the shipped scene's configuration, the key-binding table — plus the window values `main.rs` owns. |
 | `bindings.rs` | The key bindings as *data*: `KeyBinding`, `BindingGroup`, and the renderers `--help` and the `Esc` menu both read. Above every layer for the same reason `constants.rs` is — two layers need it and neither may import the other. |
-| `main.rs` | Binary entry point. Builds the `App`, configures the window, adds the plugins, calls `run()`. The window is **full-screen and borderless** (`WINDOW_MODE` in `constants.rs`, amendment A12), so it has no close button: quit with `Cmd`-`Q`, `Alt`-`F4`, or `Ctrl`-`C`. Set `WINDOW_MODE` to `WindowMode::Windowed` for an 800×600 window. |
+| `main.rs` | Binary entry point. Builds the `App`, loads `config/*.toml` (see `config/`) and inserts it before any plugin, configures the window, adds the plugins, calls `run()`. The window is **full-screen and borderless** (`WINDOW_MODE` in `constants.rs`, amendment A12), so it has no close button: quit with `Cmd`-`Q`, `Alt`-`F4`, or `Ctrl`-`C`. Set `WINDOW_MODE` to `WindowMode::Windowed` for an 800×600 window. |
 | `core/` | GUI-free world model. Bevy-free apart from `bevy::math`. |
 | `collision/` | Body physics: the triangle hull that bounds each prop, the contact test over those hulls, and the elastic response. |
 | `render/` | The boundary that mirrors the model onto Bevy's ECS. |
@@ -22,6 +28,7 @@ and where a new one would go.
 | `experiments/` | The catalog of simulations, each one's settings, and the command-line selection that picks one. |
 | `spacecraft/` | What a craft is, the fleet `G` cycles, planning a flight (the least-energy transfer by default), flying it, and its report. Above `core`, Bevy-free but for `bevy::math`. |
 | `performance/` | The `RGA_*` switches that trade image quality for frame time (anti-aliasing, floor eclipse, vsync), the frame-time benchmark, and the measurements behind each default. |
+| `config/` | Reads `config/*.toml` at startup into the resources the other layers own: the fleet, camera tuning, crosshair, compass, arrival pop-up, trails, performance switches. Above every other layer, beside `main.rs`. |
 
 ## Rules and invariants
 

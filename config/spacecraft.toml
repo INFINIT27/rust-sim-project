@@ -1,0 +1,57 @@
+# The spacecraft `G` cycles through, in order. The first is selected at launch.
+# Delete every [[craft]] to fall back to the built-in fleet.
+#
+# Each craft:
+#   name                 shown in the HUD and the arrival pop-up
+#   mass_kg              mass, kg
+#   radius_m             optional, metres (default 2)
+#   color                optional, linear [r, g, b, a], each 0-1
+#   launch_altitude_m    optional, height above the origin's surface (default 200 km)
+#   [craft.propulsion]   kind = "transfer" (least-energy transfer), "direct" (burns straight at the
+#                        target) or "coasting" (no engine)
+#     max_acceleration_g     transfer/direct, optional: acceleration limit in g; full thrust if left out
+#     max_departure_speed_m_s  coasting: fastest launch it may be given, m/s
+#   [craft.propulsion.engine]  transfer/direct: name, thrust_n (N), specific_impulse_s (s)
+
+[[craft]]
+name = "Crewed transfer (3 g)"
+mass_kg = 15_000.0
+radius_m = 2.0
+color = [0.2, 0.95, 1.0, 1.0]
+launch_altitude_m = 200_000.0
+
+[craft.propulsion]
+kind = "transfer"
+max_acceleration_g = 3.0
+
+[craft.propulsion.engine]
+name = "Aerojet 260"
+thrust_n = 26.2e6
+specific_impulse_s = 263.0
+
+[[craft]]
+name = "Full-thrust direct (uncrewed)"
+mass_kg = 15_000.0
+radius_m = 2.0
+color = [0.2, 0.95, 1.0, 1.0]
+launch_altitude_m = 200_000.0
+
+[craft.propulsion]
+kind = "direct"
+# No max_acceleration_g: the engine's full thrust, about 178 g on 15 t.
+
+[craft.propulsion.engine]
+name = "Aerojet 260"
+thrust_n = 26.2e6
+specific_impulse_s = 263.0
+
+[[craft]]
+name = "Coasting probe (Voyager-like)"
+mass_kg = 722.0
+radius_m = 2.0
+color = [0.2, 0.95, 1.0, 1.0]
+launch_altitude_m = 200_000.0
+
+[craft.propulsion]
+kind = "coasting"
+max_departure_speed_m_s = 15_400.0

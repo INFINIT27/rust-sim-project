@@ -1,0 +1,22 @@
+# On-screen elements. Sizes are in logical pixels.
+
+[crosshair]
+arm_length_px = 6.0
+# Empty gap at the centre, so the crosshair does not hide what it points at.
+gap_px = 3.0
+thickness_px = 1.0
+# sRGB colour and opacity, each 0-255.
+color_srgba = [255, 255, 255, 200]
+
+[compass]
+# Length of each axis.
+radius_px = 28.0
+# Distance from the window's top-right corner.
+margin_px = 16.0
+thickness_px = 2.0
+label_size_px = 13.0
+
+[arrival]
+# The pop-up shown when a spacecraft lands.
+width_px = 440.0
+label_column_px = 190.0

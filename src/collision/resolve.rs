@@ -69,7 +69,7 @@ use crate::collision::contact::{contact_between_meshes, Contact};
 use crate::collision::tessellate::{contact_mesh, hull_box};
 use crate::collision::trimesh::TriMesh;
 use crate::constants::METRES_PER_UNIT;
-use crate::core::scene::{Body, Prop};
+use crate::core::scene::{Body, DVec3, Prop};
 use crate::physics_utils::conservation_laws::elastic_collision_1d;
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::time::simulation::TimeStep;
@@ -99,21 +99,21 @@ use crate::time::simulation::TimeStep;
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{substep_count, Body, Color, Pose, Prop, Quat, TimeStep, Vec3};
+/// use physics_sandbox::{substep_count, Body, Color, Pose, Prop, Quat, TimeStep, DVec3, Vec3};
 ///
 /// let ball = Body::Sphere {
-///     pose: Pose { position: Vec3::ZERO, rotation: Quat::IDENTITY },
+///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
 ///     radius: 1.0,
 ///     color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
 /// };
 /// let one_second = TimeStep::from_seconds(1.0).unwrap();
 ///
 /// // Slow enough to need no splitting.
-/// let slow = [Prop::new(ball.clone(), Vec3::new(0.1, 0.0, 0.0), 1.0)];
+/// let slow = [Prop::new(ball.clone(), DVec3::new(0.1, 0.0, 0.0), 1.0)];
 /// assert_eq!(substep_count(&slow, one_second), 1);
 ///
 /// // 10 units per second over a full second is 40 quarter-unit steps.
-/// let fast = [Prop::new(ball, Vec3::new(10.0, 0.0, 0.0), 1.0)];
+/// let fast = [Prop::new(ball, DVec3::new(10.0, 0.0, 0.0), 1.0)];
 /// assert_eq!(substep_count(&fast, one_second), 40);
 ///
 /// // A zero-length step needs no splitting either.
@@ -131,11 +131,12 @@ pub fn substep_count(props: &[Prop], step: TimeStep) -> u32 {
         .filter(|prop| !prop.immovable)
         .map(Prop::speed)
         .filter(|speed| speed.is_finite())
-        .fold(0.0_f32, f32::max);
+        .fold(0.0_f64, f64::max);
 
-    let travel = fastest * dt;
-    let for_contact = if travel.is_finite() && travel > MAX_SUBSTEP_DISPLACEMENT_UNITS {
-        travel / MAX_SUBSTEP_DISPLACEMENT_UNITS
+    let travel = fastest * step.seconds();
+    let cap = f64::from(MAX_SUBSTEP_DISPLACEMENT_UNITS);
+    let for_contact = if travel.is_finite() && travel > cap {
+        (travel / cap) as f32
     } else {
         1.0
     };
@@ -221,7 +222,7 @@ fn orbital_substeps(props: &[Prop], dt: f32) -> f32 {
 
             // In SI, like every other gravitational quantity in the crate: `r³` at
             // astronomical scales overflows `f32` long before it means anything.
-            let separation_m = f64::from(separation) * METRES_PER_UNIT;
+            let separation_m = separation * METRES_PER_UNIT;
             let dynamical_time =
                 (separation_m.powi(3) / (GRAVITATIONAL_CONSTANT * total_mass)).sqrt() as f32;
 
@@ -377,7 +378,7 @@ fn sphere_reaches_box(boxed: &Prop, other: &Prop) -> bool {
     // from the raw quaternion, so this is the box it actually is.
     let scale = frame.rotation.length_squared();
     let extent = frame.half_extents * scale;
-    let point = other.body.center();
+    let point = other.body.center().as_vec3();
     let local = frame.rotation.normalize().conjugate() * (point - frame.centre);
     let gap = (local - local.clamp(-extent, extent)).length();
 
@@ -409,7 +410,7 @@ fn bounding_spheres_overlap(a: &Prop, b: &Prop) -> bool {
         return true;
     }
 
-    separation <= radius_a + radius_b
+    separation <= f64::from(radius_a + radius_b)
 }
 
 /// A radius that certainly contains this prop's physical extent, in world units.
@@ -438,7 +439,7 @@ fn bounding_radius(prop: &Prop) -> Option<f32> {
         }
         Body::Line {
             from, to, width, ..
-        } => 0.5 * (*to - *from).length() + *width,
+        } => 0.5 * (*to - *from).length() as f32 + *width,
     };
 
     if radius.is_finite() && radius >= 0.0 {
@@ -484,7 +485,7 @@ fn apply_contact(props: &mut [Prop], i: usize, j: usize, contact: &Contact) {
     let a = &mut head[i];
     let b = &mut tail[0];
 
-    let normal = contact.normal;
+    let normal = contact.normal.as_dvec3();
 
     // Negative means the pair is closing along the normal. A pair that is already
     // separating gets no impulse — it is on its way out, and reversing it again
@@ -504,8 +505,8 @@ fn apply_contact(props: &mut [Prop], i: usize, j: usize, contact: &Contact) {
             // back along the normal. Only the normal component is touched, so the
             // tangential motion survives untouched (there is no friction).
             (false, false) => {
-                let normal_a = a.velocity_units_s.dot(normal) as f64;
-                let normal_b = b.velocity_units_s.dot(normal) as f64;
+                let normal_a = a.velocity_units_s.dot(normal);
+                let normal_b = b.velocity_units_s.dot(normal);
 
                 // Velocities are in units/s rather than m/s. The elastic solution
                 // is linear in velocity and scale-free in the length unit, so
@@ -515,8 +516,8 @@ fn apply_contact(props: &mut [Prop], i: usize, j: usize, contact: &Contact) {
                 let (outgoing_a, outgoing_b) =
                     elastic_collision_1d(a.mass_kg as f64, normal_a, b.mass_kg as f64, normal_b);
 
-                a.velocity_units_s += ((outgoing_a - normal_a) as f32) * normal;
-                b.velocity_units_s += ((outgoing_b - normal_b) as f32) * normal;
+                a.velocity_units_s += (outgoing_a - normal_a) * normal;
+                b.velocity_units_s += (outgoing_b - normal_b) * normal;
             }
             // Two walls. Filtered out before we get here.
             (true, true) => {}
@@ -534,9 +535,9 @@ fn apply_contact(props: &mut [Prop], i: usize, j: usize, contact: &Contact) {
 /// returned in full. Written directly rather than by passing a huge mass to the
 /// solver, because "a very large number" is not the same claim as "immovable" and
 /// the limit is exact.
-fn reflect_off_wall(prop: &mut Prop, normal: Vec3) {
+fn reflect_off_wall(prop: &mut Prop, normal: DVec3) {
     let along_normal = prop.velocity_units_s.dot(normal);
-    prop.velocity_units_s -= (1.0 + RESTITUTION) * along_normal * normal;
+    prop.velocity_units_s -= (1.0 + f64::from(RESTITUTION)) * along_normal * normal;
 }
 
 /// Push the pair apart along `normal` by `depth`, split by inverse mass.
@@ -553,7 +554,7 @@ fn reflect_off_wall(prop: &mut Prop, normal: Vec3) {
 /// projection-based separation, and it is bounded by the depth: at the depths a
 /// substepped scene produces the addition is far below the integrator's own
 /// first-order error.
-fn separate(a: &mut Prop, b: &mut Prop, normal: Vec3, depth: f32) {
+fn separate(a: &mut Prop, b: &mut Prop, normal: DVec3, depth: f32) {
     if !depth.is_finite() || depth <= 0.0 {
         return;
     }
@@ -584,10 +585,10 @@ fn separate(a: &mut Prop, b: &mut Prop, normal: Vec3, depth: f32) {
     let share_b = depth * (weight_b / total);
 
     if share_a > 0.0 {
-        a.body.translate(-normal * share_a);
+        a.body.translate(-normal * f64::from(share_a));
     }
     if share_b > 0.0 {
-        b.body.translate(normal * share_b);
+        b.body.translate(normal * f64::from(share_b));
     }
 }
 

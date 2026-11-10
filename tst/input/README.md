@@ -1,5 +1,10 @@
 # `tst/input/` — tests for `src/input/`
 
+> **Purpose:** Tests for [`src/input/`](../../src/input/README.md): the camera, the clock
+> keys, the `Esc` menu gate, and the `B` picker's keys.
+> **Edit here to:** add or fix a test of a key or of camera movement.
+> **Not here:** the controller, its known defects, and the key map, in `src/input/`.
+
 Tests for the free-fly camera, the clock keys, and the menu's input mode. See
 `src/input/README.md` for the invariants and for the three known defects in the controller
 itself.
@@ -10,7 +15,7 @@ itself.
 | --- | --- |
 | `camera_tests.rs` | `FreeFlyController::default()` field pins, `clamp_pitch` spot checks and a property, the movement axes driven through the real system, and one plugin smoke test. |
 | `controls_tests.rs` | 18 tests: every clock key driven through the real system, edge-triggering, the scale clamps, and the no-collision check against the camera's keys. |
-| `menu_tests.rs` | 15 tests: `Esc` opening and closing the menu, edge-triggering, and **the gate** — that the camera, the clock keys, and `T` all go inert while the menu is open and work again when it closes, that the cursor is released but not re-grabbed, and that `MouseMotion` is still drained. |
+| `menu_tests.rs` | 16 tests: `Esc` opening and closing the menu, edge-triggering, and **the gate** — that the camera, the clock keys, and `T` all go inert while the menu is open and work again when it closes, that the cursor is released but not re-grabbed, that `MouseMotion` is still drained, and that `Esc` closes an open pop-up before it opens the menu and a click behind the pop-up does not capture the cursor. |
 | `placement_tests.rs` | 16 tests: `B` opening the picker, the arrows wrapping, `Enter` arming a request only while open, the menu closing it — and that none of its four keys collide, since unlike the menu the picker is **not** modal. |
 
 ## What is covered

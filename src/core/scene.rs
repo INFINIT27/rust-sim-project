@@ -14,7 +14,7 @@
 // Re-export `glam` types via `bevy::math` so downstream modules (and library
 // consumers) pick up the exact same `Vec3`/`Quat` that Bevy uses, without
 // `Scene`'s module needing a direct `glam` dependency.
-pub use bevy::math::{Quat, Vec3};
+pub use bevy::math::{DVec3, Quat, Vec3};
 
 use crate::constants::{
     EARTH_MASS_KG, METRES_PER_UNIT, TWO_BODY_HEIGHT_UNITS, TWO_BODY_SEPARATION_UNITS,
@@ -30,11 +30,16 @@ use crate::core::constants::{
 
 /// A rigid-body pose: a position plus a unit-quaternion rotation.
 ///
+/// The position is `f64`. It is integrated state: every substep adds a small displacement to it, and
+/// at Earth's distance from the Sun (`150` units) an `f32` position resolves only `15 km`, so the
+/// rounding of each addition drifted Earth by `18,000 km` a day at a `5.6 s` substep. The rotation
+/// is never integrated, so it stays `f32`.
+///
 /// See Requirement 6.2. Validation (finite components, unit rotation within
 /// `1e-4`) lands in task 2.2 via `Pose::is_valid`.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Pose {
-    pub position: Vec3,
+    pub position: DVec3,
     pub rotation: Quat,
 }
 
@@ -119,8 +124,8 @@ pub enum Body {
         color: Color,
     },
     Line {
-        from: Vec3,
-        to: Vec3,
+        from: DVec3,
+        to: DVec3,
         width: f32,
         color: Color,
     },
@@ -205,7 +210,7 @@ impl Body {
     ///
     /// Total: every variant has a centre, so there is no `Option` here.
     #[inline]
-    pub fn center(&self) -> Vec3 {
+    pub fn center(&self) -> DVec3 {
         match self {
             Body::Sphere { pose, .. } | Body::Cuboid { pose, .. } | Body::Plane { pose, .. } => {
                 pose.position
@@ -226,7 +231,7 @@ impl Body {
     /// [`Body::is_valid`] then reports — this method does not police its caller,
     /// matching the module's advisory-validation convention.
     #[inline]
-    pub fn translate(&mut self, delta: Vec3) {
+    pub fn translate(&mut self, delta: DVec3) {
         match self {
             Body::Sphere { pose, .. } | Body::Cuboid { pose, .. } | Body::Plane { pose, .. } => {
                 pose.position += delta;
@@ -286,20 +291,20 @@ impl Body {
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{Body, Color, Pose, Prop, Quat, Vec3};
+/// use physics_sandbox::{Body, Color, Pose, Prop, Quat, DVec3, Vec3};
 ///
 /// let ball = Body::Sphere {
-///     pose: Pose { position: Vec3::new(0.0, 10.0, 0.0), rotation: Quat::IDENTITY },
+///     pose: Pose { position: DVec3::new(0.0, 10.0, 0.0), rotation: Quat::IDENTITY },
 ///     radius: 0.5,
 ///     color: Color { r: 0.8, g: 0.2, b: 0.2, a: 1.0 },
 /// };
 ///
 /// // Falling straight down at 3 m/s, 2 kg.
-/// let prop = Prop::new(ball, Vec3::new(0.0, -3.0, 0.0), 2.0);
+/// let prop = Prop::new(ball, DVec3::new(0.0, -3.0, 0.0), 2.0);
 ///
 /// assert!(prop.is_valid());
 /// assert_eq!(prop.speed(), 3.0);
-/// assert_eq!(prop.heading(), Some(Vec3::new(0.0, -1.0, 0.0)));
+/// assert_eq!(prop.heading(), Some(DVec3::new(0.0, -1.0, 0.0)));
 /// assert!(prop.responds_to_forces());
 /// ```
 #[derive(Clone, Debug, PartialEq)]
@@ -314,11 +319,15 @@ pub struct Prop {
     /// position, and positions are in units. Use [`Prop::speed_m_s`] to read the
     /// speed in SI.
     ///
-    /// Must be finite. Must be exactly `Vec3::ZERO` when
+    /// `f64`, like the position, because it is integrated too: a substep adds `a · dt`, and near
+    /// Earth that is `0.03 m/s` on `30 km/s`, which an `f32` rounds by up to `1.8 mm/s` the same way
+    /// every substep, tens of m/s a day.
+    ///
+    /// Must be finite. Must be exactly `DVec3::ZERO` when
     /// [`immovable`](Self::immovable) is set — an immovable prop with a velocity
     /// is a contradiction, and silently ignoring it would leave the author
     /// wondering why their wall never moved.
-    pub velocity_units_s: Vec3,
+    pub velocity_units_s: DVec3,
     /// Mass in kilograms. Must be finite and non-negative.
     ///
     /// `0.0` means genuinely massless, **not** static — see the table on
@@ -400,7 +409,7 @@ impl Prop {
     ///
     /// Sets `immovable` to `false`. Use [`Prop::immovable`] for fixed geometry.
     #[inline]
-    pub const fn new(body: Body, velocity_units_s: Vec3, mass_kg: f32) -> Self {
+    pub const fn new(body: Body, velocity_units_s: DVec3, mass_kg: f32) -> Self {
         Self {
             body,
             velocity_units_s,
@@ -418,7 +427,7 @@ impl Prop {
     /// it is integrated, it pulls, and it can be pulled. The difference is only what
     /// happens on contact — see [`Prop::absorbs`] and [`crate::collision::absorb`].
     #[inline]
-    pub const fn absorbing(body: Body, velocity_units_s: Vec3, mass_kg: f32) -> Self {
+    pub const fn absorbing(body: Body, velocity_units_s: DVec3, mass_kg: f32) -> Self {
         Self {
             body,
             velocity_units_s,
@@ -433,7 +442,7 @@ impl Prop {
     /// A movable prop at rest with the given mass.
     #[inline]
     pub const fn at_rest(body: Body, mass_kg: f32) -> Self {
-        Self::new(body, Vec3::ZERO, mass_kg)
+        Self::new(body, DVec3::ZERO, mass_kg)
     }
 
     /// Fixed geometry: never integrated, never moved by a force.
@@ -452,7 +461,7 @@ impl Prop {
     pub const fn immovable(body: Body) -> Self {
         Self {
             body,
-            velocity_units_s: Vec3::ZERO,
+            velocity_units_s: DVec3::ZERO,
             mass_kg: 0.0,
             immovable: true,
             absorbs: false,
@@ -470,7 +479,7 @@ impl Prop {
     pub const fn immovable_with_mass(body: Body, mass_kg: f32) -> Self {
         Self {
             body,
-            velocity_units_s: Vec3::ZERO,
+            velocity_units_s: DVec3::ZERO,
             mass_kg,
             immovable: true,
             absorbs: false,
@@ -489,10 +498,10 @@ impl Prop {
     /// # Examples
     ///
     /// ```
-    /// use physics_sandbox::{Body, Color, Pose, Prop, Quat, Vec3};
+    /// use physics_sandbox::{Body, Color, Pose, Prop, Quat, DVec3, Vec3};
     ///
     /// let jupiter = Body::Sphere {
-    ///     pose: Pose { position: Vec3::ZERO, rotation: Quat::IDENTITY },
+    ///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
     ///     radius: 10.973,                       // drawn 157x life size, to be visible
     ///     color: Color { r: 0.8, g: 0.65, b: 0.45, a: 1.0 },
     /// };
@@ -517,10 +526,10 @@ impl Prop {
     /// # Examples
     ///
     /// ```
-    /// use physics_sandbox::{Body, Color, Pose, Prop, Quat, Vec3};
+    /// use physics_sandbox::{Body, Color, Pose, Prop, Quat, DVec3, Vec3};
     ///
     /// let sun = Body::Sphere {
-    ///     pose: Pose { position: Vec3::ZERO, rotation: Quat::IDENTITY },
+    ///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
     ///     radius: 0.6957,
     ///     color: Color { r: 1.0, g: 0.85, b: 0.35, a: 1.0 },
     /// };
@@ -559,7 +568,7 @@ impl Prop {
             && self.velocity_units_s.is_finite()
             && self.mass_kg.is_finite()
             && self.mass_kg >= 0.0
-            && (!self.immovable || self.velocity_units_s == Vec3::ZERO)
+            && (!self.immovable || self.velocity_units_s == DVec3::ZERO)
             && contact_radius_ok
             && self.luminosity_solar.is_finite()
             && self.luminosity_solar >= 0.0
@@ -567,7 +576,7 @@ impl Prop {
 
     /// Speed in world units per second: the magnitude of the velocity vector.
     #[inline]
-    pub fn speed(&self) -> f32 {
+    pub fn speed(&self) -> f64 {
         self.velocity_units_s.length()
     }
 
@@ -579,15 +588,15 @@ impl Prop {
     /// physically sensible.
     #[inline]
     pub fn speed_m_s(&self) -> f64 {
-        self.speed() as f64 * METRES_PER_UNIT
+        self.speed() * METRES_PER_UNIT
     }
 
     /// Unit vector in the direction of travel, or `None` when at rest.
     ///
     /// `None` rather than a zero vector or a `NaN`: a stationary prop has no
-    /// heading, and normalising `Vec3::ZERO` is undefined.
+    /// heading, and normalising `DVec3::ZERO` is undefined.
     #[inline]
-    pub fn heading(&self) -> Option<Vec3> {
+    pub fn heading(&self) -> Option<DVec3> {
         let speed = self.speed();
         if speed > 0.0 && speed.is_finite() {
             Some(self.velocity_units_s / speed)
@@ -796,7 +805,7 @@ impl Scene {
         // 50.0 if the floor should span the whole simulation volume.
         scene.add(Prop::immovable(Body::Plane {
             pose: Pose {
-                position: Vec3::ZERO,
+                position: DVec3::ZERO,
                 rotation: Quat::IDENTITY,
             },
             half_size: DEMO_FLOOR_HALF_SIZE_UNITS,
@@ -885,7 +894,7 @@ impl Scene {
         scene.add(Prop::at_rest(
             Body::Sphere {
                 pose: Pose {
-                    position: Vec3::new(-half_separation, height, 0.0),
+                    position: DVec3::new(-f64::from(half_separation), f64::from(height), 0.0),
                     rotation: Quat::IDENTITY,
                 },
                 radius: TWO_BODY_VISUAL_RADIUS_UNITS,
@@ -897,7 +906,7 @@ impl Scene {
         scene.add(Prop::at_rest(
             Body::Sphere {
                 pose: Pose {
-                    position: Vec3::new(half_separation, height, 0.0),
+                    position: DVec3::new(f64::from(half_separation), f64::from(height), 0.0),
                     rotation: Quat::IDENTITY,
                 },
                 radius: TWO_BODY_VISUAL_RADIUS_UNITS,
@@ -1203,7 +1212,7 @@ impl Scene {
 /// Earth's Moon twice as hard as Earth does. The most massive body is never a moon and never
 /// a primary, and neither is an immovable prop. When a body sits inside several Hill spheres,
 /// the nearest primary wins.
-pub fn moon_primary(scene: &Scene, id: BodyId) -> Option<(BodyId, f32)> {
+pub fn moon_primary(scene: &Scene, id: BodyId) -> Option<(BodyId, f64)> {
     let moon = scene.get(id).filter(|prop| !prop.immovable)?;
     let movable = || scene.iter().filter(|(_, prop)| !prop.immovable);
     let (dominant_id, dominant) =
@@ -1223,7 +1232,7 @@ pub fn moon_primary(scene: &Scene, id: BodyId) -> Option<(BodyId, f32)> {
         .filter_map(|(primary_id, primary)| {
             let primary_at = primary.body.center();
             let hill_radius = primary_at.distance(dominant_at)
-                * (primary.mass_kg / (3.0 * dominant.mass_kg)).cbrt();
+                * (f64::from(primary.mass_kg) / (3.0 * f64::from(dominant.mass_kg))).cbrt();
             let distance = moon_at.distance(primary_at);
             (distance < hill_radius).then_some((primary_id, distance))
         })

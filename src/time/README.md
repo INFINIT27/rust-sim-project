@@ -1,5 +1,13 @@
 # `src/time/` — one clock for the experiment, one for the observer
 
+> **Purpose:** Every definition of duration: the simulation clock (scale, pause, single-step),
+> the observer (wall) clock, and the validated `TimeStep` every physics entry point takes. It
+> imports no Bevy.
+> **Edit here to:** change the time-scale limits, the frame-step clamp, pause or single-step,
+> or how a duration is validated.
+> **Not here:** the clock keys are `input/controls.rs`. The Bevy `Resource` impls are in
+> `render/plugin.rs`.
+
 Every definition of duration in the crate. This layer exists because time used to
 be *implicit*: a raw `f32` frame delta was clamped and scaled inside a Bevy system,
 handed down through four physics signatures that each re-validated it, and read

@@ -88,7 +88,7 @@ pub use bevy::math::{Quat, Vec3};
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::constants::DEMO_BOUNDS_MIN_UNITS;
-use crate::core::scene::{Aabb, Body, Color, Pose, Prop, Scene};
+use crate::core::scene::{Aabb, Body, Color, DVec3, Pose, Prop, Scene};
 use crate::experiments::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
 use crate::experiments::constants::{
     DEFAULT_RANDOM_SEED, MOON_SYSTEMS, SOLAR_SYSTEM_CAMERA_POSITION_UNITS,
@@ -256,7 +256,7 @@ pub fn radius_units(radius_m: f64) -> f32 {
 /// ```
 ///
 /// [`METRES_PER_UNIT`]: crate::constants::METRES_PER_UNIT
-pub fn circular_orbit_speed_units_s(radius_m: f64, central_mass_kg: f32) -> f32 {
+pub fn circular_orbit_speed_units_s(radius_m: f64, central_mass_kg: f32) -> f64 {
     debug_assert!(
         radius_m.is_finite() && radius_m > 0.0,
         "circular_orbit_speed_units_s: radius must be finite and positive, got {}",
@@ -278,7 +278,7 @@ pub fn circular_orbit_speed_units_s(radius_m: f64, central_mass_kg: f32) -> f32 
 
     let speed_m_s = (GRAVITATIONAL_CONSTANT * f64::from(central_mass_kg) / radius_m).sqrt();
 
-    (speed_m_s / METRES_PER_UNIT) as f32
+    speed_m_s / METRES_PER_UNIT
 }
 
 /// Orbital period of a circular orbit of radius `radius_m` about `central_mass_kg`, in
@@ -291,7 +291,7 @@ pub fn circular_orbit_speed_units_s(radius_m: f64, central_mass_kg: f32) -> f32 
 ///
 /// Returns `0.0` where the speed would be zero, for the same reason.
 pub fn circular_orbit_period_seconds(radius_m: f64, central_mass_kg: f32) -> f64 {
-    let speed_units_s = f64::from(circular_orbit_speed_units_s(radius_m, central_mass_kg));
+    let speed_units_s = circular_orbit_speed_units_s(radius_m, central_mass_kg);
 
     if speed_units_s <= 0.0 {
         return 0.0;
@@ -308,11 +308,11 @@ pub fn circular_orbit_period_seconds(radius_m: f64, central_mass_kg: f32) -> f64
 /// wind the planets *clockwise* and the whole system would run backwards. The
 /// arrangement of the J2000 longitudes relative to each other is only meaningful with the
 /// sense right.
-fn ecliptic_position(longitude_deg: f64, radius_units: f32) -> Vec3 {
+fn ecliptic_position(longitude_deg: f64, radius_units: f64) -> DVec3 {
     let longitude = longitude_deg.to_radians();
-    let radial = Vec3::new(longitude.cos() as f32, 0.0, -(longitude.sin() as f32));
+    let radial = DVec3::new(longitude.cos(), 0.0, -longitude.sin());
 
-    radial * radius_units + Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS
+    radial * radius_units + DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS)
 }
 
 /// `experiment_3` — the Sun and the eight planets on real orbits.
@@ -379,7 +379,7 @@ pub fn solar_system() -> Experiment {
         Prop::at_rest(
             Body::Sphere {
                 pose: Pose {
-                    position: Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS,
+                    position: DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS),
                     rotation: Quat::IDENTITY,
                 },
                 radius: radius_units(SOLAR_SYSTEM_SUN_RADIUS_M),
@@ -404,23 +404,24 @@ pub fn solar_system() -> Experiment {
     let mut outermost_units = radius_units(SOLAR_SYSTEM_SUN_RADIUS_M);
 
     for planet in SOLAR_SYSTEM_PLANETS {
-        let orbit_units = (planet.semi_major_axis_m / METRES_PER_UNIT) as f32;
+        let orbit_units = planet.semi_major_axis_m / METRES_PER_UNIT;
         let body_radius = radius_units(planet.radius_m);
         let position = ecliptic_position(planet.mean_longitude_deg, orbit_units);
 
         // Exactly tangential: perpendicular to the radius and to the ecliptic normal,
         // which is what `cross` gives. Taken in the sense that makes longitude increase
         // — see `ecliptic_position`.
-        let radial = (position - Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS) / orbit_units;
-        let tangent = Vec3::Y.cross(radial).normalize();
+        let radial =
+            (position - DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS)) / orbit_units;
+        let tangent = DVec3::Y.cross(radial).normalize();
         let speed =
             circular_orbit_speed_units_s(planet.semi_major_axis_m, SOLAR_SYSTEM_SUN_MASS_KG);
         let velocity = tangent * speed;
 
-        momentum_x += planet.mass_kg * f64::from(velocity.x);
-        momentum_z += planet.mass_kg * f64::from(velocity.z);
+        momentum_x += planet.mass_kg * velocity.x;
+        momentum_z += planet.mass_kg * velocity.z;
 
-        outermost_units = outermost_units.max(orbit_units + body_radius);
+        outermost_units = outermost_units.max(orbit_units as f32 + body_radius);
 
         let id = scene.add(Prop::new(
             Body::Sphere {
@@ -465,20 +466,20 @@ pub fn solar_system() -> Experiment {
         let primary_velocity = scene.props[primary_index].velocity_units_s;
 
         for moon in system.moons {
-            let orbit_units = (moon.semi_major_axis_m / METRES_PER_UNIT) as f32;
+            let orbit_units = moon.semi_major_axis_m / METRES_PER_UNIT;
             let longitude = moon.mean_longitude_deg.to_radians();
 
             // Prograde about +Y, the same convention the planets use.
-            let radial = Vec3::new(longitude.cos() as f32, 0.0, -(longitude.sin() as f32));
-            let tangent = Vec3::Y.cross(radial).normalize();
+            let radial = DVec3::new(longitude.cos(), 0.0, -longitude.sin());
+            let tangent = DVec3::Y.cross(radial).normalize();
             let orbital_speed =
                 circular_orbit_speed_units_s(moon.semi_major_axis_m, primary.mass_kg as f32);
 
             let position = primary_position + radial * orbit_units;
             let velocity = primary_velocity + tangent * orbital_speed;
 
-            momentum_x += moon.mass_kg * f64::from(velocity.x);
-            momentum_z += moon.mass_kg * f64::from(velocity.z);
+            momentum_x += moon.mass_kg * velocity.x;
+            momentum_z += moon.mass_kg * velocity.z;
 
             let id = scene.add(Prop::new(
                 Body::Sphere {
@@ -500,11 +501,8 @@ pub fn solar_system() -> Experiment {
     // so the total is zero and the system does not drift out of frame. Index 1 is the Sun,
     // added above.
     let sun_mass = f64::from(SOLAR_SYSTEM_SUN_MASS_KG);
-    scene.props[1].velocity_units_s = Vec3::new(
-        (-momentum_x / sun_mass) as f32,
-        0.0,
-        (-momentum_z / sun_mass) as f32,
-    );
+    scene.props[1].velocity_units_s =
+        DVec3::new(-momentum_x / sun_mass, 0.0, -momentum_z / sun_mass);
 
     // Bounds that actually contain the system. Derived rather than declared, so adding a
     // body to the table widens them automatically. The vertical extent keeps the shared

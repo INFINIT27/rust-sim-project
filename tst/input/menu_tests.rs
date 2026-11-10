@@ -425,3 +425,42 @@ fn the_gated_plugins_each_insert_the_state_themselves() {
     controls_only.add_plugins(SimulationControlsPlugin);
     assert!(controls_only.world().get_resource::<MenuState>().is_some());
 }
+
+#[test]
+fn escape_closes_an_open_popup_before_it_opens_the_menu() {
+    let mut app = app_with_menu();
+    app.init_resource::<PopupState>();
+    app.world_mut().resource_mut::<PopupState>().open();
+
+    press(&mut app, KeyCode::Escape);
+    assert!(
+        !app.world().resource::<PopupState>().is_open(),
+        "Esc must close the pop-up in front"
+    );
+    assert!(!is_open(&app), "and must not open the menu behind it");
+
+    press(&mut app, KeyCode::Escape);
+    assert!(is_open(&app), "the next Esc opens the menu as usual");
+}
+
+#[test]
+fn a_click_behind_an_open_popup_does_not_capture_the_cursor() {
+    use crate::input::camera::FreeFlyController;
+    use bevy::input::mouse::MouseButton;
+
+    // The click that presses a pop-up's ✕ must not hand the cursor to mouse-look.
+    let mut app = app_with_input();
+    app.init_resource::<PopupState>();
+    app.world_mut().resource_mut::<PopupState>().open();
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Left);
+    app.update();
+
+    let captured = app
+        .world_mut()
+        .query::<&FreeFlyController>()
+        .single(app.world())
+        .captured;
+    assert!(!captured, "an open pop-up keeps the cursor free");
+}

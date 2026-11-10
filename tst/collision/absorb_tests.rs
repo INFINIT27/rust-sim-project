@@ -17,7 +17,7 @@
 //! integrator's error is what would be under test.
 
 use super::*;
-use crate::core::scene::{Body, Color, Pose, Prop, Quat, Vec3};
+use crate::core::scene::{Body, Color, DVec3, Pose, Prop, Quat, Vec3};
 
 /// A unit-white sphere at `x`, with radius `radius`.
 ///
@@ -25,10 +25,10 @@ use crate::core::scene::{Body, Color, Pose, Prop, Quat, Vec3};
 /// `y = 0` a unit sphere overlaps the floor, which quietly turns every test below into a
 /// three-body contact problem — and was what first showed that a black hole would otherwise
 /// swallow the ground plane.
-fn ball(x: f32, radius: f32) -> Body {
+fn ball(x: f64, radius: f32) -> Body {
     Body::Sphere {
         pose: Pose {
-            position: Vec3::new(x, 2.0, 0.0),
+            position: DVec3::new(x, 2.0, 0.0),
             rotation: Quat::IDENTITY,
         },
         radius,
@@ -46,9 +46,9 @@ fn ball(x: f32, radius: f32) -> Body {
 /// Radii of `1.0` at a separation of `1.5`, so the hulls genuinely overlap — the icosphere
 /// hull inscribes the sphere, so a separation just under `2.0` is not enough to guarantee
 /// contact and this leaves margin.
-fn touching(absorber_mass: f32, victim_mass: f32, victim_velocity: Vec3) -> Scene {
+fn touching(absorber_mass: f32, victim_mass: f32, victim_velocity: DVec3) -> Scene {
     let mut scene = Scene::demo();
-    scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, absorber_mass));
+    scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, absorber_mass));
     scene.add(Prop::new(ball(1.5, 1.0), victim_velocity, victim_mass));
     scene
 }
@@ -78,8 +78,8 @@ fn a_scene_with_no_absorber_is_untouched() {
 #[test]
 fn an_absorber_that_touches_nothing_absorbs_nothing() {
     let mut scene = Scene::demo();
-    scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, 10.0));
-    scene.add(Prop::new(ball(50.0, 1.0), Vec3::ZERO, 5.0));
+    scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, 10.0));
+    scene.add(Prop::new(ball(50.0, 1.0), DVec3::ZERO, 5.0));
 
     assert_eq!(absorb_contacts(&mut scene), 0);
     assert_eq!(scene.props.len(), 3);
@@ -91,7 +91,7 @@ fn an_absorber_that_touches_nothing_absorbs_nothing() {
 
 #[test]
 fn the_victim_leaves_and_the_absorber_takes_its_mass() {
-    let mut scene = touching(10.0, 5.0, Vec3::ZERO);
+    let mut scene = touching(10.0, 5.0, DVec3::ZERO);
     let victim_id = scene.iter().nth(2).map(|(id, _)| id).unwrap();
 
     assert_eq!(absorb_contacts(&mut scene), 1);
@@ -106,22 +106,22 @@ fn momentum_is_conserved() {
     // 5 kg at 2 units/s into a stationary 10 kg gives 15 kg at 2/3 units/s. The interesting
     // property is that this is the *inelastic* answer, not the elastic one the rest of the
     // layer computes.
-    let mut scene = touching(10.0, 5.0, Vec3::new(2.0, 0.0, 0.0));
+    let mut scene = touching(10.0, 5.0, DVec3::new(2.0, 0.0, 0.0));
 
-    let before: Vec3 = scene
+    let before: DVec3 = scene
         .props
         .iter()
         .filter(|prop| !prop.immovable)
-        .map(|prop| prop.velocity_units_s * prop.mass_kg)
+        .map(|prop| prop.velocity_units_s * f64::from(prop.mass_kg))
         .sum();
 
     absorb_contacts(&mut scene);
 
-    let after: Vec3 = scene
+    let after: DVec3 = scene
         .props
         .iter()
         .filter(|prop| !prop.immovable)
-        .map(|prop| prop.velocity_units_s * prop.mass_kg)
+        .map(|prop| prop.velocity_units_s * f64::from(prop.mass_kg))
         .sum();
 
     assert!(
@@ -136,14 +136,14 @@ fn kinetic_energy_is_not_conserved_and_that_is_the_point() {
     // A perfectly inelastic collision loses energy, which distinguishes absorption from every
     // other contact in this crate. If this ever passed with equality, absorption would have
     // silently become an elastic bounce.
-    let mut scene = touching(10.0, 5.0, Vec3::new(2.0, 0.0, 0.0));
+    let mut scene = touching(10.0, 5.0, DVec3::new(2.0, 0.0, 0.0));
 
-    let energy = |scene: &Scene| -> f32 {
+    let energy = |scene: &Scene| -> f64 {
         scene
             .props
             .iter()
             .filter(|prop| !prop.immovable)
-            .map(|prop| 0.5 * prop.mass_kg * prop.speed().powi(2))
+            .map(|prop| 0.5 * f64::from(prop.mass_kg) * prop.speed().powi(2))
             .sum()
     };
 
@@ -160,10 +160,10 @@ fn a_moving_absorber_is_slowed_by_what_it_swallows() {
     let mut scene = Scene::demo();
     scene.add(Prop::absorbing(
         ball(0.0, 1.0),
-        Vec3::new(1.0, 0.0, 0.0),
+        DVec3::new(1.0, 0.0, 0.0),
         10.0,
     ));
-    scene.add(Prop::new(ball(1.5, 1.0), Vec3::new(-1.0, 0.0, 0.0), 5.0));
+    scene.add(Prop::new(ball(1.5, 1.0), DVec3::new(-1.0, 0.0, 0.0), 5.0));
 
     absorb_contacts(&mut scene);
 
@@ -178,7 +178,7 @@ fn the_horizon_grows_with_the_mass_it_swallows() {
     // `r_s = 2GM/c²` is linear in mass, so doubling the mass doubles the radius. Applied to
     // the drawn radius, which is 27,000x life size for a stellar hole — proportionally right,
     // absolutely wrong, and documented as both.
-    let mut scene = touching(10.0, 10.0, Vec3::ZERO);
+    let mut scene = touching(10.0, 10.0, DVec3::ZERO);
     let before = radius_of(&scene, 1);
 
     absorb_contacts(&mut scene);
@@ -195,7 +195,7 @@ fn the_horizon_grows_with_the_mass_it_swallows() {
 fn a_negligible_meal_leaves_the_horizon_effectively_unchanged() {
     // Sgr A* eating an Earth: the growth is real but 1e-12, so the drawn radius must not
     // visibly jump. This is the case that would expose a growth rule using the wrong power.
-    let mut scene = touching(8.5467e36, 5.972e24, Vec3::ZERO);
+    let mut scene = touching(8.5467e36, 5.972e24, DVec3::ZERO);
     let before = radius_of(&scene, 1);
 
     absorb_contacts(&mut scene);
@@ -212,8 +212,8 @@ fn the_more_massive_absorber_wins_when_two_meet() {
     // Two black holes merging. The heavier one survives, whichever order they are in.
     for (first, second, survivor_mass) in [(10.0_f32, 30.0_f32, 40.0_f32), (30.0, 10.0, 40.0)] {
         let mut scene = Scene::demo();
-        scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, first));
-        scene.add(Prop::absorbing(ball(1.5, 1.0), Vec3::ZERO, second));
+        scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, first));
+        scene.add(Prop::absorbing(ball(1.5, 1.0), DVec3::ZERO, second));
 
         assert_eq!(absorb_contacts(&mut scene), 1);
         assert_eq!(scene.props.len(), 2);
@@ -231,9 +231,9 @@ fn one_absorber_can_take_two_props_in_a_single_pass() {
     // reading of "it ate both", and the deferred removal is what keeps the indices valid
     // while that happens.
     let mut scene = Scene::demo();
-    scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, 10.0));
-    scene.add(Prop::new(ball(1.5, 1.0), Vec3::ZERO, 5.0));
-    scene.add(Prop::new(ball(-1.5, 1.0), Vec3::ZERO, 5.0));
+    scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, 10.0));
+    scene.add(Prop::new(ball(1.5, 1.0), DVec3::ZERO, 5.0));
+    scene.add(Prop::new(ball(-1.5, 1.0), DVec3::ZERO, 5.0));
 
     assert_eq!(absorb_contacts(&mut scene), 2);
     assert_eq!(scene.props.len(), 2);
@@ -245,9 +245,9 @@ fn a_prop_between_two_absorbers_is_taken_once() {
     // The case that makes "skip anything already eaten" necessary: without it the victim
     // would be merged into both holes and its mass would be created twice.
     let mut scene = Scene::demo();
-    scene.add(Prop::absorbing(ball(-1.5, 1.0), Vec3::ZERO, 10.0));
-    scene.add(Prop::new(ball(0.0, 1.0), Vec3::ZERO, 5.0));
-    scene.add(Prop::absorbing(ball(1.5, 1.0), Vec3::ZERO, 10.0));
+    scene.add(Prop::absorbing(ball(-1.5, 1.0), DVec3::ZERO, 10.0));
+    scene.add(Prop::new(ball(0.0, 1.0), DVec3::ZERO, 5.0));
+    scene.add(Prop::absorbing(ball(1.5, 1.0), DVec3::ZERO, 10.0));
 
     let absorbed = absorb_contacts(&mut scene);
     let total: f32 = scene
@@ -271,7 +271,7 @@ fn an_immovable_absorber_takes_the_mass_and_keeps_its_invariant() {
     scene.add(Prop::new(
         Body::Sphere {
             pose: Pose {
-                position: Vec3::new(0.0, 0.5, 0.0),
+                position: DVec3::new(0.0, 0.5, 0.0),
                 rotation: Quat::IDENTITY,
             },
             radius: 1.0,
@@ -282,13 +282,13 @@ fn an_immovable_absorber_takes_the_mass_and_keeps_its_invariant() {
                 a: 1.0,
             },
         },
-        Vec3::new(0.0, -3.0, 0.0),
+        DVec3::new(0.0, -3.0, 0.0),
         7.0,
     ));
 
     assert_eq!(absorb_contacts(&mut scene), 1);
     assert_eq!(scene.props[0].mass_kg, 7.0);
-    assert_eq!(scene.props[0].velocity_units_s, Vec3::ZERO);
+    assert_eq!(scene.props[0].velocity_units_s, DVec3::ZERO);
     assert!(scene.props[0].is_valid());
 }
 
@@ -301,9 +301,9 @@ fn the_surviving_props_keep_their_ids() {
     // The mirror in the render layer matches entities to props by `BodyId`, so a removal that
     // shifted anyone else's id would silently redraw the wrong body.
     let mut scene = Scene::demo();
-    let hole = scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, 10.0));
-    let victim = scene.add(Prop::new(ball(1.5, 1.0), Vec3::ZERO, 5.0));
-    let bystander = scene.add(Prop::new(ball(80.0, 1.0), Vec3::ZERO, 1.0));
+    let hole = scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, 10.0));
+    let victim = scene.add(Prop::new(ball(1.5, 1.0), DVec3::ZERO, 5.0));
+    let bystander = scene.add(Prop::new(ball(80.0, 1.0), DVec3::ZERO, 1.0));
 
     absorb_contacts(&mut scene);
 
@@ -318,13 +318,13 @@ fn an_absorbed_id_never_comes_back() {
     // `Scene::remove` documents this and A14 amends Requirement 5.4 for it: an id, once gone,
     // is gone. Anything holding one — a trail, an entity — can therefore treat `None` as
     // final rather than as "not yet".
-    let mut scene = touching(10.0, 5.0, Vec3::ZERO);
+    let mut scene = touching(10.0, 5.0, DVec3::ZERO);
     let victim = scene.iter().nth(2).map(|(id, _)| id).unwrap();
 
     absorb_contacts(&mut scene);
     assert!(scene.get(victim).is_none());
 
-    scene.add(Prop::new(ball(40.0, 1.0), Vec3::ZERO, 1.0));
+    scene.add(Prop::new(ball(40.0, 1.0), DVec3::ZERO, 1.0));
     assert!(
         scene.get(victim).is_none(),
         "a new prop must not reuse the id"
@@ -333,7 +333,7 @@ fn an_absorbed_id_never_comes_back() {
 
 #[test]
 fn every_surviving_prop_is_still_valid() {
-    let mut scene = touching(10.0, 5.0, Vec3::new(3.0, -2.0, 1.0));
+    let mut scene = touching(10.0, 5.0, DVec3::new(3.0, -2.0, 1.0));
 
     absorb_contacts(&mut scene);
 
@@ -354,8 +354,8 @@ fn a_black_hole_absorbs_through_scene_step_rather_than_bouncing() {
     use crate::time::simulation::TimeStep;
 
     let mut scene = Scene::demo();
-    scene.add(Prop::absorbing(ball(0.0, 1.0), Vec3::ZERO, 1.0e30));
-    scene.add(Prop::new(ball(1.5, 1.0), Vec3::ZERO, 1.0e24));
+    scene.add(Prop::absorbing(ball(0.0, 1.0), DVec3::ZERO, 1.0e30));
+    scene.add(Prop::new(ball(1.5, 1.0), DVec3::ZERO, 1.0e24));
 
     scene.step(TimeStep::from_seconds(1.0).unwrap());
 
@@ -369,7 +369,7 @@ fn absorption_leaves_a_scene_that_keeps_stepping() {
     // stay the right *shape* and every subsequent step would be nonsense.
     use crate::time::simulation::TimeStep;
 
-    let mut scene = touching(2.0e30, 1.0e24, Vec3::new(0.01, 0.0, 0.0));
+    let mut scene = touching(2.0e30, 1.0e24, DVec3::new(0.01, 0.0, 0.0));
     let step = TimeStep::from_seconds(1.0).unwrap();
 
     for frame in 0..20 {
@@ -396,7 +396,7 @@ fn an_immovable_prop_is_never_swallowed() {
     scene.add(Prop::absorbing(
         Body::Sphere {
             pose: Pose {
-                position: Vec3::new(0.0, 0.5, 0.0),
+                position: DVec3::new(0.0, 0.5, 0.0),
                 rotation: Quat::IDENTITY,
             },
             radius: 1.0,
@@ -407,7 +407,7 @@ fn an_immovable_prop_is_never_swallowed() {
                 a: 1.0,
             },
         },
-        Vec3::ZERO,
+        DVec3::ZERO,
         1.0e31,
     ));
 
@@ -442,9 +442,9 @@ fn total_momentum_units(scene: &Scene) -> [f64; 3] {
         }
 
         let mass = f64::from(prop.mass_kg);
-        total[0] += mass * f64::from(prop.velocity_units_s.x);
-        total[1] += mass * f64::from(prop.velocity_units_s.y);
-        total[2] += mass * f64::from(prop.velocity_units_s.z);
+        total[0] += mass * prop.velocity_units_s.x;
+        total[1] += mass * prop.velocity_units_s.y;
+        total[2] += mass * prop.velocity_units_s.z;
     }
 
     total
@@ -474,14 +474,14 @@ fn hole_sun_and_neutron_star() -> Scene {
 
     // The black hole falling in, the Sun drifting across it, the neutron star at rest — the
     // three states the reported run actually had.
-    let mut hole_prop = hole.to_prop(Vec3::new(-3.0, 0.0, 0.0));
-    hole_prop.velocity_units_s = Vec3::new(2.0e-5, 0.0, 0.0);
+    let mut hole_prop = hole.to_prop(DVec3::new(-3.0, 0.0, 0.0));
+    hole_prop.velocity_units_s = DVec3::new(2.0e-5, 0.0, 0.0);
     scene.add(hole_prop);
 
     scene.add(Prop::new(
         Body::Sphere {
             pose: Pose {
-                position: Vec3::ZERO,
+                position: DVec3::ZERO,
                 rotation: Quat::IDENTITY,
             },
             radius: crate::experiments::solar_system::radius_units(
@@ -489,11 +489,11 @@ fn hole_sun_and_neutron_star() -> Scene {
             ),
             color: crate::experiments::constants::SOLAR_SYSTEM_SUN_COLOR,
         },
-        Vec3::new(0.0, 0.0, 1.0e-5),
+        DVec3::new(0.0, 0.0, 1.0e-5),
         SOLAR_SYSTEM_SUN_MASS_KG,
     ));
 
-    scene.add(neutron.to_prop(Vec3::new(0.0, 0.0, 40.0)));
+    scene.add(neutron.to_prop(DVec3::new(0.0, 0.0, 40.0)));
 
     scene
 }
@@ -508,7 +508,7 @@ fn a_black_hole_eating_the_sun_conserves_momentum_at_real_masses() {
     let before = total_momentum_units(&scene);
 
     // Put the Sun in contact with the hole's capture radius.
-    scene.props[0].body.translate(Vec3::new(3.0, 0.0, 0.0));
+    scene.props[0].body.translate(DVec3::new(3.0, 0.0, 0.0));
 
     assert_eq!(
         absorb_contacts(&mut scene),
@@ -536,7 +536,7 @@ fn mass_is_conserved_exactly_by_a_merge_at_real_masses() {
     let mut scene = hole_sun_and_neutron_star();
     let before: f32 = scene.props.iter().map(|prop| prop.mass_kg).sum();
 
-    scene.props[0].body.translate(Vec3::new(3.0, 0.0, 0.0));
+    scene.props[0].body.translate(DVec3::new(3.0, 0.0, 0.0));
     assert_eq!(absorb_contacts(&mut scene), 1);
 
     let after: f32 = scene.props.iter().map(|prop| prop.mass_kg).sum();

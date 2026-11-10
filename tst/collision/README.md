@@ -1,5 +1,11 @@
 # `tst/collision/` — tests for body physics
 
+> **Purpose:** Tests for [`src/collision/`](../../src/collision/README.md): hulls checked
+> against meshes built by hand, contact normals and depths, bounces, and absorption.
+> **Edit here to:** add or fix a collision test. Each `*_tests.rs` is `#[path]`-included into
+> its subject.
+> **Not here:** the code and the invariants under test, in `src/collision/`.
+
 Mirrors `src/collision/`, one file per source file. Every file here is a
 `#[path]`-included unit-test module compiled *inside* its subject, not a
 standalone integration test, so it uses `crate::…` paths and can reach the

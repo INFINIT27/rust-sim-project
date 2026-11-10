@@ -383,7 +383,7 @@ pub fn floor_half_size(scene: &Scene) -> Option<(f32, f32)> {
     scene.props.iter().find_map(|prop| match &prop.body {
         Body::Plane {
             pose, half_size, ..
-        } => Some((*half_size, pose.position.y)),
+        } => Some((*half_size, pose.position.y as f32)),
         _ => None,
     })
 }

@@ -1,5 +1,11 @@
 # `tst/core/` — tests for `src/core/`
 
+> **Purpose:** Tests for [`src/core/`](../../src/core/README.md): `Scene` and its value types,
+> gravity integration, and transfer planning, including one opt-in Earth→Mars voyage.
+> **Edit here to:** add or fix a world-model, integrator, or transfer test, or commit a new
+> proptest seed.
+> **Not here:** the code and the invariants under test, in `src/core/`.
+
 Unit and property tests for the GUI-free world model. See `src/core/README.md`
 for what is under test and the invariants these tests exist to pin.
 

@@ -356,7 +356,7 @@ fn a_full_thrust_flight_steers_around_the_sun_when_it_is_in_the_way() {
         .transfer
         .path_units
         .iter()
-        .map(|p| to_metres(*p - sun_at).length())
+        .map(|p| to_metres(p.as_dvec3() - sun_at).length())
         .fold(f64::INFINITY, f64::min);
     assert!(
         closest > crate::spacecraft::constants::POWERED_CLEARANCE_RADII * sun_radius,

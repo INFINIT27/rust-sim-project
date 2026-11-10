@@ -164,11 +164,11 @@ pub fn aabbs_overlap(a: &Aabb, b: &Aabb) -> bool {
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{collision_mesh, contact_between_meshes, Body, Color, Pose, Quat, Vec3};
+/// use physics_sandbox::{collision_mesh, contact_between_meshes, Body, Color, DVec3, Pose, Quat};
 ///
-/// fn ball_at(x: f32) -> Body {
+/// fn ball_at(x: f64) -> Body {
 ///     Body::Sphere {
-///         pose: Pose { position: Vec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY },
+///         pose: Pose { position: DVec3::new(x, 0.0, 0.0), rotation: Quat::IDENTITY },
 ///         radius: 1.0,
 ///         color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
 ///     }

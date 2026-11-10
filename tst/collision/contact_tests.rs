@@ -13,7 +13,7 @@
 
 use super::*;
 use crate::collision::tessellate::collision_mesh;
-use crate::core::scene::{Body, Color, Pose, Prop, Quat};
+use crate::core::scene::{Body, Color, DVec3, Pose, Prop, Quat};
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
@@ -32,7 +32,7 @@ fn white() -> Color {
 fn ball(centre: Vec3, radius: f32) -> Body {
     Body::Sphere {
         pose: Pose {
-            position: centre,
+            position: centre.as_dvec3(),
             rotation: Quat::IDENTITY,
         },
         radius,
@@ -43,7 +43,7 @@ fn ball(centre: Vec3, radius: f32) -> Body {
 fn box_at(centre: Vec3, half_extents: Vec3) -> Body {
     Body::Cuboid {
         pose: Pose {
-            position: centre,
+            position: centre.as_dvec3(),
             rotation: Quat::IDENTITY,
         },
         half_extents,
@@ -54,7 +54,7 @@ fn box_at(centre: Vec3, half_extents: Vec3) -> Body {
 fn floor_at(height: f32) -> Body {
     Body::Plane {
         pose: Pose {
-            position: Vec3::new(0.0, height, 0.0),
+            position: DVec3::new(0.0, f64::from(height), 0.0),
             rotation: Quat::IDENTITY,
         },
         half_size: 20.0,
@@ -242,8 +242,8 @@ fn a_prop_without_a_hull_never_reports_a_contact() {
     // A zero-width line has no physical border, so it passes through everything.
     let curve = Prop::at_rest(
         Body::Line {
-            from: Vec3::new(-1.0, 0.0, 0.0),
-            to: Vec3::new(1.0, 0.0, 0.0),
+            from: DVec3::new(-1.0, 0.0, 0.0),
+            to: DVec3::new(1.0, 0.0, 0.0),
             width: 0.0,
             color: white(),
         },

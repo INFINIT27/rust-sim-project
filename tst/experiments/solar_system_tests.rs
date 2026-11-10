@@ -289,10 +289,10 @@ fn a_zero_central_mass_panics_in_debug() {
 #[test]
 fn every_planet_starts_at_its_real_distance() {
     let experiment = built();
-    let centre = Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS;
+    let centre = DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS);
 
     for (planet, prop) in SOLAR_SYSTEM_PLANETS.into_iter().zip(planets(&experiment)) {
-        let expected = (planet.semi_major_axis_m / crate::constants::METRES_PER_UNIT) as f32;
+        let expected = planet.semi_major_axis_m / crate::constants::METRES_PER_UNIT;
         let actual = (prop.body.center() - centre).length();
 
         assert!(
@@ -366,10 +366,8 @@ fn the_speed_formula_is_the_textbook_one() {
     let radius_m = 1.4960e11;
     let expected_m_s =
         (GRAVITATIONAL_CONSTANT * f64::from(SOLAR_SYSTEM_SUN_MASS_KG) / radius_m).sqrt();
-    let got_m_s = f64::from(circular_orbit_speed_units_s(
-        radius_m,
-        SOLAR_SYSTEM_SUN_MASS_KG,
-    )) * crate::constants::METRES_PER_UNIT;
+    let got_m_s = circular_orbit_speed_units_s(radius_m, SOLAR_SYSTEM_SUN_MASS_KG)
+        * crate::constants::METRES_PER_UNIT;
 
     assert!((got_m_s / expected_m_s - 1.0).abs() < 1.0e-6);
 }
@@ -402,7 +400,7 @@ fn a_nonsense_orbit_yields_no_speed_rather_than_a_nan() {
 #[test]
 fn every_velocity_is_exactly_tangential_and_in_the_ecliptic() {
     let experiment = built();
-    let centre = Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS;
+    let centre = DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS);
 
     for (planet, prop) in SOLAR_SYSTEM_PLANETS.into_iter().zip(planets(&experiment)) {
         let offset = prop.body.center() - centre;
@@ -436,7 +434,7 @@ fn every_planet_orbits_prograde() {
     // seen from ecliptic north. Angular momentum `r × v` therefore points along +Y for
     // every planet; one row with the sign flipped would show up here and nowhere else.
     let experiment = built();
-    let centre = Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS;
+    let centre = DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS);
 
     for (planet, prop) in SOLAR_SYSTEM_PLANETS.into_iter().zip(planets(&experiment)) {
         let angular = (prop.body.center() - centre).cross(prop.velocity_units_s);
@@ -454,14 +452,14 @@ fn the_planets_do_not_all_start_in_a_line() {
     // Real J2000 longitudes, so the arrangement is the real one — and a lineup would give
     // the system a large spurious momentum in one direction.
     let experiment = built();
-    let centre = Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS;
+    let centre = DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS);
 
-    let directions: Vec<Vec3> = planets(&experiment)
+    let directions: Vec<DVec3> = planets(&experiment)
         .iter()
         .map(|prop| (prop.body.center() - centre).normalize())
         .collect();
 
-    let mut max_alignment = 0.0_f32;
+    let mut max_alignment = 0.0_f64;
     for (index, direction) in directions.iter().enumerate() {
         for other in &directions[index + 1..] {
             max_alignment = max_alignment.max(direction.dot(*other).abs());
@@ -480,12 +478,12 @@ fn the_system_has_no_net_momentum() {
     // ~3e31 kg·units/s and the whole system would drift out of frame; see the module docs.
     let experiment = built();
 
-    let total: Vec3 = experiment
+    let total: DVec3 = experiment
         .scene
         .props
         .iter()
         .filter(|prop| !prop.immovable)
-        .map(|prop| prop.velocity_units_s * prop.mass_kg)
+        .map(|prop| prop.velocity_units_s * f64::from(prop.mass_kg))
         .sum();
 
     // Scaled against the largest single momentum, because comparing a cancelled sum to an
@@ -495,8 +493,8 @@ fn the_system_has_no_net_momentum() {
         .props
         .iter()
         .filter(|prop| !prop.immovable)
-        .map(|prop| (prop.velocity_units_s * prop.mass_kg).length())
-        .fold(0.0_f32, f32::max);
+        .map(|prop| (prop.velocity_units_s * f64::from(prop.mass_kg)).length())
+        .fold(0.0_f64, f64::max);
 
     assert!(
         total.length() / largest < 1.0e-5,
@@ -513,7 +511,7 @@ fn the_sun_carries_the_compensating_momentum() {
     let velocity = sun(&experiment).velocity_units_s;
     let m_s = sun(&experiment).speed_m_s();
 
-    assert_ne!(velocity, Vec3::ZERO, "the Sun must not start at rest");
+    assert_ne!(velocity, DVec3::ZERO, "the Sun must not start at rest");
     assert_eq!(velocity.y, 0.0, "the Sun stays in the ecliptic plane");
     assert!(
         (5.0..30.0).contains(&m_s),
@@ -597,7 +595,7 @@ fn check_moon(
     {
         let jupiter = primary;
         let offset = prop.body.center() - jupiter.body.center();
-        let expected = (moon.semi_major_axis_m / crate::constants::METRES_PER_UNIT) as f32;
+        let expected = moon.semi_major_axis_m / crate::constants::METRES_PER_UNIT;
 
         assert!(
             (offset.length() / expected - 1.0).abs() < 1.0e-3,
@@ -653,7 +651,7 @@ fn nothing_overlaps_anything_at_true_scale() {
             .zip(moons_of(&experiment, system.primary))
         {
             let orbit = (prop.body.center() - primary.body.center()).length();
-            let clearance = orbit - primary_radius - sphere_radius(prop);
+            let clearance = orbit - f64::from(primary_radius) - f64::from(sphere_radius(prop));
 
             assert!(
                 clearance > 0.0,
@@ -721,7 +719,7 @@ fn earths_moon_matches_published_figures() {
     let speed = crate::experiments::solar_system::circular_orbit_speed_units_s(
         moon.semi_major_axis_m,
         SOLAR_SYSTEM_PLANETS[2].mass_kg as f32,
-    ) * crate::constants::METRES_PER_UNIT as f32;
+    ) * crate::constants::METRES_PER_UNIT;
     assert!(
         (speed / 1022.0 - 1.0).abs() < 0.01,
         "orbital speed came out {speed} m/s"
@@ -854,11 +852,13 @@ fn nothing_starts_touching_anything() {
     // says *how much* clearance there is, because the Sun's drawn radius is the one number
     // in the scene that could quietly eat a planet.
     let experiment = built();
-    let centre = Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS;
+    let centre = DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS);
     let sun_radius = sphere_radius(sun(&experiment));
 
     for (planet, prop) in SOLAR_SYSTEM_PLANETS.into_iter().zip(planets(&experiment)) {
-        let gap = (prop.body.center() - centre).length() - sun_radius - sphere_radius(prop);
+        let gap = (prop.body.center() - centre).length()
+            - f64::from(sun_radius)
+            - f64::from(sphere_radius(prop));
 
         assert!(
             gap > 1.0,
@@ -875,7 +875,7 @@ fn the_whole_system_is_above_the_floor() {
     let experiment = built();
 
     for prop in experiment.scene.props.iter().filter(|prop| !prop.immovable) {
-        let lowest = prop.body.center().y - sphere_radius(prop);
+        let lowest = prop.body.center().y - f64::from(sphere_radius(prop));
         assert!(lowest > 0.0, "a body reaches y = {lowest}, below the floor");
     }
 }
@@ -888,7 +888,7 @@ fn the_bounds_enclose_every_body() {
     assert!(experiment.scene.bounds.is_valid());
 
     for prop in experiment.scene.props.iter().filter(|prop| !prop.immovable) {
-        let centre = prop.body.center();
+        let centre = prop.body.center().as_vec3();
         let bounds = experiment.scene.bounds;
 
         assert!(
@@ -971,7 +971,7 @@ fn earth_completes_one_orbit_in_one_year_and_comes_back() {
     let mut clock = SimulationClock::new(spec.time_scale);
 
     let earth_index = FIRST_PLANET_INDEX + 2;
-    let centre = || Vec3::Y * SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS;
+    let centre = || DVec3::Y * f64::from(SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS);
     let start = scene.props[earth_index].body.center() - centre();
     let start_radius = start.length();
 

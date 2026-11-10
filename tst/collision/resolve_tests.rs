@@ -39,7 +39,7 @@ fn white() -> Color {
 fn ball(centre: Vec3, radius: f32) -> Body {
     Body::Sphere {
         pose: Pose {
-            position: centre,
+            position: centre.as_dvec3(),
             rotation: Quat::IDENTITY,
         },
         radius,
@@ -50,7 +50,7 @@ fn ball(centre: Vec3, radius: f32) -> Body {
 fn floor() -> Body {
     Body::Plane {
         pose: Pose {
-            position: Vec3::ZERO,
+            position: DVec3::ZERO,
             rotation: Quat::IDENTITY,
         },
         half_size: 20.0,
@@ -72,7 +72,7 @@ fn axis_bodies(props: &[Prop], axis: usize) -> Vec<(f64, f64)> {
     props
         .iter()
         .filter(|prop| !prop.immovable)
-        .map(|prop| (prop.mass_kg as f64, prop.velocity_units_s[axis] as f64))
+        .map(|prop| (prop.mass_kg as f64, prop.velocity_units_s[axis]))
         .collect()
 }
 
@@ -80,10 +80,10 @@ fn axis_bodies(props: &[Prop], axis: usize) -> Vec<(f64, f64)> {
 fn equal_masses_meeting_head_on_exchange_their_velocities() {
     // Overlapping along X, closing at 1 unit/s each.
     let mut props = vec![
-        Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(1.0, 0.0, 0.0), 5.0),
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 0.0), 5.0),
         Prop::new(
             ball(Vec3::new(1.6, 0.0, 0.0), 1.0),
-            Vec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
             5.0,
         ),
     ];
@@ -105,10 +105,10 @@ fn equal_masses_meeting_head_on_exchange_their_velocities() {
 #[test]
 fn a_bounce_conserves_momentum_and_kinetic_energy() {
     let mut props = vec![
-        Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(3.0, 0.0, 0.0), 2.0),
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(3.0, 0.0, 0.0), 2.0),
         Prop::new(
             ball(Vec3::new(1.5, 0.0, 0.0), 1.0),
-            Vec3::new(-1.0, 0.0, 0.0),
+            DVec3::new(-1.0, 0.0, 0.0),
             7.0,
         ),
     ];
@@ -130,8 +130,8 @@ fn a_bounce_conserves_momentum_and_kinetic_energy() {
 #[test]
 fn a_heavy_prop_is_barely_deflected_by_a_light_one() {
     let mut props = vec![
-        Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(1.0, 0.0, 0.0), 1.0),
-        Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), Vec3::ZERO, 1.0e6),
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 0.0), 1.0),
+        Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), DVec3::ZERO, 1.0e6),
     ];
 
     resolve_contacts(&mut props);
@@ -152,10 +152,10 @@ fn a_heavy_prop_is_barely_deflected_by_a_light_one() {
 fn only_the_normal_component_is_touched_so_there_is_no_friction() {
     // Approaching along X, drifting along Z. The Z drift must survive untouched.
     let mut props = vec![
-        Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(1.0, 0.0, 4.0), 3.0),
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 4.0), 3.0),
         Prop::new(
             ball(Vec3::new(1.5, 0.0, 0.0), 1.0),
-            Vec3::new(-1.0, 0.0, 4.0),
+            DVec3::new(-1.0, 0.0, 4.0),
             3.0,
         ),
     ];
@@ -172,7 +172,7 @@ fn a_wall_reflects_what_hits_it_and_never_moves() {
     let mut props = vec![
         Prop::new(
             ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
-            Vec3::new(0.0, -2.0, 0.0),
+            DVec3::new(0.0, -2.0, 0.0),
             4.0,
         ),
         Prop::immovable(floor()),
@@ -187,12 +187,12 @@ fn a_wall_reflects_what_hits_it_and_never_moves() {
     );
     assert_eq!(
         props[1].velocity_units_s,
-        Vec3::ZERO,
+        DVec3::ZERO,
         "an immovable prop keeps its zero-velocity invariant"
     );
     assert_eq!(
         props[1].body.center(),
-        Vec3::ZERO,
+        DVec3::ZERO,
         "and it does not move out of the way either"
     );
     assert!(props[1].is_valid());
@@ -203,7 +203,7 @@ fn a_ball_in_the_floor_is_lifted_clear_of_it() {
     let mut props = vec![
         Prop::new(
             ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
-            Vec3::new(0.0, -2.0, 0.0),
+            DVec3::new(0.0, -2.0, 0.0),
             4.0,
         ),
         Prop::immovable(floor()),
@@ -228,8 +228,8 @@ fn a_ball_in_the_floor_is_lifted_clear_of_it() {
 #[test]
 fn a_massless_prop_passes_straight_through() {
     let mut props = vec![
-        Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(1.0, 0.0, 0.0), 0.0),
-        Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), Vec3::ZERO, 5.0),
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 0.0), 0.0),
+        Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), DVec3::ZERO, 5.0),
     ];
     let before = props.clone();
 
@@ -258,10 +258,10 @@ fn a_pair_already_moving_apart_is_separated_but_not_reversed() {
     // Overlapping, but receding: reversing them again would trap them in a
     // contact they could never leave.
     let mut props = vec![
-        Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(-1.0, 0.0, 0.0), 3.0),
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(-1.0, 0.0, 0.0), 3.0),
         Prop::new(
             ball(Vec3::new(1.5, 0.0, 0.0), 1.0),
-            Vec3::new(1.0, 0.0, 0.0),
+            DVec3::new(1.0, 0.0, 0.0),
             3.0,
         ),
     ];
@@ -282,8 +282,8 @@ fn a_pair_already_moving_apart_is_separated_but_not_reversed() {
 #[test]
 fn props_that_are_nowhere_near_each_other_cost_nothing_and_change_nothing() {
     let mut props = vec![
-        Prop::new(ball(Vec3::new(-20.0, 5.0, 0.0), 1.0), Vec3::X, 3.0),
-        Prop::new(ball(Vec3::new(20.0, 5.0, 0.0), 1.0), -Vec3::X, 3.0),
+        Prop::new(ball(Vec3::new(-20.0, 5.0, 0.0), 1.0), DVec3::X, 3.0),
+        Prop::new(ball(Vec3::new(20.0, 5.0, 0.0), 1.0), -DVec3::X, 3.0),
         Prop::immovable(floor()),
     ];
     let before = props.clone();
@@ -297,12 +297,12 @@ fn every_prop_stays_valid_through_a_resolution() {
     let mut props = vec![
         Prop::new(
             ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
-            Vec3::new(0.5, -2.0, 0.0),
+            DVec3::new(0.5, -2.0, 0.0),
             4.0,
         ),
         Prop::new(
             ball(Vec3::new(1.4, 0.9, 0.0), 1.0),
-            Vec3::new(-0.5, -1.0, 0.0),
+            DVec3::new(-0.5, -1.0, 0.0),
             4.0,
         ),
         Prop::immovable(floor()),
@@ -319,7 +319,7 @@ fn every_prop_stays_valid_through_a_resolution() {
 fn substep_count_is_one_when_nothing_is_moving_far() {
     let props = vec![Prop::new(
         ball(Vec3::ZERO, 1.0),
-        Vec3::new(0.1, 0.0, 0.0),
+        DVec3::new(0.1, 0.0, 0.0),
         1.0,
     )];
 
@@ -340,7 +340,7 @@ fn substep_count_is_one_when_nothing_is_moving_far() {
 fn substep_count_scales_with_the_distance_travelled() {
     let props = vec![Prop::new(
         ball(Vec3::ZERO, 1.0),
-        Vec3::new(10.0, 0.0, 0.0),
+        DVec3::new(10.0, 0.0, 0.0),
         1.0,
     )];
 
@@ -354,7 +354,7 @@ fn substep_count_scales_with_the_distance_travelled() {
 fn substep_count_is_capped_and_never_zero() {
     let props = vec![Prop::new(
         ball(Vec3::ZERO, 1.0),
-        Vec3::new(1.0e9, 0.0, 0.0),
+        DVec3::new(1.0e9, 0.0, 0.0),
         1.0,
     )];
 
@@ -368,7 +368,7 @@ fn an_immovable_props_speed_does_not_drive_the_substep_count() {
     // An immovable prop does not travel, whatever is in its velocity field —
     // `is_valid` forbids the combination, but the count must not depend on that.
     let mut wall = Prop::immovable(ball(Vec3::ZERO, 1.0));
-    wall.velocity_units_s = Vec3::new(1000.0, 0.0, 0.0);
+    wall.velocity_units_s = DVec3::new(1000.0, 0.0, 0.0);
 
     assert_eq!(substep_count(&[wall], seconds(1.0)), 1);
 }
@@ -389,10 +389,10 @@ fn the_shipped_scene_bounces_instead_of_passing_through() {
     let step_seconds = f64::from(MAX_REAL_STEP_SECONDS) * f64::from(TWO_BODY_TIME_SCALE);
     let steps = (1.4 * Scene::two_body_free_fall_seconds() / step_seconds).ceil() as usize;
 
-    let contact_separation = 2.0 * TWO_BODY_VISUAL_RADIUS_UNITS;
+    let contact_separation = 2.0 * f64::from(TWO_BODY_VISUAL_RADIUS_UNITS);
     let mut peak_substeps = 0_u32;
-    let mut closest = f32::INFINITY;
-    let mut separation_after_contact: Option<f32> = None;
+    let mut closest = f64::INFINITY;
+    let mut separation_after_contact: Option<f64> = None;
     let mut touched = false;
 
     for _ in 0..steps {
@@ -411,9 +411,9 @@ fn the_shipped_scene_bounces_instead_of_passing_through() {
         let substeps = substep_count(&scene.props, step);
         peak_substeps = peak_substeps.max(substeps);
 
-        let travel = scene.props[1].speed().max(scene.props[2].speed()) * step.seconds_f32();
+        let travel = scene.props[1].speed().max(scene.props[2].speed()) * step.seconds();
         assert!(
-            travel <= MAX_SUBSTEP_DISPLACEMENT_UNITS,
+            travel <= f64::from(MAX_SUBSTEP_DISPLACEMENT_UNITS),
             "the displacement criterion should never fire for this scene, but travel was {travel}"
         );
 
@@ -520,8 +520,8 @@ proptest! {
         speed_b in 0.1_f32..50.0,
     ) {
         let mut props = vec![
-            Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(speed_a, 0.0, 0.0), mass_a),
-            Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), Vec3::new(-speed_b, 0.0, 0.0), mass_b),
+            Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(speed_a, 0.0, 0.0).as_dvec3(), mass_a),
+            Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), Vec3::new(-speed_b, 0.0, 0.0).as_dvec3(), mass_b),
         ];
 
         let before = axis_bodies(&props, 0);
@@ -539,8 +539,8 @@ proptest! {
     #[test]
     fn resolution_preserves_validity_at_any_depth(offset in 0.01_f32..1.99, mass in 0.5_f32..100.0) {
         let mut props = vec![
-            Prop::new(ball(Vec3::ZERO, 1.0), Vec3::new(1.0, 0.0, 0.0), mass),
-            Prop::new(ball(Vec3::new(offset, 0.0, 0.0), 1.0), Vec3::new(-1.0, 0.0, 0.0), mass),
+            Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 0.0), mass),
+            Prop::new(ball(Vec3::new(offset, 0.0, 0.0), 1.0), DVec3::new(-1.0, 0.0, 0.0), mass),
             Prop::immovable(floor()),
         ];
 
@@ -580,10 +580,10 @@ fn a_placed_black_hole_and_neutron_star_saturate_the_substep_cap_before_contact(
     // `momentum_is_conserved_even_when_the_step_is_far_too_large`.
     use crate::collision::constants::MAX_SUBSTEPS;
 
-    let pair = |separation_units: f32| {
-        let sphere = |x: f32| Body::Sphere {
+    let pair = |separation_units: f64| {
+        let sphere = |x: f64| Body::Sphere {
             pose: Pose {
-                position: Vec3::new(x, 0.0, 0.0),
+                position: DVec3::new(x, 0.0, 0.0),
                 rotation: Quat::IDENTITY,
             },
             // True radii: both are far smaller than the separations here, so the substep count is
@@ -598,8 +598,8 @@ fn a_placed_black_hole_and_neutron_star_saturate_the_substep_cap_before_contact(
         };
 
         vec![
-            Prop::new(sphere(0.0), Vec3::ZERO, 2.188e31),
-            Prop::new(sphere(separation_units), Vec3::ZERO, 2.8e30),
+            Prop::new(sphere(0.0), DVec3::ZERO, 2.188e31),
+            Prop::new(sphere(separation_units), DVec3::ZERO, 2.8e30),
         ]
     };
 
@@ -636,7 +636,10 @@ fn a_placed_black_hole_and_neutron_star_saturate_the_substep_cap_before_contact(
 }
 
 fn posed(position: Vec3, rotation: Quat) -> Pose {
-    Pose { position, rotation }
+    Pose {
+        position: position.as_dvec3(),
+        rotation,
+    }
 }
 
 fn slab(position: Vec3, rotation: Quat, half_size: f32) -> Body {
@@ -669,7 +672,7 @@ fn a_body_far_above_a_floor_wider_than_its_orbit_is_ruled_out_before_any_hull() 
     // The solar system's case: the floor's bounding sphere holds every orbit, so only the box
     // test can tell that a moon 3 units up is nowhere near it.
     let floor = Prop::immovable(slab(Vec3::ZERO, Quat::IDENTITY, DEMO_FLOOR_HALF_SIZE_UNITS));
-    let moon = Prop::new(ball(Vec3::new(1200.0, 3.0, -800.0), 0.07), Vec3::X, 1.0);
+    let moon = Prop::new(ball(Vec3::new(1200.0, 3.0, -800.0), 0.07), DVec3::X, 1.0);
 
     assert!(
         bounding_spheres_overlap(&moon, &floor),
@@ -690,10 +693,10 @@ fn the_box_test_judges_a_sphere_by_its_contact_radius() {
     // Drawn ten units across and hanging into the floor, physically 0.07 units and well clear.
     let drawn_big = || ball(Vec3::new(3.0, 5.0, 0.0), 10.0);
 
-    let honest = Prop::new(drawn_big(), Vec3::ZERO, 1.0).with_contact_radius(0.07);
+    let honest = Prop::new(drawn_big(), DVec3::ZERO, 1.0).with_contact_radius(0.07);
     assert!(!may_touch(&honest, &floor));
 
-    let as_drawn = Prop::new(drawn_big(), Vec3::ZERO, 1.0);
+    let as_drawn = Prop::new(drawn_big(), DVec3::ZERO, 1.0);
     assert!(contact_between_props(&as_drawn, &floor).is_some());
     assert!(may_touch(&as_drawn, &floor));
 }
@@ -740,7 +743,7 @@ fn a_sphere_touching_a_slab_or_box_collides_exactly_as_the_narrow_phase_says() {
 
     for (name, sphere, boxed) in cases {
         let props = vec![
-            Prop::new(sphere, Vec3::new(0.0, -2.0, 0.0), 4.0),
+            Prop::new(sphere, DVec3::new(0.0, -2.0, 0.0), 4.0),
             Prop::immovable(boxed),
         ];
         assert!(
@@ -803,14 +806,14 @@ proptest! {
         let reach = Vec3::new(reach.0, reach.1, reach.2) * (box_extent + Vec3::splat(size));
         let centre = origin + boxed_rotation * reach;
         let other = if other_is_sphere {
-            let sphere = Prop::new(ball(centre, size), Vec3::ZERO, 1.0);
+            let sphere = Prop::new(ball(centre, size), DVec3::ZERO, 1.0);
             match contact_radius {
                 Some(radius) => sphere.with_contact_radius(radius),
                 None => sphere,
             }
         } else {
             let half_extents = Vec3::new(size, 0.7 * size, 1.3 * size);
-            Prop::new(crate_box(centre, other_rotation, half_extents), Vec3::ZERO, 1.0)
+            Prop::new(crate_box(centre, other_rotation, half_extents), DVec3::ZERO, 1.0)
         };
         let boxed = Prop::immovable(boxed);
 

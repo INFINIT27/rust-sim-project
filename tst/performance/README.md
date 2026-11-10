@@ -1,5 +1,10 @@
 # `tst/performance/` — tests for the performance switches
 
+> **Purpose:** Tests for [`src/performance/`](../../src/performance/README.md): switch
+> parsing, the `BENCH` line, and the ignored floor-eclipse measurement behind its default.
+> **Edit here to:** add or fix a test of a switch or the benchmark summary.
+> **Not here:** the switches and the benchmark, in `src/performance/`.
+
 Mirrors `src/performance/`. Each file is a `#[path]`-included unit-test module compiled inside its
 subject, so it uses `super::*` and `crate::…` paths.
 

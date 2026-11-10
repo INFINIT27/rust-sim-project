@@ -137,7 +137,7 @@ pub fn place_object_system(
         object.contact_radius_units(),
     );
 
-    let id = scene.add(object.to_prop(position));
+    let id = scene.add(object.to_prop(position.as_dvec3()));
     if let Some(names) = names.as_mut() {
         names.insert(id, object.name);
     }

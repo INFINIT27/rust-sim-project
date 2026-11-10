@@ -81,7 +81,7 @@
 pub use bevy::math::{Quat, Vec3};
 
 use crate::constants::METRES_PER_UNIT;
-use crate::core::scene::{Aabb, Body, Pose, Prop, Scene};
+use crate::core::scene::{Aabb, Body, DVec3, Pose, Prop, Scene};
 use crate::experiments::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
 use crate::experiments::constants::{
     DEFAULT_RANDOM_SEED, JOVIAN_BOUNDS_MARGIN_UNITS, JOVIAN_CAMERA_POSITION_UNITS,
@@ -154,7 +154,7 @@ fn true_radius_units(radius_m: f64) -> f32 {
 ///
 /// The moon's own mass is left out, as it is for the planets: Ganymede is `7.8e-5` of Jupiter,
 /// so including it would change the speed by `0.004%`.
-pub fn jovian_orbit_speed_units_s(radius_m: f64) -> f32 {
+pub fn jovian_orbit_speed_units_s(radius_m: f64) -> f64 {
     crate::experiments::solar_system::circular_orbit_speed_units_s(
         radius_m,
         jovian_primary().mass_kg as f32,
@@ -231,7 +231,7 @@ pub fn jovian_system() -> Experiment {
     let jupiter_id = scene.add(Prop::at_rest(
         Body::Sphere {
             pose: Pose {
-                position: Vec3::ZERO,
+                position: DVec3::ZERO,
                 rotation: Quat::IDENTITY,
             },
             radius: true_radius_units(jupiter.radius_m),
@@ -247,19 +247,19 @@ pub fn jovian_system() -> Experiment {
     let mut outermost_units = 0.0_f32;
 
     for moon in JOVIAN_MOONS {
-        let orbit_units = (moon.semi_major_axis_m / METRES_PER_UNIT) as f32;
+        let orbit_units = moon.semi_major_axis_m / METRES_PER_UNIT;
         let longitude = moon.mean_longitude_deg.to_radians();
 
         // Prograde about +Y, the same convention `experiment_3` uses: `z` takes `−sin` so that
         // increasing longitude winds counterclockwise seen from above.
-        let radial = Vec3::new(longitude.cos() as f32, 0.0, -(longitude.sin() as f32));
+        let radial = DVec3::new(longitude.cos(), 0.0, -longitude.sin());
         let position = radial * orbit_units;
-        let tangent = Vec3::Y.cross(radial).normalize();
+        let tangent = DVec3::Y.cross(radial).normalize();
         let velocity = tangent * jovian_orbit_speed_units_s(moon.semi_major_axis_m);
 
-        momentum_x += moon.mass_kg * f64::from(velocity.x);
-        momentum_z += moon.mass_kg * f64::from(velocity.z);
-        outermost_units = outermost_units.max(orbit_units);
+        momentum_x += moon.mass_kg * velocity.x;
+        momentum_z += moon.mass_kg * velocity.z;
+        outermost_units = outermost_units.max(orbit_units as f32);
 
         let id = scene.add(Prop::new(
             Body::Sphere {
@@ -280,11 +280,8 @@ pub fn jovian_system() -> Experiment {
 
     // The barycentric frame: Jupiter takes the momentum that cancels the moons'.
     let jupiter_mass = jupiter.mass_kg;
-    scene.props[0].velocity_units_s = Vec3::new(
-        (-momentum_x / jupiter_mass) as f32,
-        0.0,
-        (-momentum_z / jupiter_mass) as f32,
-    );
+    scene.props[0].velocity_units_s =
+        DVec3::new(-momentum_x / jupiter_mass, 0.0, -momentum_z / jupiter_mass);
 
     let extent = outermost_units + JOVIAN_BOUNDS_MARGIN_UNITS;
     scene.bounds = Aabb {

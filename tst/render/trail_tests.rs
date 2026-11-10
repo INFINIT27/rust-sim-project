@@ -12,6 +12,7 @@
 //! The toggle *is* tested headlessly: it touches only a resource and the keyboard.
 
 use super::*;
+use crate::core::scene::DVec3;
 use crate::experiments::catalog::two_body;
 use crate::render::constants::TRAIL_LINE_WIDTH_PX;
 use proptest::prelude::*;
@@ -409,7 +410,7 @@ fn recording_follows_a_body_as_the_scene_steps() {
     }
 
     for (id, path) in trails.iter() {
-        let centre = scene.get(id).unwrap().body.center();
+        let centre = scene.get(id).unwrap().body.center().as_vec3();
         assert_eq!(
             path.head(),
             Some(centre),
@@ -526,14 +527,17 @@ fn a_moons_trail_follows_the_absolute_path_the_integrator_computed() {
                 truth
                     .entry(moon)
                     .or_default()
-                    .push(scene.get(moon).unwrap().body.center());
+                    .push(scene.get(moon).unwrap().body.center().as_vec3());
             }
         });
     }
 
     for &moon in &moons {
         let path = trails.path(moon).unwrap();
-        assert_eq!(path.head(), Some(scene.get(moon).unwrap().body.center()));
+        assert_eq!(
+            path.head(),
+            Some(scene.get(moon).unwrap().body.center().as_vec3())
+        );
         assert!(
             path.len() < TRAIL_MAX_SAMPLES,
             "{moon:?}'s trail hit the sample cap, so it is shorter than it says"
@@ -555,7 +559,7 @@ fn a_moons_trail_follows_the_absolute_path_the_integrator_computed() {
     }
 
     // Io outruns Jupiter, so its real path loops backwards. The trail must show that.
-    let heading = scene.get(jupiter).unwrap().velocity_units_s;
+    let heading = scene.get(jupiter).unwrap().velocity_units_s.as_vec3();
     let retrograde = trails
         .path(io)
         .unwrap()
@@ -652,7 +656,7 @@ fn hiding_trails_does_not_forget_them() {
     let mut scene = Scene::two_body_gravity();
 
     for _ in 0..50 {
-        scene.props[1].body.translate(Vec3::new(0.2, 0.0, 0.0));
+        scene.props[1].body.translate(DVec3::new(0.2, 0.0, 0.0));
         trails.record_from(&scene, &config);
     }
 
@@ -754,7 +758,7 @@ fn the_plugin_records_trails_without_a_render_pipeline() {
     for _ in 0..5 {
         app.world_mut().resource_mut::<Scene>().props[1]
             .body
-            .translate(Vec3::new(0.5, 0.0, 0.0));
+            .translate(DVec3::new(0.5, 0.0, 0.0));
         app.update();
     }
 
