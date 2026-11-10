@@ -9,7 +9,11 @@
 //!   rather than a setting that silently does nothing;
 //! - **checks its values** in `into_runtime`, returning a message naming the bad key.
 
-use serde::Deserialize;
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::bindings::{key_name, parse_key, Action, KeyMap};
 
 use crate::core::scene::Color;
 use crate::input::camera::CameraSettings;
@@ -58,7 +62,7 @@ fn unit_interval(key: &str, value: f64) -> Result<(), String> {
 // ---------------------------------------------------------------------------------------------
 
 /// `camera.toml`: the tuning every new camera starts with.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct CameraFile {
     /// Movement speed, in world units per second.
@@ -73,7 +77,13 @@ pub struct CameraFile {
 
 impl Default for CameraFile {
     fn default() -> Self {
-        let settings = CameraSettings::default();
+        Self::from_runtime(&CameraSettings::default())
+    }
+}
+
+impl CameraFile {
+    /// The file that describes `settings`, for saving.
+    pub fn from_runtime(settings: &CameraSettings) -> Self {
         Self {
             move_speed_units_s: settings.move_speed,
             boost_multiplier: settings.boost_mult,
@@ -107,7 +117,7 @@ impl CameraFile {
 // ---------------------------------------------------------------------------------------------
 
 /// `ui.toml`: one table per on-screen element.
-#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiFile {
     /// `[crosshair]`.
@@ -119,7 +129,7 @@ pub struct UiFile {
 }
 
 /// `[crosshair]` in `ui.toml`.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct CrosshairFile {
     /// Length of each of the four strokes, in pixels.
@@ -134,7 +144,13 @@ pub struct CrosshairFile {
 
 impl Default for CrosshairFile {
     fn default() -> Self {
-        let config = CrosshairConfig::default();
+        Self::from_runtime(&CrosshairConfig::default())
+    }
+}
+
+impl CrosshairFile {
+    /// The file that describes `config`, for saving.
+    pub fn from_runtime(config: &CrosshairConfig) -> Self {
         Self {
             arm_length_px: config.arm_length_px,
             gap_px: config.gap_px,
@@ -145,7 +161,7 @@ impl Default for CrosshairFile {
 }
 
 /// `[compass]` in `ui.toml`.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct CompassFile {
     /// Length of each axis, in pixels.
@@ -160,7 +176,13 @@ pub struct CompassFile {
 
 impl Default for CompassFile {
     fn default() -> Self {
-        let config = CompassConfig::default();
+        Self::from_runtime(&CompassConfig::default())
+    }
+}
+
+impl CompassFile {
+    /// The file that describes `config`, for saving.
+    pub fn from_runtime(config: &CompassConfig) -> Self {
         Self {
             radius_px: config.radius_px,
             margin_px: config.margin_px,
@@ -171,7 +193,7 @@ impl Default for CompassFile {
 }
 
 /// `[arrival]` in `ui.toml`.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ArrivalFile {
     /// The pop-up's width, in pixels.
@@ -182,7 +204,13 @@ pub struct ArrivalFile {
 
 impl Default for ArrivalFile {
     fn default() -> Self {
-        let config = ArrivalPopupConfig::default();
+        Self::from_runtime(&ArrivalPopupConfig::default())
+    }
+}
+
+impl ArrivalFile {
+    /// The file that describes `config`, for saving.
+    pub fn from_runtime(config: &ArrivalPopupConfig) -> Self {
         Self {
             width_px: config.width_px,
             label_column_px: config.label_column_px,
@@ -235,7 +263,7 @@ impl UiFile {
 // ---------------------------------------------------------------------------------------------
 
 /// `trails.toml`: the motion trails behind moving bodies.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct TrailsFile {
     /// Whether trails are shown at launch (`T` toggles them).
@@ -254,7 +282,13 @@ pub struct TrailsFile {
 
 impl Default for TrailsFile {
     fn default() -> Self {
-        let config = TrailConfig::default();
+        Self::from_runtime(&TrailConfig::default())
+    }
+}
+
+impl TrailsFile {
+    /// The file that describes `config`, for saving.
+    pub fn from_runtime(config: &TrailConfig) -> Self {
         Self {
             visible: config.visible,
             length_units: config.length_units,
@@ -297,7 +331,7 @@ impl TrailsFile {
 /// `performance.toml`: the quality-versus-frame-time switches. The `RGA_*`
 /// environment variables override it for one run. The benchmark is environment-only, since it is
 /// something you run, not something you configure.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct PerformanceFile {
     /// `msaa4`, `msaa2`, `smaa`, `fxaa`, or `off`.
@@ -310,7 +344,13 @@ pub struct PerformanceFile {
 
 impl Default for PerformanceFile {
     fn default() -> Self {
-        let settings = PerformanceSettings::default();
+        Self::from_runtime(&PerformanceSettings::default())
+    }
+}
+
+impl PerformanceFile {
+    /// The file that describes `settings`, for saving.
+    pub fn from_runtime(settings: &PerformanceSettings) -> Self {
         Self {
             anti_aliasing: settings.anti_aliasing.name().to_string(),
             floor_eclipse: settings.floor_eclipse,
@@ -344,7 +384,7 @@ impl PerformanceFile {
 
 /// `spacecraft.toml`: the fleet, in the order `G` cycles through it. The first craft is selected
 /// at launch. A file with no `[[craft]]` entries keeps the built-in fleet.
-#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct SpacecraftFile {
     /// One `[[craft]]` table per spacecraft.
@@ -352,7 +392,7 @@ pub struct SpacecraftFile {
 }
 
 /// One `[[craft]]` in `spacecraft.toml`.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CraftFile {
     /// The name shown in the HUD and the arrival pop-up.
@@ -386,7 +426,7 @@ fn default_launch_altitude_m() -> f64 {
 }
 
 /// `[craft.propulsion]`: which way the craft flies, picked by `kind`.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum PropulsionFile {
     /// No engine: launched at up to a speed, then coasts with correction burns.
@@ -399,6 +439,7 @@ pub enum PropulsionFile {
         /// `[craft.propulsion.engine]`.
         engine: EngineFile,
         /// Acceleration limit, in g. Optional: the engine's full thrust when left out.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         max_acceleration_g: Option<f64>,
     },
     /// Flies the least-energy transfer.
@@ -406,12 +447,13 @@ pub enum PropulsionFile {
         /// `[craft.propulsion.engine]`.
         engine: EngineFile,
         /// Acceleration limit, in g. Optional: the engine's full thrust when left out.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         max_acceleration_g: Option<f64>,
     },
 }
 
 /// `[craft.propulsion.engine]`.
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EngineFile {
     /// The engine's name.
@@ -506,5 +548,129 @@ impl SpacecraftFile {
             }
         }
         Fleet::new(craft).ok_or_else(|| "the fleet is not valid".to_string())
+    }
+}
+
+impl UiFile {
+    /// The file that describes the three UI resources, for saving.
+    pub fn from_runtime(
+        crosshair: &CrosshairConfig,
+        compass: &CompassConfig,
+        arrival: &ArrivalPopupConfig,
+    ) -> Self {
+        Self {
+            crosshair: CrosshairFile::from_runtime(crosshair),
+            compass: CompassFile::from_runtime(compass),
+            arrival: ArrivalFile::from_runtime(arrival),
+        }
+    }
+}
+
+/// `value` to nine significant digits, for a number the file states in other units than the
+/// runtime holds (g, specific impulse): `263 s` saves as `263`, not as the `262.99999999999997`
+/// that dividing it back out of an exhaust speed can give.
+fn tidy(value: f64) -> f64 {
+    format!("{value:.8e}").parse().unwrap_or(value)
+}
+
+impl EngineFile {
+    fn from_runtime(engine: &Engine) -> Self {
+        Self {
+            name: engine.name.clone(),
+            thrust_n: engine.thrust_n,
+            specific_impulse_s: tidy(engine.exhaust_speed_m_s / STANDARD_GRAVITY_M_S2),
+        }
+    }
+}
+
+impl CraftFile {
+    fn from_runtime(craft: &Spacecraft) -> Self {
+        // A limit equal to the engine's full thrust on this mass is the one left out of the file.
+        let limit = |engine: &Engine, max_acceleration_m_s2: f64| {
+            (max_acceleration_m_s2 != engine.thrust_n / craft.mass_kg)
+                .then(|| tidy(max_acceleration_m_s2 / STANDARD_GRAVITY_M_S2))
+        };
+        let propulsion = match &craft.propulsion {
+            Propulsion::Coasting {
+                max_departure_speed_m_s,
+            } => PropulsionFile::Coasting {
+                max_departure_speed_m_s: *max_departure_speed_m_s,
+            },
+            Propulsion::Direct {
+                engine,
+                max_acceleration_m_s2,
+            } => PropulsionFile::Direct {
+                engine: EngineFile::from_runtime(engine),
+                max_acceleration_g: limit(engine, *max_acceleration_m_s2),
+            },
+            Propulsion::Transfer {
+                engine,
+                max_acceleration_m_s2,
+            } => PropulsionFile::Transfer {
+                engine: EngineFile::from_runtime(engine),
+                max_acceleration_g: limit(engine, *max_acceleration_m_s2),
+            },
+        };
+        let Color { r, g, b, a } = craft.color;
+        Self {
+            name: craft.name.clone(),
+            mass_kg: craft.mass_kg,
+            radius_m: craft.radius_m,
+            color: [r, g, b, a],
+            launch_altitude_m: craft.launch_altitude_m,
+            propulsion,
+        }
+    }
+}
+
+impl SpacecraftFile {
+    /// The file that describes `fleet`, for saving.
+    pub fn from_runtime(fleet: &Fleet) -> Self {
+        Self {
+            craft: fleet.craft().iter().map(CraftFile::from_runtime).collect(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// controls.toml
+// ---------------------------------------------------------------------------------------------
+
+/// `controls.toml`: `[keys]`, an entry per action (one left out keeps its default key), by its name in
+/// [`crate::constants::ACTIONS`], with Bevy's name for the key (`pause = "KeyK"`).
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct ControlsFile {
+    /// Action name to key name.
+    pub keys: BTreeMap<String, String>,
+}
+
+impl ControlsFile {
+    /// The file that describes `keymap`, for saving. Every action is written, so the saved file
+    /// is a complete list of what each key does.
+    pub fn from_runtime(keymap: &KeyMap) -> Self {
+        Self {
+            keys: Action::ALL
+                .into_iter()
+                .map(|action| (action.info().name.to_string(), key_name(keymap.key(action))))
+                .collect(),
+        }
+    }
+
+    /// The [`KeyMap`] this file describes, or a message naming the bad entry.
+    pub fn into_runtime(self) -> Result<KeyMap, String> {
+        let overrides = self
+            .keys
+            .iter()
+            .map(|(name, key)| {
+                let action = Action::from_name(name)
+                    .ok_or_else(|| format!("`keys.{name}` is not an action that can be bound"))?;
+                let key = parse_key(key).ok_or_else(|| {
+                    format!("`keys.{name}`: {key:?} is not a key that can be bound")
+                })?;
+                Ok((action, key))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        KeyMap::with_overrides(overrides)
     }
 }

@@ -464,3 +464,72 @@ fn a_click_behind_an_open_popup_does_not_capture_the_cursor() {
         .captured;
     assert!(!captured, "an open pop-up keeps the cursor free");
 }
+
+#[test]
+fn the_menu_always_opens_on_its_first_page() {
+    let mut app = app_with_menu();
+    press(&mut app, KeyCode::Escape);
+    app.world_mut()
+        .resource_mut::<MenuState>()
+        .show(MenuPage::Settings(SettingsTab::Video));
+    press(&mut app, KeyCode::Escape);
+    assert!(!is_open(&app));
+    press(&mut app, KeyCode::Escape);
+    assert_eq!(
+        app.world().resource::<MenuState>().page(),
+        MenuPage::Main,
+        "Esc brings out the first page, not the last one shown"
+    );
+}
+
+/// An app with the menu open, waiting to rebind `action`.
+fn app_rebinding(action: Action) -> App {
+    let mut app = app_with_menu();
+    app.init_resource::<KeyMap>();
+    press(&mut app, KeyCode::Escape);
+    app.world_mut()
+        .resource_mut::<MenuState>()
+        .start_rebinding(action);
+    app
+}
+
+#[test]
+fn the_next_key_pressed_while_rebinding_becomes_the_key() {
+    let mut app = app_rebinding(Action::Pause);
+    press(&mut app, KeyCode::KeyK);
+    assert_eq!(
+        app.world().resource::<KeyMap>().key(Action::Pause),
+        KeyCode::KeyK
+    );
+    let menu = app.world().resource::<MenuState>();
+    assert_eq!(menu.rebinding(), None, "one key, then the rebind is done");
+    assert!(menu.is_open(), "and the menu stays open");
+}
+
+#[test]
+fn escape_while_rebinding_cancels_it_and_keeps_the_menu_open() {
+    let mut app = app_rebinding(Action::Pause);
+    press(&mut app, KeyCode::Escape);
+    assert_eq!(
+        app.world().resource::<KeyMap>().key(Action::Pause),
+        KeyCode::KeyP
+    );
+    let menu = app.world().resource::<MenuState>();
+    assert_eq!(menu.rebinding(), None);
+    assert!(menu.is_open());
+}
+
+#[test]
+fn a_key_that_cannot_be_bound_is_ignored_while_rebinding() {
+    let mut app = app_rebinding(Action::Pause);
+    press(&mut app, KeyCode::SuperLeft);
+    assert_eq!(
+        app.world().resource::<MenuState>().rebinding(),
+        Some(Action::Pause),
+        "still waiting"
+    );
+    assert_eq!(
+        app.world().resource::<KeyMap>().key(Action::Pause),
+        KeyCode::KeyP
+    );
+}

@@ -9,7 +9,7 @@
 //! which needs a real window — the same limitation the overlay, crosshair, and compass
 //! tests live with (see `tst/ui/README.md`). So the panel's *content* is produced by pure
 //! functions and everything worth asserting is asserted against those: [`settings_rows`]
-//! and [`binding_rows`] carry the tests, and the painting is kept thin enough to read.
+//! and the bindings rows carry the tests, and the painting is kept thin enough to read.
 //!
 //! What that does not cover is the layout — whether the two grids line up, whether the
 //! panel fits its width. `cargo run --release` is the only thing that answers those.
@@ -160,46 +160,15 @@ fn the_list_describes_every_experiment_in_the_catalog() {
 }
 
 // -----------------------------------------------------------------------
-// The bindings table.
+// The pages' content and the requests they post.
 // -----------------------------------------------------------------------
 
 #[test]
-fn the_panel_would_show_every_binding() {
-    // The one thing that can actually be wrong about a list of labels: a dropped row.
-    let drawn: usize = binding_rows().iter().map(|(_, rows)| rows.len()).sum();
-
-    assert_eq!(drawn, crate::constants::KEY_BINDINGS.len());
-}
-
-#[test]
-fn the_groups_are_titled_and_never_empty() {
-    for (title, rows) in binding_rows() {
-        assert!(!title.trim().is_empty());
-        assert!(!rows.is_empty(), "`{title}` would draw as a bare heading");
-    }
-}
-
-#[test]
-fn the_groups_are_in_display_order() {
-    let titles: Vec<&str> = binding_rows().into_iter().map(|(title, _)| title).collect();
-    let expected: Vec<&str> = crate::bindings::BindingGroup::ALL
-        .into_iter()
-        .map(|group| group.title())
-        .collect();
-
-    assert_eq!(titles, expected);
-}
-
-#[test]
 fn the_menu_tells_you_how_to_close_it() {
-    // A modal panel that does not say how to dismiss it is a trap — especially this one,
-    // since the window is full-screen with no chrome to fall back on.
-    let escape = binding_rows()
-        .into_iter()
-        .flat_map(|(_, rows)| rows)
-        .find(|(keys, _)| *keys == "Esc");
-
-    assert!(escape.is_some(), "the panel must list its own key");
+    // A modal panel that does not say how to dismiss it is a trap, especially here, since the
+    // window is full-screen with no chrome to fall back on.
+    let rows = crate::bindings::binding_rows(&crate::bindings::KeyMap::default());
+    assert!(rows.iter().any(|row| row.keys == "Esc"));
 }
 
 #[test]
@@ -208,11 +177,10 @@ fn the_panel_is_wide_enough_for_its_longest_line() {
 
     // A crude but real check on the one layout number a test can reason about: at egui's
     // default body size a character is roughly 7 px wide, so the longest action has to fit
-    // in what is left of the panel after the key column. Wrong, and the table wraps into
-    // ragged prose — which `MENU_WIDTH_PX` was chosen to prevent.
-    let longest = crate::constants::KEY_BINDINGS
+    // in what is left of the panel after the key column.
+    let longest = crate::bindings::binding_rows(&crate::bindings::KeyMap::default())
         .iter()
-        .map(|binding| binding.action.chars().count())
+        .map(|row| row.action.chars().count())
         .max()
         .unwrap_or(0);
 
@@ -221,4 +189,58 @@ fn the_panel_is_wide_enough_for_its_longest_line() {
         (longest as f32) * 7.0 <= available * 1.05,
         "the longest action is {longest} characters but only {available} px are left for it"
     );
+}
+
+#[test]
+fn every_anti_aliasing_mode_has_a_label() {
+    for mode in ANTI_ALIASING_MODES {
+        assert!(!anti_aliasing_label(mode).trim().is_empty());
+    }
+    assert_eq!(ANTI_ALIASING_MODES.len(), 5, "every mode is offered");
+}
+
+#[test]
+fn a_save_request_is_taken_once_and_its_outcome_reported() {
+    let mut requests = MenuRequests::default();
+    requests.set_status("old".into());
+    requests.request_save(SaveTarget::Trails);
+    assert_eq!(
+        requests.status(),
+        None,
+        "a new request clears the last outcome"
+    );
+    assert_eq!(requests.take_save(), Some(SaveTarget::Trails));
+    assert_eq!(requests.take_save(), None, "taken once");
+    requests.set_status("Saved".into());
+    assert_eq!(requests.status(), Some("Saved"));
+}
+
+#[test]
+fn an_unchanged_edit_does_not_mark_the_resource_changed() {
+    use bevy::app::App;
+    use bevy::ecs::change_detection::DetectChanges;
+    use bevy::ecs::system::RunSystemOnce;
+
+    // The menu edits copies so that a page merely being open does not mark its settings
+    // changed every frame, which would make the camera and video re-apply them every frame.
+    let mut app = App::new();
+    app.init_resource::<TrailConfig>();
+    app.update();
+    app.world_mut().clear_trackers();
+    let changed = app
+        .world_mut()
+        .run_system_once(|mut trails: ResMut<TrailConfig>| {
+            let before = trails.last_changed();
+            edit_copy(&mut trails, |_| {});
+            trails.last_changed() != before
+        });
+    assert!(!changed);
+    let changed = app
+        .world_mut()
+        .run_system_once(|mut trails: ResMut<TrailConfig>| {
+            let before = trails.last_changed();
+            edit_copy(&mut trails, |trails| trails.visible = !trails.visible);
+            trails.last_changed() != before
+        });
+    assert!(changed);
 }

@@ -34,7 +34,8 @@ impl<'a> Ephemeris<'a> {
     /// does not visit folded into one body — see [`fold_distant_moons`].
     ///
     /// `None` as soon as `progress` is cancelled, which it checks every few hundred samples: a
-    /// century's ephemeris takes long enough that a cancel must not wait for it to finish.
+    /// century's ephemeris takes long enough that a cancel must not wait for it to finish. Also
+    /// `None` for a horizon that is not a positive, finite time: there is no future to predict.
     pub(super) fn build(
         scene: &Scene,
         leave_out: Option<BodyId>,
@@ -43,6 +44,9 @@ impl<'a> Ephemeris<'a> {
         horizon_s: f64,
         progress: &'a PlanProgress,
     ) -> Option<Self> {
+        if !(horizon_s.is_finite() && horizon_s > 0.0) {
+            return None;
+        }
         let mut future = scene.clone();
         if let Some(id) = leave_out {
             future.remove(id)?;
@@ -56,7 +60,8 @@ impl<'a> Ephemeris<'a> {
             .min(TRANSFER_EPHEMERIS_ORBIT_FRACTION * shortest_dynamical_time_s(&future))
             .max(TRANSFER_MIN_EPHEMERIS_STEP_S);
         let step = TimeStep::from_seconds(step_s)?;
-        let samples = (horizon_s / step_s).ceil() as usize + 1;
+        // At least two: `position` and the other lookups interpolate between a sample and the next.
+        let samples = ((horizon_s / step_s).ceil() as usize).max(1) + 1;
 
         let snapshot = |scene: &Scene| -> Vec<(DVec3, DVec3)> {
             scene
@@ -171,13 +176,30 @@ impl<'a> Ephemeris<'a> {
     /// The gravitational acceleration at `r` and time `t`, in m/s², with the scene's Plummer
     /// softening — the same law `gravitational_acceleration` applies to a prop.
     pub(super) fn acceleration(&self, r: DVec3, t: f64) -> DVec3 {
+        self.acceleration_among(r, |body| self.position(body, t))
+    }
+
+    /// [`acceleration`](Self::acceleration) with every body's position already known, from
+    /// [`positions_into`](Self::positions_into) at the same time. A trial flight needs the
+    /// positions for several things each step, and interpolating them once is most of its cost.
+    pub(super) fn acceleration_at(&self, r: DVec3, positions: &[DVec3]) -> DVec3 {
+        self.acceleration_among(r, |body| positions[body])
+    }
+
+    /// Every body's position at `t`, written into `out` (resized to the body count).
+    pub(super) fn positions_into(&self, t: f64, out: &mut Vec<DVec3>) {
+        out.clear();
+        out.extend((0..self.mu.len()).map(|body| self.position(body, t)));
+    }
+
+    fn acceleration_among(&self, r: DVec3, position: impl Fn(usize) -> DVec3) -> DVec3 {
         let eps2 = self.softening_m * self.softening_m;
         let mut a = DVec3::ZERO;
         for (body, &mu) in self.mu.iter().enumerate() {
             if mu <= 0.0 {
                 continue;
             }
-            let offset = self.position(body, t) - r;
+            let offset = position(body) - r;
             let d2 = offset.length_squared();
             if d2 > 0.0 {
                 a += offset / d2.sqrt() * (mu / (d2 + eps2));

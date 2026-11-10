@@ -382,3 +382,35 @@ proptest! {
         prop_assert!(part.seconds() <= step.seconds());
     }
 }
+
+#[test]
+fn a_hold_stops_the_clock_and_the_pause_key_cannot_release_it() {
+    let mut clock = SimulationClock::new(10.0);
+    clock.hold();
+    assert!(clock.advance(0.05).is_zero(), "held, though not paused");
+
+    // `P` during a plan: the user's pause flips, the hold stays.
+    clock.toggle_paused();
+    clock.toggle_paused();
+    assert!(!clock.is_paused());
+    assert!(clock.advance(0.05).is_zero(), "still held");
+
+    clock.release();
+    assert!(
+        !clock.advance(0.05).is_zero(),
+        "running again once released"
+    );
+}
+
+#[test]
+fn a_pause_set_during_a_hold_survives_its_release() {
+    let mut clock = SimulationClock::new(10.0);
+    clock.hold();
+    clock.toggle_paused();
+    clock.release();
+    assert!(clock.is_paused());
+    assert!(
+        clock.advance(0.05).is_zero(),
+        "the user's pause outlasts the plan"
+    );
+}

@@ -278,6 +278,10 @@ pub struct SimulationClock {
     /// Set by [`request_single_step`](Self::request_single_step): lets exactly one
     /// frame through while paused, then clears itself.
     single_step_pending: bool,
+    /// Set by [`hold`](Self::hold) while something that needs the scene to stand still, a
+    /// flight plan, is being computed. Separate from `paused`, which is the user's: `P` cannot
+    /// release a hold, and a pause set during one survives it.
+    held: bool,
     /// The step the last [`advance`](Self::advance) returned, so consumers that did
     /// not call it — the scene-stepping system, the overlay — can read it without a
     /// second source of truth.
@@ -309,6 +313,7 @@ impl SimulationClock {
             max_real_step_s: MAX_REAL_STEP_SECONDS,
             paused: false,
             single_step_pending: false,
+            held: false,
             last_step: TimeStep::ZERO,
         }
     }
@@ -332,12 +337,14 @@ impl SimulationClock {
     /// # Returns
     ///
     /// The step to hand to [`Scene::step`](crate::core::scene::Scene::step).
-    /// `TimeStep::ZERO` when paused, when the delta was unusable, or when the scale
+    /// `TimeStep::ZERO` when paused or held, when the delta was unusable, or when the scale
     /// is zero.
     pub fn advance(&mut self, real_step_s: f32) -> TimeStep {
         let real = clamp_real_step(real_step_s, self.max_real_step_s);
 
-        let effective_real = if self.paused {
+        let effective_real = if self.held {
+            0.0
+        } else if self.paused {
             if self.single_step_pending {
                 self.single_step_pending = false;
                 real
@@ -425,6 +432,27 @@ impl SimulationClock {
     #[inline]
     pub fn set_paused(&mut self, paused: bool) {
         self.paused = paused;
+    }
+
+    /// Hold the clock still, whatever the user's pause, while a flight plan is being computed: a
+    /// plan is made from the scene as it is now, so the scene must not move until it is applied.
+    /// `P` still flips [`is_paused`](Self::is_paused), which takes effect once the hold is
+    /// released.
+    #[inline]
+    pub fn hold(&mut self) {
+        self.held = true;
+    }
+
+    /// Release a [`hold`](Self::hold). The clock is paused afterwards only if the user paused it.
+    #[inline]
+    pub fn release(&mut self) {
+        self.held = false;
+    }
+
+    /// Is the clock held for a plan?
+    #[inline]
+    pub fn is_held(&self) -> bool {
+        self.held
     }
 
     /// Flip the pause state.

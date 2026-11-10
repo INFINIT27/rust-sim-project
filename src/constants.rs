@@ -28,13 +28,16 @@
 //!   frames the camera and scales the clock against.
 //! - **The window** — what `main.rs` asks Bevy for: the title, the display mode, and
 //!   the size the window takes when it is not full-screen.
-//! - **The key bindings** — [`KEY_BINDINGS`], the one table `--help` and the in-window
-//!   menu both read. Data rather than a tunable, and here for the same reason as
-//!   everything else in this file: two layers need it and neither may import the other.
+//! - **The key bindings** — [`ACTIONS`] (each rebindable action and its default key),
+//!   [`FIXED_BINDINGS`], and [`BINDABLE_KEYS`], which the input systems, `--help`, and the
+//!   in-window menu all read through [`crate::bindings`]. Here because several layers need them
+//!   and none may import another.
 
 use bevy::window::WindowMode;
 
-use crate::bindings::{BindingGroup, KeyBinding};
+use bevy::input::keyboard::KeyCode;
+
+use crate::bindings::{Action, ActionInfo, BindingGroup, KeyBinding};
 
 /// How many metres one world unit represents: **1 unit = 10⁹ m**.
 ///
@@ -232,56 +235,203 @@ pub const WINDOW_WIDTH_PX: f32 = 800.0;
 /// — including full-screen — and none needs adjusting.
 pub const WINDOW_HEIGHT_PX: f32 = 600.0;
 
-/// Every key the app responds to: the keys, what they do, and which part of the app they
-/// belong to.
+/// Every rebindable action: its name in `config/controls.toml`, what it does, which part of the
+/// app it belongs to, and the key it starts on.
 ///
-/// **Why these values.** They are the bindings themselves, chosen where each was
-/// introduced and documented in the module that implements it — this is the *display*
-/// copy, and the only one. `--help` prints it before a window exists and
-/// [`crate::ui::menu`] draws it on screen; those live in layers that may not import each
-/// other, so a table owned by either would be duplicated in the other and would drift the
-/// first time a binding changed. See [`crate::bindings`] for the types and the rendering.
+/// **Why these values.** They are the bindings themselves, chosen where each was introduced and
+/// documented in the module that implements it. The order within a group is the order shown in
+/// `--help` and the menu, from what a new viewer needs first to what they need once, and it must
+/// match [`Action::ALL`] (a test checks), because [`Action::info`] indexes this table.
 ///
-/// The order within a group is the order shown, and it is deliberate: the pair that reads
-/// as one control (`W / S`, `] / [`) sits on one row, and the rows run from what a new
-/// viewer needs first to what they need once.
+/// **Used by.** [`KeyMap::default`](crate::bindings::KeyMap), and through it every input system
+/// that reads a key, `--help` ([`crate::bindings::binding_help_text`]), and the menu's controls
+/// page.
 ///
-/// **Used by.** [`crate::bindings::bindings_in`] and
-/// [`crate::bindings::binding_help_text`], and through them
-/// [`crate::experiments::selection::help_text`] and [`crate::ui::menu::menu_system`].
+/// **If you change it.** Changing a default key rebinds it for everyone who has not saved their
+/// own `config/controls.toml`. Two actions on one key fail `tst/bindings_tests.rs`. Adding an
+/// action means a variant in [`Action`], a row here, and a `KeyMap` call in the system that acts.
+pub const ACTIONS: [ActionInfo; 24] = [
+    ActionInfo {
+        action: Action::MoveForward,
+        name: "move_forward",
+        label: "Fly forward",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyW,
+    },
+    ActionInfo {
+        action: Action::MoveBack,
+        name: "move_back",
+        label: "Fly back",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyS,
+    },
+    ActionInfo {
+        action: Action::MoveLeft,
+        name: "move_left",
+        label: "Fly left",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyA,
+    },
+    ActionInfo {
+        action: Action::MoveRight,
+        name: "move_right",
+        label: "Fly right",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyD,
+    },
+    ActionInfo {
+        action: Action::MoveUp,
+        name: "move_up",
+        label: "Fly up (world up)",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::Space,
+    },
+    ActionInfo {
+        action: Action::MoveDown,
+        name: "move_down",
+        label: "Fly down (world down)",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::ControlLeft,
+    },
+    ActionInfo {
+        action: Action::MoveUpAlt,
+        name: "move_up_alt",
+        label: "Fly up, second key",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyE,
+    },
+    ActionInfo {
+        action: Action::MoveDownAlt,
+        name: "move_down_alt",
+        label: "Fly down, second key",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyQ,
+    },
+    ActionInfo {
+        action: Action::CycleSpeed,
+        name: "cycle_speed",
+        label: "Cycle camera speed (normal, fast, slow)",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyC,
+    },
+    ActionInfo {
+        action: Action::LockTarget,
+        name: "lock_target",
+        label: "Lock onto the body at the crosshair, or release it",
+        group: BindingGroup::Camera,
+        default_key: KeyCode::KeyF,
+    },
+    ActionInfo {
+        action: Action::Pause,
+        name: "pause",
+        label: "Pause / resume the simulation",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::KeyP,
+    },
+    ActionInfo {
+        action: Action::SingleStep,
+        name: "single_step",
+        label: "Advance one frame while paused",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::Period,
+    },
+    ActionInfo {
+        action: Action::TimeFaster,
+        name: "time_faster",
+        label: "Double the time scale",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::BracketRight,
+    },
+    ActionInfo {
+        action: Action::TimeSlower,
+        name: "time_slower",
+        label: "Halve the time scale",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::BracketLeft,
+    },
+    ActionInfo {
+        action: Action::TimeDecadeFaster,
+        name: "time_ten_times_faster",
+        label: "Time scale x10",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::Equal,
+    },
+    ActionInfo {
+        action: Action::TimeDecadeSlower,
+        name: "time_ten_times_slower",
+        label: "Time scale /10",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::Minus,
+    },
+    ActionInfo {
+        action: Action::TimeReset,
+        name: "time_reset",
+        label: "Reset the time scale",
+        group: BindingGroup::Simulation,
+        default_key: KeyCode::Backslash,
+    },
+    ActionInfo {
+        action: Action::ToggleTrails,
+        name: "toggle_trails",
+        label: "Show / hide motion trails",
+        group: BindingGroup::View,
+        default_key: KeyCode::KeyT,
+    },
+    ActionInfo {
+        action: Action::TogglePicker,
+        name: "toggle_picker",
+        label: "Open / close the object picker",
+        group: BindingGroup::Place,
+        default_key: KeyCode::KeyB,
+    },
+    ActionInfo {
+        action: Action::PickerUp,
+        name: "picker_up",
+        label: "Picker: previous object",
+        group: BindingGroup::Place,
+        default_key: KeyCode::ArrowUp,
+    },
+    ActionInfo {
+        action: Action::PickerDown,
+        name: "picker_down",
+        label: "Picker: next object",
+        group: BindingGroup::Place,
+        default_key: KeyCode::ArrowDown,
+    },
+    ActionInfo {
+        action: Action::PickerPlace,
+        name: "picker_place",
+        label: "Picker: place it in front of the camera",
+        group: BindingGroup::Place,
+        default_key: KeyCode::Enter,
+    },
+    ActionInfo {
+        action: Action::Launch,
+        name: "launch",
+        label: "Rocket: on the departure body, then on the destination",
+        group: BindingGroup::Place,
+        default_key: KeyCode::KeyR,
+    },
+    ActionInfo {
+        action: Action::NextCraft,
+        name: "next_craft",
+        label: "Next spacecraft in the fleet",
+        group: BindingGroup::Place,
+        default_key: KeyCode::KeyG,
+    },
+];
+
+/// The bindings that cannot be changed: the mouse, `Esc`, and the operating system's quit keys.
 ///
-/// **If you change it.** Adding a row documents a key; it does not *bind* one — the
-/// binding is a `just_pressed` call in the layer that owns the setting, and the two are
-/// kept in step by hand. So add the row in the same change as the binding. Two rows
-/// claiming the same key fail `tst/bindings_tests.rs`, and two *implementations* claiming
-/// one key fail `controls_tests::no_binding_collides_with_the_camera`, which is the check
-/// that actually matters.
-pub const KEY_BINDINGS: [KeyBinding; 24] = [
-    KeyBinding {
-        keys: "W / S",
-        action: "Fly forward / back, relative to the view",
-        group: BindingGroup::Camera,
-    },
-    KeyBinding {
-        keys: "A / D",
-        action: "Strafe left / right",
-        group: BindingGroup::Camera,
-    },
-    KeyBinding {
-        keys: "Space / Left Ctrl",
-        action: "Rise / descend along world Y",
-        group: BindingGroup::Camera,
-    },
-    KeyBinding {
-        keys: "E / Q",
-        action: "Rise / descend — aliases, for hands that prefer them",
-        group: BindingGroup::Camera,
-    },
-    KeyBinding {
-        keys: "C",
-        action: "Cycle camera speed: normal, fast, slow",
-        group: BindingGroup::Camera,
-    },
+/// **Why these values.** The mouse is not a key. `Esc` opens the menu where keys are rebound, so
+/// rebinding it could lock you out of the menu; it also cancels a rebind in progress. The quit
+/// keys belong to the OS, not to the app.
+///
+/// **Used by.** [`crate::bindings::binding_rows`], so `--help` and the menu list them after the
+/// rebindable actions of their group.
+///
+/// **If you change it.** These rows only describe; the bindings are in the systems themselves.
+pub const FIXED_BINDINGS: [KeyBinding; 7] = [
     KeyBinding {
         keys: "Left click",
         action: "Capture the cursor for mouse-look",
@@ -289,12 +439,7 @@ pub const KEY_BINDINGS: [KeyBinding; 24] = [
     },
     KeyBinding {
         keys: "Mouse",
-        action: "Look around, or orbit when locked, while captured",
-        group: BindingGroup::Camera,
-    },
-    KeyBinding {
-        keys: "F",
-        action: "Lock onto the body at the crosshair, or release it",
+        action: "Look around (while captured)",
         group: BindingGroup::Camera,
     },
     KeyBinding {
@@ -303,63 +448,8 @@ pub const KEY_BINDINGS: [KeyBinding; 24] = [
         group: BindingGroup::Camera,
     },
     KeyBinding {
-        keys: "P",
-        action: "Pause or resume the simulation (the camera keeps working)",
-        group: BindingGroup::Simulation,
-    },
-    KeyBinding {
-        keys: ".",
-        action: "Advance exactly one frame while paused",
-        group: BindingGroup::Simulation,
-    },
-    KeyBinding {
-        keys: "] / [",
-        action: "Double / halve the time scale",
-        group: BindingGroup::Simulation,
-    },
-    KeyBinding {
-        keys: "\\",
-        action: "Reset the time scale to this experiment's own",
-        group: BindingGroup::Simulation,
-    },
-    KeyBinding {
-        keys: "+ / -",
-        action: "Ten times faster / slower: multiply / divide by 10",
-        group: BindingGroup::Simulation,
-    },
-    KeyBinding {
-        keys: "T",
-        action: "Show or hide the motion trails",
-        group: BindingGroup::View,
-    },
-    KeyBinding {
-        keys: "B",
-        action: "Open or close the object placer",
-        group: BindingGroup::Place,
-    },
-    KeyBinding {
-        keys: "Up / Down",
-        action: "Choose which object to place",
-        group: BindingGroup::Place,
-    },
-    KeyBinding {
-        keys: "Enter",
-        action: "Place the selected object in front of the camera",
-        group: BindingGroup::Place,
-    },
-    KeyBinding {
-        keys: "R",
-        action: "Rocket: R on the departure body, then R on the destination",
-        group: BindingGroup::Place,
-    },
-    KeyBinding {
-        keys: "G",
-        action: "Next spacecraft (crewed 3 g, full thrust, probe)",
-        group: BindingGroup::Place,
-    },
-    KeyBinding {
         keys: "Esc",
-        action: "Open or close this menu; also releases the cursor",
+        action: "Close a pop-up, or open or close the menu",
         group: BindingGroup::Menu,
     },
     KeyBinding {
@@ -369,12 +459,123 @@ pub const KEY_BINDINGS: [KeyBinding; 24] = [
     },
     KeyBinding {
         keys: "Alt-F4",
-        action: "Quit (Windows / Linux)",
+        action: "Quit (Windows, Linux)",
         group: BindingGroup::Window,
     },
     KeyBinding {
         keys: "Ctrl-C",
-        action: "Quit from the launching terminal",
+        action: "Quit from the terminal",
         group: BindingGroup::Window,
     },
+];
+
+/// The keys an action may be rebound to.
+///
+/// **Why these values.** Letters, digits, punctuation, arrows, the editing block, function keys,
+/// the modifiers, and the number pad: every key a keyboard reliably reports. Left out: `Esc`,
+/// which is the menu's (see [`FIXED_BINDINGS`]), and the OS keys (`Super`, media keys), which the
+/// OS often keeps for itself.
+///
+/// **Used by.** The menu's rebind capture (a key outside this list is ignored), and
+/// [`crate::bindings::parse_key`], which reads `config/controls.toml`.
+///
+/// **If you change it.** A key removed here can no longer be bound, and a saved file naming it
+/// fails to load.
+pub const BINDABLE_KEYS: [KeyCode; 96] = [
+    KeyCode::KeyA,
+    KeyCode::KeyB,
+    KeyCode::KeyC,
+    KeyCode::KeyD,
+    KeyCode::KeyE,
+    KeyCode::KeyF,
+    KeyCode::KeyG,
+    KeyCode::KeyH,
+    KeyCode::KeyI,
+    KeyCode::KeyJ,
+    KeyCode::KeyK,
+    KeyCode::KeyL,
+    KeyCode::KeyM,
+    KeyCode::KeyN,
+    KeyCode::KeyO,
+    KeyCode::KeyP,
+    KeyCode::KeyQ,
+    KeyCode::KeyR,
+    KeyCode::KeyS,
+    KeyCode::KeyT,
+    KeyCode::KeyU,
+    KeyCode::KeyV,
+    KeyCode::KeyW,
+    KeyCode::KeyX,
+    KeyCode::KeyY,
+    KeyCode::KeyZ,
+    KeyCode::Digit0,
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit6,
+    KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
+    KeyCode::Backquote,
+    KeyCode::Minus,
+    KeyCode::Equal,
+    KeyCode::BracketLeft,
+    KeyCode::BracketRight,
+    KeyCode::Backslash,
+    KeyCode::Semicolon,
+    KeyCode::Quote,
+    KeyCode::Comma,
+    KeyCode::Period,
+    KeyCode::Slash,
+    KeyCode::Space,
+    KeyCode::Enter,
+    KeyCode::Tab,
+    KeyCode::Backspace,
+    KeyCode::ShiftLeft,
+    KeyCode::ShiftRight,
+    KeyCode::ControlLeft,
+    KeyCode::ControlRight,
+    KeyCode::AltLeft,
+    KeyCode::AltRight,
+    KeyCode::ArrowUp,
+    KeyCode::ArrowDown,
+    KeyCode::ArrowLeft,
+    KeyCode::ArrowRight,
+    KeyCode::Insert,
+    KeyCode::Delete,
+    KeyCode::Home,
+    KeyCode::End,
+    KeyCode::PageUp,
+    KeyCode::PageDown,
+    KeyCode::F1,
+    KeyCode::F2,
+    KeyCode::F3,
+    KeyCode::F4,
+    KeyCode::F5,
+    KeyCode::F6,
+    KeyCode::F7,
+    KeyCode::F8,
+    KeyCode::F9,
+    KeyCode::F10,
+    KeyCode::F11,
+    KeyCode::F12,
+    KeyCode::Numpad0,
+    KeyCode::Numpad1,
+    KeyCode::Numpad2,
+    KeyCode::Numpad3,
+    KeyCode::Numpad4,
+    KeyCode::Numpad5,
+    KeyCode::Numpad6,
+    KeyCode::Numpad7,
+    KeyCode::Numpad8,
+    KeyCode::Numpad9,
+    KeyCode::NumpadAdd,
+    KeyCode::NumpadSubtract,
+    KeyCode::NumpadMultiply,
+    KeyCode::NumpadDivide,
+    KeyCode::NumpadDecimal,
+    KeyCode::NumpadEnter,
+    KeyCode::CapsLock,
 ];

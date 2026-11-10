@@ -19,9 +19,8 @@
 //! - `--help` / `-h` — print usage and exit.
 //!
 //! The in-window key bindings `--help` prints come from
-//! [`KEY_BINDINGS`](crate::constants::KEY_BINDINGS) via
-//! [`crate::bindings::binding_help_text`] — the same table the `Esc`
-//! menu draws, so the two cannot disagree.
+//! [`crate::bindings::binding_help_text`], from the same rows the `Esc`
+//! menu draws and the same defaults the input systems start on, so they cannot disagree.
 //!
 //! # Why hand-rolled rather than `clap`
 //!
@@ -297,7 +296,7 @@ pub fn help_text() -> String {
          IN THE WINDOW:\n",
     );
 
-    // The bindings are not written out here: they come from `KEY_BINDINGS`, the same table
+    // The bindings are not written out here: they come from `crate::bindings`, the same rows
     // the in-window `Esc` menu draws. Two hand-maintained copies of a key list drift the
     // first time a binding changes — in the one place a user looks to find out what the
     // bindings are.

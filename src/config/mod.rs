@@ -1,4 +1,5 @@
-//! Configuration files: the settings in `config/*.toml`, read once at startup.
+//! Configuration files: the settings in `config/*.toml`, read once at startup and written back
+//! when the menu saves a page ([`ConfigPlugin`]).
 //!
 //! Each file is optional, and so is each key in it. A missing file or key keeps the built-in
 //! value, which is the owning layer's `Default` and the constants behind it, so the app runs the
@@ -13,6 +14,7 @@
 //! | `ui.toml` | [`CrosshairConfig`], [`CompassConfig`], [`ArrivalPopupConfig`] |
 //! | `trails.toml` | [`TrailConfig`] |
 //! | `performance.toml` | [`PerformanceSettings`], which the `RGA_*` variables override |
+//! | `controls.toml` | [`KeyMap`] |
 //!
 //! # Where it sits
 //!
@@ -27,14 +29,19 @@ pub mod files;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use bevy::app::App;
+use bevy::app::{App, Plugin, Update};
+use bevy::ecs::system::{Res, ResMut, Resource, SystemParam};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
+use crate::bindings::KeyMap;
 use crate::config::constants::{
-    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, PERFORMANCE_FILE, SPACECRAFT_FILE, TRAILS_FILE,
-    UI_FILE,
+    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
+    SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE,
 };
-use crate::config::files::{CameraFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile};
+use crate::config::files::{
+    CameraFile, ControlsFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile,
+};
 use crate::input::camera::CameraSettings;
 use crate::performance::PerformanceSettings;
 use crate::render::mission::Mission;
@@ -43,6 +50,7 @@ use crate::spacecraft::Fleet;
 use crate::ui::arrival::ArrivalPopupConfig;
 use crate::ui::compass::CompassConfig;
 use crate::ui::crosshair::CrosshairConfig;
+use crate::ui::menu::{MenuRequests, SaveTarget};
 
 /// A configuration file that could not be used: which file, and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +98,8 @@ pub struct Config {
     pub trails: TrailConfig,
     /// From `performance.toml`, before the environment overrides it.
     pub performance: PerformanceSettings,
+    /// From `controls.toml`.
+    pub keymap: KeyMap,
 }
 
 impl Config {
@@ -109,6 +119,7 @@ impl Config {
                 &file(PERFORMANCE_FILE),
                 PerformanceFile::into_runtime,
             )?,
+            keymap: read::<ControlsFile, _>(&file(CONTROLS_FILE), ControlsFile::into_runtime)?,
         })
     }
 
@@ -121,8 +132,125 @@ impl Config {
             .insert_resource(self.crosshair)
             .insert_resource(self.compass)
             .insert_resource(self.arrival)
-            .insert_resource(self.trails);
+            .insert_resource(self.trails)
+            .insert_resource(self.keymap);
     }
+}
+
+/// The directory the configuration was read from, which the menu's Save writes back to.
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+pub struct ConfigDir(pub PathBuf);
+
+/// Saves the configuration when the menu asks: the menu (in `ui`) cannot write files of a layer
+/// above it, so it posts a [`SaveTarget`] in [`MenuRequests`] and [`save_requested_system`] writes
+/// that page's file and reports back.
+pub struct ConfigPlugin {
+    dir: PathBuf,
+}
+
+impl ConfigPlugin {
+    /// Save into `dir`, normally [`config_dir`].
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
+    }
+}
+
+impl Plugin for ConfigPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(ConfigDir(self.dir.clone()))
+            .init_resource::<MenuRequests>()
+            .add_systems(Update, save_requested_system);
+    }
+}
+
+/// Every resource a page of the menu can save. Each is optional, so an app without one of the
+/// plugins still saves the rest; a missing one saves its defaults.
+#[derive(SystemParam)]
+pub struct Configured<'w> {
+    keymap: Option<Res<'w, KeyMap>>,
+    performance: Option<Res<'w, PerformanceSettings>>,
+    camera: Option<Res<'w, CameraSettings>>,
+    crosshair: Option<Res<'w, CrosshairConfig>>,
+    compass: Option<Res<'w, CompassConfig>>,
+    arrival: Option<Res<'w, ArrivalPopupConfig>>,
+    trails: Option<Res<'w, TrailConfig>>,
+    mission: Option<Res<'w, Mission>>,
+}
+
+/// The value of an optional resource, or its default.
+fn or_default<T: Resource + Clone + Default>(resource: &Option<Res<T>>) -> T {
+    resource.as_deref().cloned().unwrap_or_default()
+}
+
+/// Write the page the menu asked to save, if it asked, and put the outcome in
+/// [`MenuRequests::status`] for the menu to show.
+pub fn save_requested_system(
+    dir: Res<ConfigDir>,
+    mut requests: ResMut<MenuRequests>,
+    configured: Configured,
+) {
+    let Some(target) = requests.take_save() else {
+        return;
+    };
+    let c = &configured;
+    let dir = &dir.0;
+    let result = match target {
+        SaveTarget::Controls => write_file(
+            dir,
+            CONTROLS_FILE,
+            &ControlsFile::from_runtime(&or_default(&c.keymap)),
+        ),
+        SaveTarget::Video => write_file(
+            dir,
+            PERFORMANCE_FILE,
+            &PerformanceFile::from_runtime(&or_default(&c.performance)),
+        ),
+        SaveTarget::Camera => write_file(
+            dir,
+            CAMERA_FILE,
+            &CameraFile::from_runtime(&or_default(&c.camera)),
+        ),
+        SaveTarget::Interface => write_file(
+            dir,
+            UI_FILE,
+            &UiFile::from_runtime(
+                &or_default(&c.crosshair),
+                &or_default(&c.compass),
+                &or_default(&c.arrival),
+            ),
+        ),
+        SaveTarget::Trails => write_file(
+            dir,
+            TRAILS_FILE,
+            &TrailsFile::from_runtime(&or_default(&c.trails)),
+        ),
+        SaveTarget::Spacecraft => {
+            let fleet = c
+                .mission
+                .as_ref()
+                .map_or_else(Fleet::default, |mission| mission.fleet.clone());
+            write_file(dir, SPACECRAFT_FILE, &SpacecraftFile::from_runtime(&fleet))
+        }
+    };
+    requests.set_status(match result {
+        Ok(path) => format!("Saved {}", path.display()),
+        Err(error) => format!("Could not save: {error}"),
+    });
+}
+
+/// Write `file` as TOML to `dir/name`, after [`SAVED_FILE_HEADER`], creating `dir` if needed.
+/// Returns the path written.
+pub fn write_file<F: Serialize>(dir: &Path, name: &str, file: &F) -> Result<PathBuf, ConfigError> {
+    let path = dir.join(name);
+    let error = |message: String| ConfigError {
+        path: path.clone(),
+        message,
+    };
+    let text = toml::to_string(file).map_err(|e| error(e.to_string()))?;
+    std::fs::create_dir_all(dir).map_err(|e| error(e.to_string()))?;
+    std::fs::write(&path, format!("{SAVED_FILE_HEADER}{text}"))
+        .map_err(|e| error(e.to_string()))?;
+    Ok(path)
 }
 
 /// Parse `text` as a configuration file of type `F` and convert it with `into_runtime`. Pure, so

@@ -37,6 +37,7 @@ use bevy::app::{App, Plugin, Update};
 use bevy::ecs::system::{Res, ResMut};
 use bevy::input::{keyboard::KeyCode, ButtonInput};
 
+use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::constants::TWO_BODY_TIME_SCALE;
 use crate::input::constants::{TIME_SCALE_DECADE_FACTOR, TIME_SCALE_KEY_FACTOR};
 use crate::input::menu::MenuState;
@@ -75,6 +76,7 @@ impl Plugin for SimulationControlsPlugin {
 /// them in either order or in parallel, and the result is the same.
 pub fn simulation_controls_system(
     keys: Res<ButtonInput<KeyCode>>,
+    keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
     mut clock: ResMut<SimulationClock>,
 ) {
@@ -85,21 +87,21 @@ pub fn simulation_controls_system(
         return;
     }
 
-    if keys.just_pressed(KeyCode::KeyP) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::Pause) {
         clock.toggle_paused();
     }
 
-    if keys.just_pressed(KeyCode::Period) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::SingleStep) {
         // Queues one frame. Has no effect unless the clock is paused, and does not
         // accumulate — see the clock's docs for why that is deliberate.
         clock.request_single_step();
     }
 
-    if keys.just_pressed(KeyCode::BracketRight) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::TimeFaster) {
         clock.multiply_scale(TIME_SCALE_KEY_FACTOR);
     }
 
-    if keys.just_pressed(KeyCode::Minus) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::TimeDecadeSlower) {
         // A whole order of magnitude in one press. `[` halves, which is the right granularity for
         // finding a pace and nine presses too slow for changing regime — the scales in this crate
         // differ by decades (`1e4` for the Jovian system, `1e6` for the solar system, `2e7` for the
@@ -115,15 +117,15 @@ pub fn simulation_controls_system(
     // `NumpadAdd` as well, because a numeric keypad's `+` is unambiguously this action and a user who
     // reaches for it is not going to guess that only the top row counts. `-` predates this and is
     // bound only to `Minus`; that asymmetry is a gap, not a decision.
-    if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::TimeDecadeFaster) {
         clock.multiply_scale(TIME_SCALE_DECADE_FACTOR);
     }
 
-    if keys.just_pressed(KeyCode::BracketLeft) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::TimeSlower) {
         clock.multiply_scale(1.0 / TIME_SCALE_KEY_FACTOR);
     }
 
-    if keys.just_pressed(KeyCode::Backslash) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::TimeReset) {
         clock.set_scale(TWO_BODY_TIME_SCALE);
     }
 

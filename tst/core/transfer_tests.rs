@@ -582,3 +582,42 @@ fn the_direction_check_is_off_unless_asked_for() {
     };
     assert_eq!(free.off_plane_m(&late), 0.0);
 }
+
+#[test]
+fn a_forecast_of_no_future_is_refused_rather_than_built_empty() {
+    // Every lookup interpolates between two samples. A zero or negative horizon (a correction
+    // asked for after its arrival time) used to build one sample and panic on the first lookup.
+    let (scene, earth, moon) = pair(solar_system(), "Earth", "Moon");
+    let progress = PlanProgress::default();
+    for horizon in [0.0, -10.0, f64::NAN] {
+        assert!(
+            Forecast::new(&scene, None, moon, Some(earth), horizon, &progress).is_none(),
+            "horizon {horizon}"
+        );
+    }
+    let tiny = Forecast::new(&scene, None, moon, Some(earth), 1.0, &progress)
+        .expect("any positive horizon is a prediction");
+    assert!(tiny.position_m(tiny.target_index(), 0.5).is_finite());
+}
+
+#[test]
+fn a_skipped_correction_moves_the_schedule_on_without_counting_a_burn() {
+    let (mut scene, earth, mars) = earth_and_mars();
+    let plan = TransferPlan {
+        position_units: scene.get(earth).unwrap().body.center(),
+        velocity_units_s: DVec3::ZERO,
+        path_units: Vec::new(),
+        flight_seconds: 100.0 * 86_400.0,
+        miss_m: 0.0,
+        departure_speed_m_s: 0.0,
+        flybys: Vec::new(),
+        peak_speed_m_s: 0.0,
+    };
+    let mut voyage = Voyage::launch(&mut scene, rocket(), earth, mars, plan, 0.0);
+    let due = voyage
+        .next_correction_at()
+        .expect("a correction is scheduled");
+    voyage.skip_correction(due);
+    assert!(voyage.next_correction_at().is_some_and(|next| next > due));
+    assert_eq!(voyage.corrections, 0, "a skipped slot is not a burn");
+}

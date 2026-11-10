@@ -14,8 +14,8 @@ itself.
 | File | Job |
 | --- | --- |
 | `camera_tests.rs` | `FreeFlyController::default()` field pins, `clamp_pitch` spot checks and a property, the movement axes driven through the real system, and one plugin smoke test. |
-| `controls_tests.rs` | 18 tests: every clock key driven through the real system, edge-triggering, the scale clamps, and the no-collision check against the camera's keys. |
-| `menu_tests.rs` | 16 tests: `Esc` opening and closing the menu, edge-triggering, and **the gate** — that the camera, the clock keys, and `T` all go inert while the menu is open and work again when it closes, that the cursor is released but not re-grabbed, that `MouseMotion` is still drained, and that `Esc` closes an open pop-up before it opens the menu and a click behind the pop-up does not capture the cursor. |
+| `controls_tests.rs` | 18 tests, including a rebound key doing the action and the old key not: every clock key driven through the real system, edge-triggering, the scale clamps, and the no-collision check against the camera's keys. |
+| `menu_tests.rs` | 20 tests: the menu always opening on its first page, a rebind taking the next bindable key (`Esc` cancels, an unbindable key is ignored), `Esc` opening and closing the menu, edge-triggering, and **the gate** — that the camera, the clock keys, and `T` all go inert while the menu is open and work again when it closes, that the cursor is released but not re-grabbed, that `MouseMotion` is still drained, and that `Esc` closes an open pop-up before it opens the menu and a click behind the pop-up does not capture the cursor. |
 | `placement_tests.rs` | 16 tests: `B` opening the picker, the arrows wrapping, `Enter` arming a request only while open, the menu closing it — and that none of its four keys collide, since unlike the menu the picker is **not** modal. |
 
 ## What is covered

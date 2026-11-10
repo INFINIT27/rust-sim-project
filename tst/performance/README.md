@@ -14,6 +14,7 @@ subject, so it uses `super::*` and `crate::…` paths.
 | --- | --- | --- |
 | `settings_tests.rs` | `settings.rs` | Parsing through `from_lookup`, never the real environment: defaults, every value, misspellings as errors, benchmark timing, vsync forced off while benchmarking. |
 | `bench_tests.rs` | `bench.rs` | The summary statistics and the exact `BENCH` line the scripts grep for. |
+| `plugin_tests.rs` | `mod.rs` | A change of the anti-aliasing mode reaching the MSAA resource and the camera's post-process pass while running. |
 | `floor_eclipse_tests.rs` | `mod.rs` | `#[ignore]`d measurement: the darkest eclipse on experiment_3's floor over two simulated years, the figure behind `DEFAULT_FLOOR_ECLIPSE`. |
 
 ## Conventions specific to this directory

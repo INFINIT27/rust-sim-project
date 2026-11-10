@@ -293,8 +293,7 @@ pub const MAX_SUBSTEPS: u32 = 256;
 /// `0.007` puts about `2π / 0.007 ≈ 900` integration steps in one orbit, which is what the
 /// first-order symplectic integrator needs to trace a closed ellipse rather than a spiral: at
 /// `28` steps per orbit — what the displacement rule alone gave Io inside `experiment_3` — the
-/// moon leaves. Around `100` steps the orbit closes but visibly precesses; `900` is comfortable
-/// with an order of magnitude to spare against the `f32` position resolution.
+/// moon leaves. Around `100` steps the orbit closes but visibly precesses; `900` is comfortable.
 ///
 /// **Used by.** `orbital_substeps`, called from
 /// [`substep_count`](crate::collision::resolve::substep_count), which takes whichever of the two

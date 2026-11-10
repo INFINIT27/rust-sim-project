@@ -171,7 +171,7 @@ fn r_on_two_bodies_plans_with_the_clock_paused_then_flies_a_rocket_between_them(
         MissionPhase::Planning { .. }
     ));
     assert!(
-        app.world().resource::<SimulationClock>().is_paused(),
+        app.world().resource::<SimulationClock>().is_held(),
         "the planets wait for the plan"
     );
 
@@ -198,7 +198,10 @@ fn r_on_two_bodies_plans_with_the_clock_paused_then_flies_a_rocket_between_them(
         props_before + 1
     );
     let clock = app.world().resource::<SimulationClock>();
-    assert!(!clock.is_paused(), "the clock runs again");
+    assert!(
+        !clock.is_held() && !clock.is_paused(),
+        "the clock runs again"
+    );
     assert!(
         clock.scale() < scale_before,
         "a few-day transfer to the Moon slows a 1e6 clock so it can be watched"
@@ -349,7 +352,7 @@ fn r_while_the_search_runs_cancels_it_and_restarts_the_clock() {
     press_r(&mut app);
     aim_at(&mut app, neptune);
     press_r(&mut app);
-    assert!(app.world().resource::<SimulationClock>().is_paused());
+    assert!(app.world().resource::<SimulationClock>().is_held());
 
     press_r(&mut app);
     let started = std::time::Instant::now();
@@ -358,7 +361,7 @@ fn r_while_the_search_runs_cancels_it_and_restarts_the_clock() {
         std::thread::sleep(std::time::Duration::from_millis(5));
         tick(&mut app);
     }
-    assert!(!app.world().resource::<SimulationClock>().is_paused());
+    assert!(!app.world().resource::<SimulationClock>().is_held());
     assert_eq!(
         app.world().resource::<Scene>().props.len(),
         solar_system().scene.props.len(),
@@ -511,4 +514,46 @@ fn a_full_thrust_craft_flies_mercury_to_jupiter_and_lands_softly() {
         assert!(started.elapsed().as_secs() < 300, "never landed");
         tick(&mut app);
     }
+}
+
+#[test]
+fn the_pause_key_during_a_search_does_not_let_the_planets_move() {
+    // `P` used to clear the pause the plan relied on, so the planets moved on under a plan made
+    // from where they had been, and the craft launched from the wrong place.
+    let mut app = app_for(solar_system());
+    select(&mut app, COASTING);
+    let (earth, neptune) = (named(&app, "Earth"), named(&app, "Neptune"));
+    spawn_targets(&mut app, &[earth, neptune]);
+    aim_at(&mut app, earth);
+    press_r(&mut app);
+    aim_at(&mut app, neptune);
+    press_r(&mut app);
+    assert!(matches!(
+        app.world().resource::<Mission>().phase,
+        MissionPhase::Planning { .. }
+    ));
+
+    let earth_before = app
+        .world()
+        .resource::<Scene>()
+        .get(earth)
+        .unwrap()
+        .body
+        .center();
+    app.world_mut()
+        .resource_mut::<SimulationClock>()
+        .toggle_paused();
+    for _ in 0..5 {
+        tick(&mut app);
+    }
+    let earth_after = app
+        .world()
+        .resource::<Scene>()
+        .get(earth)
+        .unwrap()
+        .body
+        .center();
+    assert_eq!(earth_before, earth_after, "the planets wait for the plan");
+
+    press_r(&mut app); // cancel the long search
 }

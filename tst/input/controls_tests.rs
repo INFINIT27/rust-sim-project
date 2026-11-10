@@ -275,16 +275,6 @@ fn plus_multiplies_the_scale_by_ten() {
 }
 
 #[test]
-fn the_numeric_keypads_plus_does_the_same_thing() {
-    // A keypad `+` is unambiguously this action, and a user who reaches for it should not have to
-    // discover that only the top row counts.
-    let mut app = app_with_controls(1.0e4);
-
-    press(&mut app, KeyCode::NumpadAdd);
-    assert_eq!(clock(&app).scale(), 1.0e5);
-}
-
-#[test]
 fn plus_and_minus_are_exact_inverses() {
     // The one property that makes a decade key worth having: you can speed up to watch something,
     // then come back to precisely the pace you were at. Exact equality rather than a tolerance,
@@ -332,4 +322,19 @@ fn plus_never_advances_time() {
     press(&mut app, KeyCode::Equal);
 
     assert_eq!(clock(&app).elapsed_seconds(), 0.0);
+}
+
+#[test]
+fn a_rebound_key_does_the_action_and_the_old_one_no_longer_does() {
+    use crate::bindings::{Action, KeyMap};
+
+    let mut app = app_with_controls(1.0);
+    let mut keys = KeyMap::default();
+    keys.set(Action::Pause, KeyCode::KeyK);
+    app.insert_resource(keys);
+
+    press(&mut app, KeyCode::KeyP);
+    assert!(!clock(&app).is_paused(), "P is no longer pause");
+    press(&mut app, KeyCode::KeyK);
+    assert!(clock(&app).is_paused(), "K is");
 }

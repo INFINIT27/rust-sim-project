@@ -45,19 +45,57 @@ use bevy::ecs::schedule::IntoSystemConfigs;
 use bevy::ecs::system::{Res, ResMut, Resource};
 use bevy::input::{keyboard::KeyCode, ButtonInput};
 
+use crate::bindings::{is_bindable, Action, KeyMap};
 use crate::input::popup::PopupState;
 
-/// Whether the menu is open.
+/// Which page of the menu is showing.
 ///
-/// The field is private and changed only through [`open`](Self::open),
-/// [`close`](Self::close), and [`toggle`](Self::toggle), so "who opened the menu" is
-/// always a named call rather than an assignment — the same discipline
+/// The menu always opens on [`Main`](Self::Main), the page with the way into everything else.
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub enum MenuPage {
+    /// The first page: Settings, Configuration, Exit, and what the run is doing.
+    #[default]
+    Main,
+    /// The controls and video settings.
+    Settings(SettingsTab),
+    /// The runtime configuration from `config/*.toml`.
+    Configuration(ConfigTab),
+}
+
+/// The tabs of the Settings page.
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub enum SettingsTab {
+    /// Every key binding, and rebinding them.
+    #[default]
+    Controls,
+    /// Anti-aliasing, vsync, and the floor's eclipse shadows.
+    Video,
+}
+
+/// The tabs of the Configuration page, one per configuration file the menu edits.
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub enum ConfigTab {
+    /// `camera.toml`.
+    #[default]
+    Camera,
+    /// `ui.toml`: the crosshair, the compass, and the arrival pop-up.
+    Interface,
+    /// `trails.toml`.
+    Trails,
+    /// `spacecraft.toml`.
+    Spacecraft,
+}
+
+/// Whether the menu is open, which page it shows, and whether it is waiting for a key to rebind.
+///
+/// The fields are private and changed only through named calls, so "who opened the menu" is
+/// always a call rather than an assignment — the same discipline
 /// [`SimulationClock`](crate::time::simulation::SimulationClock) uses for its scale.
 ///
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::MenuState;
+/// use physics_sandbox::{Action, MenuPage, MenuState};
 ///
 /// // Closed by default: the app opens into the experiment, not into a menu.
 /// let mut menu = MenuState::default();
@@ -65,13 +103,20 @@ use crate::input::popup::PopupState;
 ///
 /// menu.toggle();
 /// assert!(menu.is_open());
+/// assert_eq!(menu.page(), MenuPage::Main, "the menu always opens on its first page");
+///
+/// menu.start_rebinding(Action::Pause);
+/// assert_eq!(menu.rebinding(), Some(Action::Pause));
 ///
 /// menu.close();
 /// assert!(!menu.is_open());
+/// assert_eq!(menu.rebinding(), None, "closing abandons a rebind");
 /// ```
 #[derive(Resource, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct MenuState {
     open: bool,
+    page: MenuPage,
+    rebinding: Option<Action>,
 }
 
 impl MenuState {
@@ -84,13 +129,16 @@ impl MenuState {
         self.open
     }
 
-    /// Open the menu. Idempotent.
+    /// Open the menu on its first page. Idempotent only in that it is open afterwards: opening
+    /// always goes back to [`MenuPage::Main`].
     #[inline]
     pub fn open(&mut self) {
         self.open = true;
+        self.page = MenuPage::Main;
+        self.rebinding = None;
     }
 
-    /// Close the menu. Idempotent.
+    /// Close the menu, abandoning any rebind. Idempotent.
     ///
     /// Does **not** re-capture the cursor: you get it back by clicking, the same way you
     /// captured it the first time. Re-capturing automatically would hide the cursor
@@ -98,31 +146,65 @@ impl MenuState {
     #[inline]
     pub fn close(&mut self) {
         self.open = false;
+        self.rebinding = None;
     }
 
-    /// Flip the menu open or closed.
+    /// Open the menu (on its first page) or close it.
     #[inline]
     pub fn toggle(&mut self) {
-        self.open = !self.open;
+        if self.open {
+            self.close();
+        } else {
+            self.open();
+        }
+    }
+
+    /// The page showing.
+    #[inline]
+    pub fn page(&self) -> MenuPage {
+        self.page
+    }
+
+    /// Show `page`, abandoning any rebind.
+    #[inline]
+    pub fn show(&mut self, page: MenuPage) {
+        self.page = page;
+        self.rebinding = None;
+    }
+
+    /// The action waiting for a key, if a rebind is in progress.
+    #[inline]
+    pub fn rebinding(&self) -> Option<Action> {
+        self.rebinding
+    }
+
+    /// Wait for the next key press and bind `action` to it (see [`menu_toggle_system`]).
+    #[inline]
+    pub fn start_rebinding(&mut self, action: Action) {
+        self.rebinding = Some(action);
+    }
+
+    /// Stop waiting for a key.
+    #[inline]
+    pub fn cancel_rebinding(&mut self) {
+        self.rebinding = None;
     }
 }
 
-/// Bevy system that opens and closes the menu on `Esc`, or closes an open pop-up instead.
+/// Bevy system for the menu's keys: `Esc` opens and closes the menu, or closes an open pop-up
+/// instead; and while a rebind is waiting, the next key press is the new key.
 ///
 /// While a [`PopupState`] pop-up is open and the menu is closed, `Esc` closes the pop-up and
 /// does not open the menu: `Esc` means "get me out of whatever this is", and the pop-up is what
 /// is in front. The next `Esc` opens the menu as usual.
 ///
+/// While [`MenuState::rebinding`] is set, the first bindable key pressed
+/// ([`crate::bindings::is_bindable`]) is bound to that action through [`KeyMap::set`], which
+/// swaps if another action had it. `Esc` cancels the rebind rather than closing the menu, and
+/// is never itself bound, so the menu can always be reached.
+///
 /// Edge-triggered (`just_pressed`), like every other binding in the crate: a held `Esc`
-/// must not flicker the menu sixty times a second, which would leave its state a coin toss
-/// decided by the frame count.
-///
-/// # What happened to "`Esc` releases the cursor"
-///
-/// It still does, as a *consequence*. Before the menu existed, `free_fly_camera_system`
-/// watched `Esc` itself and dropped the cursor grab. Now `Esc` opens the menu and the
-/// camera system releases the cursor because the menu is open — so the key does what it
-/// always did, plus shows you something. Requirement 10.8 is amended by A13 accordingly.
+/// must not flicker the menu sixty times a second.
 ///
 /// Ordering matters, and the plugin arranges it: this runs **before**
 /// [`free_fly_camera_system`](super::camera::free_fly_camera_system), so opening the menu
@@ -132,7 +214,23 @@ pub fn menu_toggle_system(
     keys: Res<ButtonInput<KeyCode>>,
     mut menu: ResMut<MenuState>,
     popup: Option<ResMut<PopupState>>,
+    keymap: Option<ResMut<KeyMap>>,
 ) {
+    if let Some(action) = menu.rebinding() {
+        if keys.just_pressed(KeyCode::Escape) {
+            menu.cancel_rebinding();
+        } else if let Some(key) = keys
+            .get_just_pressed()
+            .copied()
+            .find(|&key| is_bindable(key))
+        {
+            if let Some(mut keymap) = keymap {
+                keymap.set(action, key);
+            }
+            menu.cancel_rebinding();
+        }
+        return;
+    }
     if !keys.just_pressed(KeyCode::Escape) {
         return;
     }
@@ -174,6 +272,7 @@ impl Plugin for MenuInputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MenuState>();
         app.init_resource::<PopupState>();
+        app.init_resource::<KeyMap>();
         app.add_systems(
             Update,
             menu_toggle_system.before(super::camera::free_fly_camera_system),

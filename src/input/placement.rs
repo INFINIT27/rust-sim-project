@@ -36,6 +36,7 @@ use bevy::app::{App, Plugin, Update};
 use bevy::ecs::system::{Res, ResMut, Resource};
 use bevy::input::{keyboard::KeyCode, ButtonInput};
 
+use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::experiments::constants::STELLAR_OBJECTS;
 use crate::experiments::objects::StellarObject;
 use crate::input::menu::MenuState;
@@ -187,6 +188,7 @@ impl PlacementState {
 /// `Esc` is the key that means "get me out of whatever this is".
 pub fn placement_input_system(
     keys: Res<ButtonInput<KeyCode>>,
+    keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
     mut placer: ResMut<PlacementState>,
 ) {
@@ -200,7 +202,7 @@ pub fn placement_input_system(
         return;
     }
 
-    if keys.just_pressed(KeyCode::KeyB) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::TogglePicker) {
         placer.toggle();
     }
 
@@ -208,13 +210,13 @@ pub fn placement_input_system(
         return;
     }
 
-    if keys.just_pressed(KeyCode::ArrowDown) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::PickerDown) {
         placer.select_next();
     }
-    if keys.just_pressed(KeyCode::ArrowUp) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::PickerUp) {
         placer.select_previous();
     }
-    if keys.just_pressed(KeyCode::Enter) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::PickerPlace) {
         placer.request_place();
     }
 }

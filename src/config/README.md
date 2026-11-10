@@ -1,8 +1,8 @@
 # `src/config/` — the configuration files' loader
 
 > **Purpose:** Reads `config/*.toml` once at startup and turns each file into the resources the
-> other layers already run on (fleet, camera tuning, crosshair, compass, arrival pop-up, trails,
-> performance switches).
+> other layers already run on (key bindings, fleet, camera tuning, crosshair, compass, arrival
+> pop-up, trails, performance switches), and writes a file back when the menu saves it.
 > **Edit here to:** add a setting to a file, add a new file, change how a file is validated, or
 > change where the directory is looked for.
 > **Not here:** the settings' *defaults* are in each owning layer's `constants.rs`. The files
@@ -13,9 +13,9 @@
 
 | File | Job |
 | --- | --- |
-| `mod.rs` | `Config` (every configured resource), `Config::load`, `Config::insert_into`, `ConfigError`, the pure `parse`, and `config_dir`. |
-| `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `PerformanceFile`): what the file may contain, its defaults, and `into_runtime`, which checks the values and builds the runtime type. |
-| `constants.rs` | `CONFIG_DIR_VAR` (`RGA_CONFIG`), `CONFIG_DIR_NAME` (`config`), and the five file names. |
+| `mod.rs` | `Config` (every configured resource), `Config::load`, `Config::insert_into`, `ConfigError`, the pure `parse`, and `config_dir`. `ConfigPlugin`, `ConfigDir`, `save_requested_system` and `write_file`: saving a page when the menu asks. |
+| `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `PerformanceFile`, `ControlsFile`): what the file may contain, its defaults, `into_runtime`, which checks the values and builds the runtime type, and `from_runtime`, which builds the file to save. |
+| `constants.rs` | `CONFIG_DIR_VAR` (`RGA_CONFIG`), `CONFIG_DIR_NAME` (`config`), the six file names, and `SAVED_FILE_HEADER`. |
 
 ## Rules and invariants
 
@@ -25,7 +25,10 @@
 - **Anything wrong is an error, never a silent default.** Unknown keys are rejected
   (`deny_unknown_fields`), and `into_runtime` range-checks every value. The message names the
   file and the key; `main.rs` prints it and exits with status 2, like a bad argument.
-- **Read once, at startup.** Nothing watches the files; edit and relaunch.
+- **Read once, at startup; written by the menu.** Nothing watches the files. The menu changes the
+  running settings directly, and its Save posts a `SaveTarget` that `save_requested_system`
+  (`ConfigPlugin`) writes back as that page's file, after `SAVED_FILE_HEADER`. A saved file is
+  generated, so hand-written comments in it are not kept.
 - **Inserted before the plugins.** Each owning plugin `init_resource`s its settings, which keeps a
   resource already there, so `Config::insert_into` runs first in `main.rs`.
 - **The shipped files equal the defaults.** A test loads `config/` and compares it with every

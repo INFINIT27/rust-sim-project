@@ -26,6 +26,7 @@
 
 use bevy::app::{App, Plugin, Update};
 use bevy::core_pipeline::core_3d::Camera3d;
+use bevy::ecs::change_detection::DetectChanges;
 use bevy::ecs::component::Component;
 use bevy::ecs::event::EventReader;
 use bevy::ecs::query::With;
@@ -36,6 +37,7 @@ use bevy::math::{EulerRot, Quat, Vec3};
 
 use crate::time::observer::ObserverClock;
 
+use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::input::constants::{
     CAMERA_BOOST_MULTIPLIER, CAMERA_MOVE_SPEED_UNITS_S, CAMERA_PRECISION_MULTIPLIER,
     LOCK_MIN_DISTANCE_RADII, LOCK_PICK_MAX_ANGLE_RAD, LOCK_ZOOM_PIXELS_PER_LINE,
@@ -248,6 +250,13 @@ impl CameraSettings {
     }
 }
 
+/// Whether the `Esc` menu or a pop-up is open, which makes every camera binding inert. Absent
+/// state means closed, so a test app without either plugin still runs.
+fn panel_open(menu: &Option<Res<MenuState>>, popup: &Option<Res<PopupState>>) -> bool {
+    menu.as_ref().is_some_and(|menu| menu.is_open())
+        || popup.as_ref().is_some_and(|popup| popup.is_open())
+}
+
 /// Clamp `pitch` into the open interval `(-π/2 + 1e-3, π/2 - 1e-3)`.
 ///
 /// Contract (Requirement 10.4 / task 8.2):
@@ -329,7 +338,7 @@ pub fn clamp_pitch(pitch: f32) -> f32 {
 /// *application* to yaw/pitch is gated by the capture check.
 pub fn free_fly_camera_system(
     clock: Res<ObserverClock>,
-    keys: Res<ButtonInput<KeyCode>>,
+    (keys, keymap): (Res<ButtonInput<KeyCode>>, Option<Res<KeyMap>>),
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     // The two panels that stand the camera down; one parameter so the system stays within
     // clippy's argument limit.
@@ -475,35 +484,36 @@ pub fn free_fly_camera_system(
         return;
     }
 
+    let keymap = keymap_or_default(&keymap);
     let forward: Vec3 = transform.forward().as_vec3();
     let right: Vec3 = transform.right().as_vec3();
 
     let mut delta = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) {
+    if keymap.pressed(&keys, Action::MoveForward) {
         delta += forward;
     }
-    if keys.pressed(KeyCode::KeyS) {
+    if keymap.pressed(&keys, Action::MoveBack) {
         delta -= forward;
     }
-    if keys.pressed(KeyCode::KeyD) {
+    if keymap.pressed(&keys, Action::MoveRight) {
         delta += right;
     }
-    if keys.pressed(KeyCode::KeyA) {
+    if keymap.pressed(&keys, Action::MoveLeft) {
         delta -= right;
     }
-    if keys.pressed(KeyCode::Space) {
+    if keymap.pressed(&keys, Action::MoveUp) {
         delta += Vec3::Y;
     }
-    if keys.pressed(KeyCode::ControlLeft) {
+    if keymap.pressed(&keys, Action::MoveDown) {
         delta -= Vec3::Y;
     }
     // World `±Y`, the same axis as `Space`/`ControlLeft` above. Summed into the
     // same `delta`, so holding `E` and `Space` together is one unit of rise rather
     // than two — `delta.normalize()` sees a single direction, not a doubled one.
-    if keys.pressed(KeyCode::KeyE) {
+    if keymap.pressed(&keys, Action::MoveUpAlt) {
         delta += Vec3::Y;
     }
-    if keys.pressed(KeyCode::KeyQ) {
+    if keymap.pressed(&keys, Action::MoveDownAlt) {
         delta -= Vec3::Y;
     }
 
@@ -546,19 +556,39 @@ pub fn free_fly_camera_system(
 /// opened it to inspect. `Option<Res<..>>` so a test app without the menu resource still runs it.
 pub fn cycle_camera_speed_system(
     keys: Res<ButtonInput<KeyCode>>,
+    keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
+    popup: Option<Res<PopupState>>,
     mut controllers: Query<&mut FreeFlyController>,
 ) {
-    if menu.as_ref().is_some_and(|menu| menu.is_open()) {
+    if panel_open(&menu, &popup) {
         return;
     }
 
-    if !keys.just_pressed(KeyCode::KeyC) {
+    if !keymap_or_default(&keymap).just_pressed(&keys, Action::CycleSpeed) {
         return;
     }
 
     for mut controller in &mut controllers {
         controller.speed = controller.speed.next();
+    }
+}
+
+/// Bevy system that carries a change of [`CameraSettings`] (from the menu, say) onto the cameras
+/// already flying: their speeds and look sensitivity, leaving their yaw, pitch, speed mode, and
+/// capture as they are. Does nothing in a frame where the settings did not change.
+pub fn apply_camera_settings_system(
+    settings: Option<Res<CameraSettings>>,
+    mut controllers: Query<&mut FreeFlyController>,
+) {
+    let Some(settings) = settings.filter(|settings| settings.is_changed()) else {
+        return;
+    };
+    for mut controller in &mut controllers {
+        controller.move_speed = settings.move_speed;
+        controller.boost_mult = settings.boost_mult;
+        controller.precision_mult = settings.precision_mult;
+        controller.look_sensitivity = settings.look_sensitivity;
     }
 }
 
@@ -664,11 +694,15 @@ pub fn zoom_distance(distance: f32, lines: f32, min: f32, max: f32) -> f32 {
 /// near the crosshair does nothing.
 pub fn toggle_camera_lock_system(
     keys: Res<ButtonInput<KeyCode>>,
+    keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
+    popup: Option<Res<PopupState>>,
     targets: Query<(Entity, &Transform), TargetFilter>,
     mut camera: Query<(&mut FreeFlyController, &mut CameraLock, &Transform), With<Camera3d>>,
 ) {
-    if menu.as_ref().is_some_and(|menu| menu.is_open()) || !keys.just_pressed(KeyCode::KeyF) {
+    if panel_open(&menu, &popup)
+        || !keymap_or_default(&keymap).just_pressed(&keys, Action::LockTarget)
+    {
         return;
     }
     let Ok((mut controller, mut lock, transform)) = camera.get_single_mut() else {
@@ -705,9 +739,10 @@ pub fn toggle_camera_lock_system(
 /// has been despawned, which is what absorption does to a body, leaving the camera where it is.
 ///
 /// The camera keeps following while the `Esc` menu is open, because following is not input, but
-/// scroll is ignored there.
+/// scroll is ignored there, and while a pop-up is open.
 pub fn orbit_camera_system(
     menu: Option<Res<MenuState>>,
+    popup: Option<Res<PopupState>>,
     mut wheel: EventReader<MouseWheel>,
     targets: Query<&Transform, TargetFilter>,
     mut camera: Query<
@@ -721,7 +756,7 @@ pub fn orbit_camera_system(
     >,
 ) {
     let lines = scroll_lines(wheel.read().copied());
-    let lines = if menu.as_ref().is_some_and(|menu| menu.is_open()) {
+    let lines = if panel_open(&menu, &popup) {
         0.0
     } else {
         lines
@@ -771,6 +806,7 @@ impl Plugin for FreeFlyCameraPlugin {
                 toggle_camera_lock_system.before(free_fly_camera_system),
                 free_fly_camera_system,
                 cycle_camera_speed_system,
+                apply_camera_settings_system.before(free_fly_camera_system),
             ),
         );
         app.add_systems(

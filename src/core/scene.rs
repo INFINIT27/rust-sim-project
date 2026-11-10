@@ -32,7 +32,7 @@ use crate::core::constants::{
 ///
 /// The position is `f64`. It is integrated state: every substep adds a small displacement to it, and
 /// at Earth's distance from the Sun (`150` units) an `f32` position resolves only `15 km`, so the
-/// rounding of each addition drifted Earth by `18,000 km` a day at a `5.6 s` substep. The rotation
+/// rounding of each addition drifted Earth by `18,640 km` a day at a `5.6 s` substep. The rotation
 /// is never integrated, so it stays `f32`.
 ///
 /// See Requirement 6.2. Validation (finite components, unit rotation within

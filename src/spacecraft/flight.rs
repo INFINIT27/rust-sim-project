@@ -6,10 +6,9 @@
 //! - A **coasting** craft is the scene's to move, like every planet; [`Flight`] only passes the
 //!   voyage its correction burns.
 //! - A **powered** craft is flown here, before every substep ([`Flight::steer`]), in `f64` and
-//!   relative to its target. The scene cannot carry it: near a landing it moves centimetres per
-//!   substep, and `f32` positions `150` units from the origin change in steps of `15 km`, so every
-//!   one of those moves would round away. Kept relative to the target, the craft also rides along
-//!   when the target's own `f32` position jumps, so the approach stays smooth. The scene's copy is
+//!   relative to its target. The scene cannot carry it: the scene has no thrust, and near a landing
+//!   the steering needs steps much shorter than the scene's substep. Kept relative to the target,
+//!   the craft rides along with the target's own motion, so the approach stays smooth. The scene's copy is
 //!   then set so the scene's step ends where the craft really is, for drawing and for the path.
 
 use bevy::math::DVec3;
@@ -17,7 +16,9 @@ use bevy::math::DVec3;
 use crate::constants::METRES_PER_UNIT;
 use crate::core::integrator::gravitational_acceleration;
 use crate::core::scene::{Body, BodyId, Scene};
-use crate::core::transfer::{physical_radius_m, Flyby, TransferPlan, Voyage};
+use crate::core::transfer::{
+    physical_radius_m, segment_entry, to_metres, to_units, Flyby, TransferPlan, Voyage,
+};
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::spacecraft::config::{Propulsion, Spacecraft};
 use crate::spacecraft::constants::{
@@ -25,9 +26,7 @@ use crate::spacecraft::constants::{
     DEPARTURE_BURN_STEPS, LANDING_START_BRAKING_DISTANCES, LANDING_START_RADII,
     POWERED_MIN_SUBSTEP_S,
 };
-use crate::spacecraft::guidance::{
-    braking_m_s2, match_velocity, segment_entry_m, steer, Law, Sighting,
-};
+use crate::spacecraft::guidance::{braking_m_s2, match_velocity, steer, Law, Sighting};
 use crate::spacecraft::plan::FlightPlan;
 use crate::spacecraft::report::FlightReport;
 use crate::time::simulation::TimeStep;
@@ -96,14 +95,6 @@ pub struct Flight {
     relative_velocity_m_s: DVec3,
     /// When a transfer last planned a correction, on the scene's clock.
     last_correction_s: Option<f64>,
-}
-
-fn to_metres(units: DVec3) -> DVec3 {
-    units * METRES_PER_UNIT
-}
-
-fn to_units(metres: DVec3) -> DVec3 {
-    metres / METRES_PER_UNIT
 }
 
 impl Flight {
@@ -205,6 +196,13 @@ impl Flight {
     /// The next flyby still ahead of `now_s`, for a correction to aim at. See [`Voyage::next_flyby`].
     pub fn next_flyby(&self, now_s: f64) -> Option<Flyby> {
         self.voyage.next_flyby(now_s)
+    }
+
+    /// Pass over the correction due now without planning one or counting it, so
+    /// [`next_correction_at`](Self::next_correction_at) moves on. See [`Voyage::skip_correction`].
+    pub fn skip_correction(&mut self, now_s: f64) {
+        self.last_correction_s = Some(now_s);
+        self.voyage.skip_correction(now_s);
     }
 
     /// Put the craft on a correction from [`crate::core::transfer::plan_correction`], or count the
@@ -437,7 +435,7 @@ impl Flight {
                 gravity(craft_now, tau, Some(target_now)) - gravity(target_now, tau, None);
             relative_velocity += (thrust + differential) * h;
             let next = relative + relative_velocity * h;
-            match segment_entry_m(relative, next, target_radius) {
+            match segment_entry(relative, next, target_radius) {
                 Some(entry) => {
                     relative = entry;
                     self.voyage.touchdown_offset_units = Some(to_units(entry));

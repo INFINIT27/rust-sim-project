@@ -5,6 +5,7 @@ use super::*;
 use crate::config::files::{CameraFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile};
 use crate::performance::AntiAliasing;
 use crate::spacecraft::{Propulsion, Spacecraft};
+use bevy::input::keyboard::KeyCode;
 
 /// The shipped `config/` directory.
 fn shipped() -> PathBuf {
@@ -34,6 +35,7 @@ fn the_shipped_files_are_the_built_in_configuration() {
     assert_eq!(config.arrival, ArrivalPopupConfig::default());
     assert_eq!(config.trails, TrailConfig::default());
     assert_eq!(config.performance, PerformanceSettings::default());
+    assert_eq!(config.keymap, KeyMap::default());
 }
 
 #[test]
@@ -300,4 +302,129 @@ fn inserted_settings_survive_the_plugins_that_own_them() {
         "Pathfinder"
     );
     assert_eq!(app.world().resource::<CameraSettings>().move_speed, 99.0);
+}
+
+// -----------------------------------------------------------------------
+// Saving: what the menu's Save writes reads back as what it saved.
+// -----------------------------------------------------------------------
+
+/// Write `file` the way the menu's Save does, and read the directory back.
+fn save_and_reload<F: serde::Serialize>(name: &str, file: &F) -> Config {
+    let dir = scratch(&format!("save_{name}"));
+    write_file(&dir, name, file).expect("writes");
+    let text = std::fs::read_to_string(dir.join(name)).unwrap();
+    assert!(
+        text.starts_with(SAVED_FILE_HEADER),
+        "a saved file says it was generated"
+    );
+    Config::load(&dir).expect("a saved file loads")
+}
+
+#[test]
+fn every_page_saves_a_file_that_loads_back_as_what_was_saved() {
+    use crate::bindings::Action;
+    use crate::config::files::ControlsFile;
+
+    let mut keymap = KeyMap::default();
+    keymap.set(Action::Pause, KeyCode::KeyK);
+    let reloaded = save_and_reload(CONTROLS_FILE, &ControlsFile::from_runtime(&keymap));
+    assert_eq!(reloaded.keymap, keymap);
+
+    let camera = CameraSettings {
+        move_speed: 42.5,
+        ..CameraSettings::default()
+    };
+    let reloaded = save_and_reload(CAMERA_FILE, &CameraFile::from_runtime(&camera));
+    assert_eq!(reloaded.camera, camera);
+
+    let crosshair = CrosshairConfig {
+        color: [10, 20, 30, 40],
+        ..CrosshairConfig::default()
+    };
+    let compass = CompassConfig {
+        radius_px: 50.0,
+        ..CompassConfig::default()
+    };
+    let arrival = ArrivalPopupConfig::default();
+    let reloaded = save_and_reload(
+        UI_FILE,
+        &UiFile::from_runtime(&crosshair, &compass, &arrival),
+    );
+    assert_eq!(
+        (reloaded.crosshair, reloaded.compass, reloaded.arrival),
+        (crosshair, compass, arrival)
+    );
+
+    let trails = TrailConfig {
+        visible: false,
+        max_samples: 99,
+        ..TrailConfig::default()
+    };
+    let reloaded = save_and_reload(TRAILS_FILE, &TrailsFile::from_runtime(&trails));
+    assert_eq!(reloaded.trails, trails);
+
+    let performance = PerformanceSettings {
+        anti_aliasing: AntiAliasing::Fxaa,
+        vsync: false,
+        ..PerformanceSettings::default()
+    };
+    let reloaded = save_and_reload(
+        PERFORMANCE_FILE,
+        &PerformanceFile::from_runtime(&performance),
+    );
+    assert_eq!(reloaded.performance, performance);
+}
+
+#[test]
+fn the_built_in_fleet_saves_and_loads_back_unchanged() {
+    // The file states engines by specific impulse and limits in g, so saving converts and
+    // loading converts back; the built-in values survive both ways exactly.
+    let reloaded = save_and_reload(
+        SPACECRAFT_FILE,
+        &SpacecraftFile::from_runtime(&Fleet::default()),
+    );
+    assert_eq!(reloaded.fleet, Fleet::default());
+}
+
+#[test]
+fn a_controls_file_naming_an_unknown_action_or_key_is_an_error() {
+    use crate::config::files::ControlsFile;
+
+    let error = parse("[keys]\nwarp = \"KeyK\"", ControlsFile::into_runtime).unwrap_err();
+    assert!(error.contains("warp"), "{error}");
+    let error = parse("[keys]\npause = \"Escape\"", ControlsFile::into_runtime).unwrap_err();
+    assert!(error.contains("pause"), "{error}");
+    let error = parse("[keys]\npause = \"KeyT\"", ControlsFile::into_runtime).unwrap_err();
+    assert!(
+        error.contains("toggle_trails"),
+        "two actions on one key: {error}"
+    );
+}
+
+#[test]
+fn the_save_system_writes_the_requested_page_and_reports_where() {
+    use crate::ui::menu::{MenuRequests, SaveTarget};
+    use bevy::MinimalPlugins;
+
+    let dir = scratch("save_system");
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(ConfigPlugin::new(dir.clone()));
+    app.insert_resource(TrailConfig {
+        visible: false,
+        ..TrailConfig::default()
+    });
+    app.world_mut()
+        .resource_mut::<MenuRequests>()
+        .request_save(SaveTarget::Trails);
+    app.update();
+
+    let status = app
+        .world()
+        .resource::<MenuRequests>()
+        .status()
+        .unwrap()
+        .to_string();
+    assert!(status.starts_with("Saved"), "{status}");
+    assert!(!Config::load(&dir).unwrap().trails.visible);
 }

@@ -16,7 +16,7 @@ and where a new one would go.
 | --- | --- |
 | `lib.rs` | Crate root. Declares the ten layers and re-exports every public item at the crate root. |
 | `constants.rs` | Constants read by **more than one layer** — the unit scale, the shipped scene's configuration, the key-binding table — plus the window values `main.rs` owns. |
-| `bindings.rs` | The key bindings as *data*: `KeyBinding`, `BindingGroup`, and the renderers `--help` and the `Esc` menu both read. Above every layer for the same reason `constants.rs` is — two layers need it and neither may import the other. |
+| `bindings.rs` | The key bindings as *data*: `Action`, the `KeyMap` resource every input system reads keys through, `BindingGroup`, `KeyBinding`, key names, and the rows `--help` and the `Esc` menu both draw. Above every layer because several layers need it and none may import another. |
 | `main.rs` | Binary entry point. Builds the `App`, loads `config/*.toml` (see `config/`) and inserts it before any plugin, configures the window, adds the plugins, calls `run()`. The window is **full-screen and borderless** (`WINDOW_MODE` in `constants.rs`, amendment A12), so it has no close button: quit with `Cmd`-`Q`, `Alt`-`F4`, or `Ctrl`-`C`. Set `WINDOW_MODE` to `WindowMode::Windowed` for an 800×600 window. |
 | `core/` | GUI-free world model. Bevy-free apart from `bevy::math`. |
 | `collision/` | Body physics: the triangle hull that bounds each prop, the contact test over those hulls, and the elastic response. |

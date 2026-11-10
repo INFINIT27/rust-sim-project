@@ -259,6 +259,28 @@ pub const MENU_KEY_COLUMN_PX: f32 = 140.0;
 /// so nothing becomes ambiguous — it just gets tight.
 pub const MENU_SECTION_GAP_PX: f32 = 8.0;
 
+/// Width of the buttons on the menu's first page (Settings, Configuration, Exit), in logical
+/// pixels.
+///
+/// **Why this value.** `220` px is wide enough to read as the page's main choices and to give
+/// all three the same width, which a button sized to its own label would not.
+///
+/// **Used by.** [`crate::ui::menu::menu_system`]'s first page.
+///
+/// **If you change it.** Cosmetic. Keep it under [`MENU_WIDTH_PX`].
+pub const MENU_MAIN_BUTTON_WIDTH_PX: f32 = 220.0;
+
+/// Tallest a menu page's contents grow before they scroll, in logical pixels.
+///
+/// **Why this value.** `420` px fits the window's shortest supported height (`600` px, see
+/// `WINDOW_HEIGHT_PX`) with the title bar, the tab row, and the Reset and Save buttons, so they
+/// stay on screen while the controls list scrolls.
+///
+/// **Used by.** [`crate::ui::menu::menu_system`], as the scroll area's `max_height`.
+///
+/// **If you change it.** Too tall and the Save button falls off a small window.
+pub const MENU_SCROLL_HEIGHT_PX: f32 = 420.0;
+
 /// Width the placement picker opens at, in logical pixels.
 ///
 /// **Why this value.** Set by its widest row: a name, a mass in solar masses, and the object's

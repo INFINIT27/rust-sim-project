@@ -387,3 +387,22 @@ fn every_pair_in_the_solar_system_can_be_flown_at_full_thrust() {
         }
     }
 }
+
+#[test]
+fn a_transfer_correction_with_no_time_left_is_declined_not_a_crash() {
+    // A fast frame can step past the arrival time while a correction is due, which hands the
+    // planner a negative time to arrival. It used to panic in the prediction it builds.
+    let (mut scene, _earth, moon) = pair("Earth", "Moon");
+    let craft = scene.add(Spacecraft::crewed_transfer().prop());
+    for remaining in [-10.0, 0.0] {
+        assert!(plan_transfer_correction(&scene, craft, moon, remaining).is_none());
+    }
+}
+
+#[test]
+fn a_forecast_that_fails_is_not_reported_as_a_cancel() {
+    let progress = PlanProgress::default();
+    assert_eq!(forecast_failure(&progress), NoFlight::NoForecast);
+    progress.cancel();
+    assert_eq!(forecast_failure(&progress), NoFlight::Cancelled);
+}

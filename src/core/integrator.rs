@@ -162,18 +162,32 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
         return DVec3::ZERO;
     }
 
-    let subject = &props[target];
-
     debug_assert!(
-        subject.is_valid(),
+        props[target].is_valid(),
         "gravitational_acceleration: target prop fails Validation_Rules: {:?}",
-        subject
+        props[target]
     );
+
+    acceleration_on(props, target, softening_units, |index| {
+        props[index].is_valid()
+    })
+}
+
+/// [`gravitational_acceleration`] with each prop's validity supplied by `is_valid`, so a caller
+/// that needs every prop's acceleration can check each prop once rather than once per pair.
+/// `Prop::is_valid` includes a quaternion length, and the pair loop is `n²` per substep.
+fn acceleration_on(
+    props: &[Prop],
+    target: usize,
+    softening_units: f32,
+    is_valid: impl Fn(usize) -> bool,
+) -> DVec3 {
+    let subject = &props[target];
 
     // An immovable or massless prop cannot be accelerated. Bail before dividing
     // by its mass — `acceleration_from_net_force` rejects a zero mass, and it is
     // right to.
-    if !subject.responds_to_forces() || !subject.is_valid() {
+    if !subject.responds_to_forces() || !is_valid(target) {
         return DVec3::ZERO;
     }
 
@@ -184,7 +198,7 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
     let mut acceleration = DVec3::ZERO;
 
     for (index, source) in props.iter().enumerate() {
-        if index == target || !source.is_valid() {
+        if index == target || !is_valid(index) {
             continue;
         }
 
@@ -275,8 +289,10 @@ pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f3
 
     // Pass 1: accelerations from the current configuration, before anything
     // moves.
+    // Validity checked once per prop, not once per pair: see `acceleration_on`.
+    let valid: Vec<bool> = props.iter().map(Prop::is_valid).collect();
     let accelerations: Vec<DVec3> = (0..props.len())
-        .map(|index| gravitational_acceleration(props, index, softening_units))
+        .map(|index| acceleration_on(props, index, softening_units, |i| valid[i]))
         .collect();
 
     // Pass 2: advance each movable prop.

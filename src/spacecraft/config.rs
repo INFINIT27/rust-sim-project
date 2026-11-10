@@ -213,6 +213,13 @@ impl Fleet {
         &self.craft
     }
 
+    /// Every craft, to edit in place, as the menu's spacecraft page does. The count cannot change
+    /// through this, so the selection stays in range; an edit that leaves a craft invalid is the
+    /// editor's to prevent (see [`Spacecraft::is_valid`]).
+    pub fn craft_mut(&mut self) -> &mut [Spacecraft] {
+        &mut self.craft
+    }
+
     /// The craft `R` launches next.
     pub fn selected(&self) -> &Spacecraft {
         &self.craft[self.selected]

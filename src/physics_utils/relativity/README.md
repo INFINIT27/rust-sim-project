@@ -1,13 +1,19 @@
-# `src/physics_utils/relativity/` — special relativity
+# `src/physics_utils/relativity/` — relativity
 
-> **Purpose:** Special relativity between two inertial frames: `c`, `β`, `γ`, time dilation,
-> length contraction, velocity addition, momentum, force, and energy.
+> **Purpose:** The formulas of relativity. Special relativity in full: `c`, `β`, `γ`, time dilation,
+> length contraction, the Lorentz transformation and the spacetime interval, velocity addition on
+> one axis and in 3-D, rapidity, Doppler shift, momentum, force, energy, `E² = (pc)² + (mc²)²`,
+> collisions, and four-vectors. Plus the closed-form results of general relativity around one mass
+> (clock rates, redshift, Mercury's precession, light bending).
 > **Edit here to:** add or fix a relativistic formula, or the speed of light.
-> **Not here:** Newtonian formulas and `G` are in [`physics_utils/`](../README.md).
+> **Not here:** Newtonian formulas and `G` are in [`physics_utils/`](../README.md). Nothing in the
+> simulation calls this directory; it is a library of formulas with tests.
 
-The kinematics of two frames in uniform relative motion. Everything here follows from two postulates —
-the laws of physics are the same in every inertial frame, and `c` is the same in every inertial frame —
-and none of it needs a force, a mass, or a `Scene`. It is geometry.
+Everything in special relativity follows from two postulates: the laws of physics are the same in
+every inertial frame, and `c` is the same in every inertial frame. The files here build up from
+those in order: `β` and `γ`, then what they do to time, length and velocity, then to momentum,
+force and energy, then the transformation of events that all of those are special cases of.
+`gravity.rs` is the one file about general relativity.
 
 This is the first sub-directory in `physics_utils/`, and it earns one because it is the only topic with
 its own constant (`c`), its own domain rule (`|v| < c`), and its own error convention.
@@ -25,9 +31,33 @@ its own constant (`c`), its own domain rule (`|v| < c`), and its own error conve
 | `momentum.rs` | `relativistic_momentum` (`p = γmv`), `velocity_from_momentum`, `momentum_excess`. |
 | `dynamics.rs` | `longitudinal_force` / `transverse_force` and their inverses `longitudinal_acceleration` / `transverse_acceleration`. |
 | `energy.rs` | `rest_energy`, `relativistic_kinetic_energy`, `total_energy`, `work_done`, `velocity_after_work`. |
+| `spacetime.rs` | Events and the interval: `transform_event` and `inverse_transform_event` (the Lorentz transformation), `interval_squared_m2`, `Separation` and `classify_separation` (timelike, lightlike, spacelike), `proper_time_between`, `proper_distance_between`, `simultaneity_offset_s`. |
+| `rapidity.rs` | `rapidity` (`atanh β`, the speed that adds) and `velocity_from_rapidity`. Motion under constant proper acceleration: `velocity_under_proper_acceleration`, `distance_under_proper_acceleration`, `proper_time_under_proper_acceleration`, `coordinate_time_under_proper_acceleration`. |
+| `doppler.rs` | `doppler_factor`, `observed_frequency`, `redshift`, `velocity_from_redshift` along the line of sight; `transverse_doppler_factor`; `doppler_factor_at_angle`. |
+| `energy_momentum.rs` | `E² = (pc)² + (mc²)²` with no velocity: `energy_from_momentum`, `momentum_from_energy`, `invariant_mass`, `velocity_from_energy_and_momentum`, `photon_momentum`. Mass and energy: `mass_equivalent`, `energy_released`. The one file that accepts a mass of zero (light). |
+| `collisions.rs` | `total_relativistic_momentum`, `total_relativistic_energy`, `centre_of_momentum_velocity`, `system_invariant_mass`, and the solvers `elastic_collision_1d` and `perfectly_inelastic_collision_1d` (which returns the merged **mass** as well as the velocity). |
+| `velocity_3d.rs` | Any direction: `transform_velocity_3d`, `compose_velocities_3d`, `speed`, `wigner_rotation_angle`, `aberration_angle`. |
+| `four_vector.rs` | `FourVector` with `minkowski_product`, `invariant`, `plus`, and `boost` (the `4×4` Lorentz transformation in any direction); `event_four_vector`, `four_momentum`. |
+| `gravity.rs` | **General relativity**, closed forms only: `schwarzschild_radius`, `gravitational_time_dilation_factor`, `gravitational_rate_deficit`, `gravitational_redshift`, `perihelion_precession_per_orbit`, `light_deflection_angle`, `orbiting_clock_rate_offset`. |
 
-The last two mirror the parent layer's own split: `conservation_laws.rs` holds momentum and
-`newtons_laws.rs` holds force, so `momentum.rs` and `dynamics.rs` sit in the same relationship here.
+`momentum.rs`, `dynamics.rs` and `collisions.rs` mirror the parent layer's own split:
+`conservation_laws.rs` holds momentum and the collision solvers and `newtons_laws.rs` holds force.
+
+### How the files depend on each other
+
+```text
+constants ─ lorentz ─┬─ time_dilation, length_contraction, velocity
+                     ├─ momentum ─ dynamics ─ energy
+                     ├─ spacetime        (the transformation the three above are cases of)
+                     ├─ rapidity, doppler
+                     ├─ energy_momentum  (no γ at all: only c)
+                     ├─ collisions       (uses velocity)
+                     └─ velocity_3d, four_vector
+constants + G ─ gravity                  (nothing else here uses G)
+```
+
+The only constant is still `SPEED_OF_LIGHT_M_S`. `gravity.rs` takes `G` from the parent layer's
+`physics_constants.rs`.
 
 ## Conventions specific to this directory
 
@@ -48,7 +78,26 @@ The last two mirror the parent layer's own split: `conservation_laws.rs` holds m
   expressible as a test rather than an assertion.
 - **Every "difference" quantity has its own function.** `clock_lag_seconds` and
   `length_contraction_deficit` exist because subtracting two nearly-equal numbers is catastrophic at
-  every speed this crate simulates. See below.
+  every speed this crate simulates. See below. `redshift`, `gravitational_rate_deficit`,
+  `gravitational_redshift`, `interval_squared_m2` and `distance_under_proper_acceleration` follow the
+  same rule, and each has a test showing the naive form failing.
+- **A result that should be below `c` is below `c`.** Where `f64` would round an inverse to exactly
+  `c` (`velocity_from_rapidity`, `velocity_from_redshift`, `velocity_under_proper_acceleration`, like
+  `velocity_from_momentum` before them), the result is clamped to the largest speed below `c`, so the
+  next call does not reject it.
+- **Mass is positive, except in `energy_momentum.rs`.** `γmv` is the wrong formula for light, so the
+  velocity-based files reject `m = 0`. `E² = (pc)² + (mc²)²` is the right formula for light, so that
+  file accepts it.
+- **Doppler takes a recession velocity: positive means moving apart**, which lowers the frequency and
+  gives a positive redshift.
+- **A 3-D velocity is a `[f64; 3]`.** No vector type is imported, as in the parent layer.
+  `FourVector` is the one struct, and its time component is pre-scaled by `c` so all four components
+  share a unit.
+- **`gravity.rs` says which of its formulas are exact and which are first order** in `r_s/r`. Radii
+  there are distances from the centre of the mass.
+- **The newer files are not re-exported from the crate root.** Call them by path:
+  `physics_sandbox::physics_utils::relativity::doppler::redshift`. The original eight files are
+  flattened in `lib.rs`; the rest were added without touching anything outside this directory.
 
 ## Why there are three functions where two would do
 
@@ -121,8 +170,9 @@ synchrotron's bending magnets cost nothing in beam energy while its cavities cos
 `β = 0.999`, with no upper bound. That is the third time the speed limit appears in this sub-layer, after
 `γ⁻³` in `dynamics` and the `√(1+r²)` in `momentum`.
 
-`mc²` is **not** a formula for kinetic energy, and nothing here releases it. Mass is conserved throughout;
-`mc²` appears because it is the natural energy unit for a body of mass `m`.
+`mc²` is **not** a formula for kinetic energy, and nothing in `energy.rs` releases it: a single body's
+mass does not change. What happens when the mass of a *system* changes (a reaction, or two bodies
+sticking together) is in `energy_momentum.rs` (`energy_released`) and `collisions.rs`.
 
 ### `(γ−1)mc²` is where the stable `γ−1` matters most
 
@@ -147,26 +197,97 @@ clear what it costs: past that boundary the returned velocity carries no informa
 momentum was. If you need to distinguish ultrarelativistic momenta, stay in `r = p/(mc)` and do not
 round-trip through velocity.
 
+## The transformation everything else is a case of
+
+`spacetime.rs` has the Lorentz transformation of an event, `t' = γ(t − vx/c²)`, `x' = γ(x − vt)`.
+Time dilation is that with `Δx = 0`, length contraction is it with `Δt = 0`, and velocity addition
+is `x'/t'`. The tests derive each of the three from `transform_event` and compare with the file that
+implements it separately.
+
+What the transformation leaves alone is the interval `s² = (cΔt)² − Δx²`, and its sign sorts pairs
+of events:
+
+| `s²` | Kind | Every frame agrees on |
+| --- | --- | --- |
+| `> 0` | timelike | which came first; one can cause the other |
+| `= 0` | lightlike | that light just connects them |
+| `< 0` | spacelike | nothing about their order; neither can cause the other |
+
+`simultaneity_offset_s` is the effect with no Newtonian counterpart: two flashes a light-second apart
+and simultaneous on the platform are `0.75 s` apart on a train passing at `0.6c`.
+
+## Collisions make mass
+
+`collisions.rs` conserves `Σγmv` and `Σγmc²`. Total energy is conserved in **every** collision, so a
+perfectly inelastic one does not lose energy: two `1 kg` lumps meeting at `±0.6c` leave one `2.5 kg`
+lump. Both solvers work in the centre-of-momentum frame, where an elastic collision reverses each
+velocity and an inelastic one leaves the merged body at rest.
+
+The test that justifies the file is `the_newtonian_solver_gives_a_different_answer_in_a_different_frame`:
+the parent layer's solver disagrees with itself across frames by more than `0.01c`, and this one does
+not.
+
+## Two boosts are a boost and a rotation
+
+On one axis velocities compose in either order. In 3-D, `u ⊕ v` and `v ⊕ u` have the same speed and
+**different directions**. The angle between them is the Wigner rotation (`wigner_rotation_angle`):
+`12.7°` for two perpendicular boosts at `0.6c`, `4.9e-9 rad` at Earth's orbital speed. This is why the
+one-axis functions must not be applied per component, and why `FourVector::boost` exists.
+
+## General relativity: formulas, not a solver
+
+`gravity.rs` holds what the Schwarzschild solution gives in closed form. Each is tested against a
+measurement:
+
+| Function | Check |
+| --- | --- |
+| `perihelion_precession_per_orbit` | Mercury: `42.98″` per century |
+| `light_deflection_angle` | Starlight at the Sun's edge: `1.75″`, twice the Newtonian value |
+| `gravitational_redshift` | Pound–Rebka: `2.46e-15` over `22.5 m`; the Sun's surface: `2.12e-6` |
+| `orbiting_clock_rate_offset` | GPS: `+38.5 µs/day`; the ISS: `−24.7 µs/day` |
+
+The GPS figure is where the two theories meet. Height makes the satellite clock fast by
+`45.7 µs/day`; speed makes it slow by the `7.2 µs/day` that `time_dilation.rs` computes. A test adds
+the two from separate code and compares with the combined formula.
+
+## Tests
+
+[`tst/physics_utils/relativity/`](../../../tst/physics_utils/relativity/README.md), one file per
+source file, each `#[path]`-included into its subject. Proptest seeds go to
+`tst/physics_utils/proptest-regressions/relativity_<file>_tests.txt`.
+
+## Adding a file here
+
+- Start from `SPEED_OF_LIGHT_M_S` and `lorentz.rs`; do not recompute `γ`.
+- Return `Option`, with `None` for `|v| ≥ c`, a non-finite input, or a result that overflowed.
+- Name the unit in each parameter (`_m_s`, `_kg`, `_j`, `_s`, `_m`, `_rad`).
+- If the result is a small difference of two large numbers, give it a stable form and a test that
+  shows the naive form failing.
+- Add `tst/physics_utils/relativity/<file>_tests.rs` with a pinned `REGRESSION_SEEDS`, a row in the
+  table above, a row in that directory's README, and a line in `mod.rs`.
+- A new constant goes in `constants.rs` with its why / used-by / if-changed docs.
+
 ## What this cannot do
 
-- **No general relativity.** No gravitational time dilation, no curvature, no perihelion precession.
-  This module cannot correct Mercury's orbit and the crate's integrator is still Newtonian.
-  Concretely: the published net GPS clock correction is about `+38 µs/day`, and the `−7.2 µs/day` this
-  module computes is only the special-relativistic part — the GR term is larger and runs the other way.
-- **One axis only.** These are the collinear formulas. Two perpendicular boosts compose into a boost
-  *plus a rotation* (Thomas–Wigner), so applying these componentwise the way the rest of
-  `physics_utils` is applied would be a physics error rather than a simplification. A second axis needs
-  a `4×4` transformation. `collinear_composition_commutes` is pinned partly to record that the
-  commutativity it asserts is exactly what fails in the general case.
-- **No four-vectors, no spacetime interval, no Doppler shift.**
-- **No relativistic collision solver.** The parent layer's `elastic_collision_1d` and
-  `perfectly_inelastic_collision_1d` are Newtonian and have no counterpart here, so nothing yet conserves
-  `Σγmv` and `Σγmc²` across a contact. `E² = (pc)² + (mc²)²` is *tested* as a cross-check between
-  `energy.rs` and `momentum.rs` but is not exposed as a function.
-- **No mass–energy conversion.** `rest_energy` reports `mc²`; nothing spends it. Mass is invariant and
-  conserved everywhere in this crate. Length contraction here is what a frame *measures*, not what a camera would
-  photograph — a fast cube looks rotated (Penrose–Terrell), not squashed, and there is no relativistic
-  renderer.
-- **Nothing in the simulation uses any of it.** At solar-system speeds γ−1 is `5e-9`, so `experiment_3`
-  is Newtonian to eight decimal places and is right to ignore this. These functions are the vocabulary
-  for whatever comes next, not a change to what runs.
+- **No solver for general relativity.** `gravity.rs` is closed-form results around one spherical,
+  non-rotating mass. There are no geodesics, no curved-spacetime integrator, no rotating (Kerr) or
+  charged masses, no gravitational waves, no cosmology. The crate's integrator is still Newtonian,
+  so Mercury's orbit in the simulation does not precess; `perihelion_precession_per_orbit` only says
+  by how much it should.
+- **Three of the gravity formulas are first order** in `r_s/r` (precession, light bending, the
+  orbiting clock). They are right to parts per million in the solar system and wrong near a black
+  hole.
+- **Collisions are on one axis, between two bodies.** There is no 2-D or 3-D scattering, no decay
+  into several bodies, and no collision involving light (Compton scattering). `FourVector` can
+  express all of those; nothing solves them.
+- **Boosts do not carry orientation.** `FourVector::boost` is a pure boost and
+  `wigner_rotation_angle` reports the angle only. There is no rotation matrix, no composition of
+  boosts into a single Lorentz transformation, and no Thomas precession rate for an orbit.
+- **Doppler is for flat spacetime.** `velocity_from_redshift` does not apply to cosmological
+  redshifts, and there is no combined gravitational-plus-motion shift.
+- **No electromagnetism.** Fields do not transform here.
+- **No relativistic renderer.** Length contraction here is what a frame *measures*, not what a camera
+  would photograph. A fast cube looks rotated (Penrose–Terrell), not squashed.
+- **Nothing in the simulation uses any of it.** At solar-system speeds γ−1 is `5e-9`, so
+  `experiment_3` is Newtonian to eight decimal places and is right to ignore this. These functions
+  are a tested library, not a change to what runs.

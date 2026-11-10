@@ -106,9 +106,9 @@ pub use crate::core::scene::{
 // Cross-layer constants: the unit scale, the shipped scene's configuration, and
 // the window `main.rs` asks for.
 pub use crate::constants::{
-    EARTH_MASS_KG, KEY_BINDINGS, METRES_PER_UNIT, TWO_BODY_HEIGHT_UNITS, TWO_BODY_SEPARATION_UNITS,
-    TWO_BODY_TIME_SCALE, TWO_BODY_VISUAL_RADIUS_UNITS, WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE,
-    WINDOW_WIDTH_PX,
+    ACTIONS, BINDABLE_KEYS, EARTH_MASS_KG, FIXED_BINDINGS, METRES_PER_UNIT, TWO_BODY_HEIGHT_UNITS,
+    TWO_BODY_SEPARATION_UNITS, TWO_BODY_TIME_SCALE, TWO_BODY_VISUAL_RADIUS_UNITS, WINDOW_HEIGHT_PX,
+    WINDOW_MODE, WINDOW_TITLE, WINDOW_WIDTH_PX,
 };
 
 // The `core` layer's own constants.
@@ -151,15 +151,17 @@ pub use crate::spacecraft::constants::{
     POWERED_TOUCHDOWN_SPEED_M_S, PROBE_MASS_KG, PROBE_MAX_DEPARTURE_SPEED_M_S,
 };
 pub use crate::spacecraft::guidance::{
-    blocking, braking_m_s2, match_velocity, segment_entry_m, steer, Law, Sighting, Steering,
+    blocking, braking_m_s2, match_velocity, steer, Law, Sighting, Steering,
 };
 pub use crate::spacecraft::lambert::lambert;
 // Configuration files: `config/*.toml`, read once at startup into the resources above.
 pub use crate::config::constants::{
-    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, PERFORMANCE_FILE, SPACECRAFT_FILE, TRAILS_FILE,
-    UI_FILE,
+    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
+    SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE,
 };
-pub use crate::config::{config_dir, Config, ConfigError};
+pub use crate::config::{
+    config_dir, save_requested_system, write_file, Config, ConfigDir, ConfigError, ConfigPlugin,
+};
 
 pub use crate::spacecraft::{
     central_body, departure_burn, plan_correction_for, plan_flight, plan_transfer_correction,
@@ -203,7 +205,8 @@ pub use crate::render::eclipse::{
 
 // Performance: the quality-versus-frame-time switches, read from the environment, and the benchmark.
 pub use crate::performance::{
-    AntiAliasing, BenchConfig, PerformancePlugin, PerformanceSettings, SettingsError,
+    apply_performance_settings_system, AntiAliasing, BenchConfig, PerformancePlugin,
+    PerformanceSettings, SettingsError,
 };
 
 // Re-export the scene-plugin surface so consumers can write
@@ -246,15 +249,18 @@ pub use crate::render::constants::{
 // `FreeFlyController` to the camera entity it spawns, so both halves of the
 // contract are reachable from the crate root.
 pub use crate::input::camera::{
-    cycle_camera_speed_system, orbit_camera_system, toggle_camera_lock_system, CameraLock,
-    CameraSettings, CameraSpeed, CameraTarget, FreeFlyCameraPlugin, FreeFlyController, Orbit,
+    apply_camera_settings_system, cycle_camera_speed_system, orbit_camera_system,
+    toggle_camera_lock_system, CameraLock, CameraSettings, CameraSpeed, CameraTarget,
+    FreeFlyCameraPlugin, FreeFlyController, Orbit,
 };
 
 // Keyboard control of the simulation clock: pause, single-step, speed.
 pub use crate::input::controls::{simulation_controls_system, SimulationControlsPlugin};
 
 // The menu's two halves: the input mode and the `Esc` binding here, the panel in `ui`.
-pub use crate::input::menu::{menu_toggle_system, MenuInputPlugin, MenuState};
+pub use crate::input::menu::{
+    menu_toggle_system, ConfigTab, MenuInputPlugin, MenuPage, MenuState, SettingsTab,
+};
 pub use crate::input::popup::PopupState;
 
 // The object placer's three halves: state and keys here, the panel in `ui`, the spawn in
@@ -267,7 +273,8 @@ pub use crate::ui::placement::{
 
 // The key bindings as data, read by both `--help` and the menu.
 pub use crate::bindings::{
-    binding_help_text, bindings_in, key_column_width, BindingGroup, KeyBinding,
+    binding_help_text, binding_rows, is_bindable, key_label, key_name, keymap_or_default,
+    parse_key, Action, ActionInfo, BindingGroup, BindingRow, KeyBinding, KeyMap,
 };
 
 // The `input` layer's own constants: the camera's feel, and the speed-key factor.
@@ -302,7 +309,10 @@ pub use crate::ui::constants::{
 
 // Re-export the compass surface. `compass_axes` is public so the projection is
 // property-testable independently of egui.
-pub use crate::ui::menu::{binding_rows, menu_system, settings_rows, MenuPanelPlugin, SettingsRow};
+pub use crate::ui::menu::{
+    anti_aliasing_label, menu_system, settings_rows, MenuPanelPlugin, MenuRequests, SaveTarget,
+    SettingsRow,
+};
 
 pub use crate::ui::compass::{
     compass_axes, compass_system, CompassAxis, CompassConfig, CompassPlugin,

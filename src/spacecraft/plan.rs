@@ -18,11 +18,10 @@
 
 use bevy::math::DVec3;
 
-use crate::constants::METRES_PER_UNIT;
 use crate::core::scene::{moon_primary, BodyId, Scene};
 use crate::core::transfer::{
-    physical_radius_m, plan_departure, solve_coast, solve_coast_with, Forecast, NoTransfer,
-    PlanProgress, Reach, TransferPlan,
+    physical_radius_m, plan_departure, segment_entry, solve_coast, solve_coast_with, to_metres,
+    to_units, Forecast, NoTransfer, PlanProgress, Reach, TransferPlan,
 };
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::spacecraft::config::{Propulsion, Spacecraft};
@@ -32,7 +31,7 @@ use crate::spacecraft::constants::{
     ORBIT_SEARCH_SAMPLES, ORBIT_SOLVE_WINDOW_FRACTION, POWERED_BRAKE_FRACTION,
     POWERED_CANCEL_CHECK_STEPS, POWERED_HORIZON_FACTOR,
 };
-use crate::spacecraft::guidance::{braking_m_s2, segment_entry_m, steer, Law, Sighting};
+use crate::spacecraft::guidance::{braking_m_s2, steer, Law, Sighting};
 use crate::spacecraft::lambert::lambert;
 
 /// A planned flight: what the craft will do, and what it is expected to cost.
@@ -72,6 +71,9 @@ pub enum NoFlight {
     },
     /// No coasting arc to the target converged in the full solve.
     NoArc,
+    /// The prediction of where the bodies will be could not be built: the target is no longer in
+    /// the scene, or the flight has no time to cover. Not a cancel, which says so itself.
+    NoForecast,
 }
 
 impl From<NoTransfer> for NoFlight {
@@ -191,12 +193,14 @@ fn check_gravity(
     Ok(())
 }
 
-fn to_metres(units: DVec3) -> DVec3 {
-    units * METRES_PER_UNIT
-}
-
-fn to_units(metres: DVec3) -> DVec3 {
-    metres / METRES_PER_UNIT
+/// Why a [`Forecast`] could not be built: the search was cancelled, or (otherwise) the prediction
+/// itself failed. Kept apart so a failure is not reported as a cancel, which ends silently.
+fn forecast_failure(progress: &PlanProgress) -> NoFlight {
+    if progress.is_cancelled() {
+        NoFlight::Cancelled
+    } else {
+        NoFlight::NoForecast
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -244,7 +248,7 @@ fn plan_direct(
     let straight_s = 2.0 * (gap / (POWERED_BRAKE_FRACTION * accel)).sqrt();
     let horizon = POWERED_HORIZON_FACTOR * straight_s;
     let forecast = Forecast::new(scene, None, target, Some(origin), horizon, progress)
-        .ok_or(NoFlight::Cancelled)?;
+        .ok_or_else(|| forecast_failure(progress))?;
     let target_index = forecast.target_index();
     let origin_index = forecast.index_of(origin);
     let sighting = |body: usize, t: f64| Sighting {
@@ -284,7 +288,7 @@ fn plan_direct(
 
         // Touchdown, judged on the segment relative to the target as the live flight judges it.
         let goal_next = sighting(target_index, t_next);
-        if let Some(entry) = segment_entry_m(
+        if let Some(entry) = segment_entry(
             r - goal.position_m,
             r_next - goal_next.position_m,
             goal.radius_m,
@@ -404,7 +408,7 @@ fn plan_transfer(
 
     let horizon = t_max * (1.0 + ORBIT_SOLVE_WINDOW_FRACTION) * 1.05;
     let forecast = Forecast::new(scene, None, target, Some(origin), horizon, progress)
-        .ok_or(NoFlight::Cancelled)?;
+        .ok_or_else(|| forecast_failure(progress))?;
     let (Some(ci), Some(ti)) = (forecast.index_of(central), forecast.index_of(target)) else {
         return Err(NoFlight::InvalidRoute);
     };

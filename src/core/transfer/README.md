@@ -24,7 +24,7 @@ prediction of the scene made with the same integrator the live scene uses.
 | `departure.rs` | The direct search: `RadialLaunch`, the speed ladder, the direction scan, refinement. |
 | `assist.rs` | The gravity-assist search: routes through up to `TRANSFER_MAX_FLYBYS` planets, fewest flybys first. Every level solves the two launch angles for a grid of aim points beside its planet, and each first planet is searched on its own thread. |
 | `forecast.rs` | The public face of the prediction for the spacecraft layer: `Forecast` (where each body is, its velocity, gravity, softening), `solve_coast` and `solve_coast_with` (the launch, or the burn through a launcher, that coasts to the target around a chosen time), `Coast`. |
-| `voyage.rs` | `Voyage`: a craft in the live scene: its path, its correction-burn schedule (including burns around each flyby), and touchdown. `record_path` records without the `f32` touchdown test, for a craft whose controller finds its own. |
+| `voyage.rs` | `Voyage`: a craft in the live scene: its path, its correction-burn schedule (including burns around each flyby), and touchdown. `record_path` records without the touchdown test, for a powered craft whose controller finds its own. |
 
 ## Rules and invariants
 

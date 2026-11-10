@@ -135,6 +135,13 @@ impl Voyage {
             })
     }
 
+    /// Pass over the correction due now without planning one or counting it: the slot is used, so
+    /// [`next_correction_at`](Self::next_correction_at) moves on. For a slot that came due too late
+    /// to plan, such as one a fast frame stepped past the arrival time.
+    pub fn skip_correction(&mut self, now_s: f64) {
+        self.last_correction_at_s = Some(now_s);
+    }
+
     /// Put the craft on a correction plan from [`plan_correction`], or count the slot as used when
     /// there is none.
     pub fn apply_correction(&mut self, scene: &mut Scene, plan: Option<TransferPlan>, now_s: f64) {
@@ -189,8 +196,8 @@ impl Voyage {
     }
 
     /// Record one substep of the live scene on the flown path only, without looking for touchdown:
-    /// for a craft whose controller finds its own touchdown more precisely than the scene's `f32`
-    /// positions can (see `spacecraft::Flight`). It then sets `touchdown_offset_units` itself.
+    /// for a craft whose controller finds its own touchdown, with steps finer than the scene's
+    /// substep (see `spacecraft::Flight`). It then sets `touchdown_offset_units` itself.
     pub fn record_path(&mut self, scene: &Scene) {
         if self.touchdown_offset_units.is_some() {
             return;
@@ -213,8 +220,9 @@ impl Voyage {
 }
 
 /// The first point at which the segment `from → to` enters the sphere of `radius` about the
-/// origin, or `None` if it never does.
-pub(super) fn segment_entry(from: DVec3, to: DVec3, radius: f64) -> Option<DVec3> {
+/// origin, or `None` if it never does. Any length unit, as long as all three agree; the spacecraft
+/// layer uses it in metres.
+pub fn segment_entry(from: DVec3, to: DVec3, radius: f64) -> Option<DVec3> {
     if from.length() <= radius {
         return Some(from);
     }

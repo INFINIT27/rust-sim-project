@@ -57,3 +57,22 @@ pub const TRAILS_FILE: &str = "trails.toml";
 ///
 /// **If you change it.** Rename the shipped file, or the built-in switches are used.
 pub const PERFORMANCE_FILE: &str = "performance.toml";
+
+/// The controls file: which key each rebindable action is on.
+///
+/// **Used by.** [`crate::config::Config::load`], and the menu's Save on the controls page.
+///
+/// **If you change it.** Rename the shipped file, or the default keys are used.
+pub const CONTROLS_FILE: &str = "controls.toml";
+
+/// The first lines of a file the menu saves.
+///
+/// **Why this value.** A saved file is generated, so the comments a hand-written one carries are
+/// not kept; this says so, and where the keys are explained, so the next person to open it is not
+/// surprised.
+///
+/// **Used by.** [`crate::config::save_requested_system`].
+///
+/// **If you change it.** Keep every line a TOML comment, or saved files stop loading.
+pub const SAVED_FILE_HEADER: &str = "# Saved from the in-app menu, which does not keep comments.\n\
+# Every key is optional; see config/README.md for what each one does.\n\n";

@@ -19,7 +19,7 @@ The debug overlay, and the quarantine for the `bevy_egui` dependency.
 | `overlay.rs` | `DebugUiPlugin`, `debug_overlay_system` (one egui window: FPS, prop count, both clocks, camera pose, and a per-prop SI readout), plus the pure helpers `units_to_metres`, `prop_lines`, `distance_lines`, `clock_lines`, `human_duration`. |
 | `crosshair.rs` | `CrosshairPlugin`, `crosshair_system`, `CrosshairConfig`, and the pure `crosshair_segments` geometry helper. Draws four short strokes with a gap at the centre of the view. |
 | `compass.rs` | `CompassPlugin`, `compass_system`, `CompassConfig`, `CompassAxis`, and the pure `compass_axes` projection. Draws the three world axes in the top-right corner, rotating with the camera. |
-| `menu.rs` | `MenuPanelPlugin`, `menu_system`, `SettingsRow`, and the pure `settings_rows` / `binding_rows`. The `Esc` panel: current settings and the key bindings, centred, with the crate's only interactive widget. |
+| `menu.rs` | `MenuPanelPlugin`, `menu_system`, `MenuRequests` and `SaveTarget` (how a page asks the `config` layer to save), `settings_rows`, `anti_aliasing_label`. The `Esc` menu: a first page (Settings, Configuration, Exit, a summary of the run), Settings (controls with rebinding, video) and Configuration (camera, interface, trails, spacecraft), each with Reset and Save. |
 | `placement.rs` | `PlacementPanelPlugin`, `placement_panel_system`, `PlacementRow`, and the pure `placement_rows`. The `B` picker, bottom-centre: five interstellar objects with their masses. Non-interactive — the arrow keys drive it. |
 | `arrival.rs` | `ArrivalPopupPlugin`, `arrival_popup_system`, `ArrivalPopupConfig` (its sizes, from `config/ui.toml`), and the pure `arrival_rows`, `duration_label`, `energy_label`. The pop-up when a spacecraft lands: route, time of travel, top speed (and fraction of light), Δv, engine time, peak g, energy (with its TNT equivalent), propellant, touchdown speed, corrections. Releases the cursor while open (`PopupState`); its title-bar ✕ or `Esc` dismisses it for that landing, and the next `R` also closes it. Drawn above the crosshair, which paints on egui's background layer. |
 
@@ -79,7 +79,7 @@ agree. Y is green: it is the one axis with no line on the floor, because it poin
 - **The menu shows settings; it does not own them.** Every row is read from the resource
   that holds it — the `ExperimentSpec`, the `SimulationClock`, the `TrailConfig` — so the
   panel cannot disagree with the app about what the app is doing. The bindings come from
-  `KEY_BINDINGS`, the same table `--help` prints.
+  `crate::bindings::binding_rows`, the same rows `--help` prints.
 - **Nothing else here may consume input the camera needs** (Requirement 11.4). The
   overlay holds because it uses `ui.label` exclusively — labels are
   non-interactive, so egui never claims focus. The crosshair holds more strongly:

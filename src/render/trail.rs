@@ -71,6 +71,7 @@ use bevy::input::{keyboard::KeyCode, ButtonInput};
 use bevy::math::Vec3;
 use bevy::reflect::Reflect;
 
+use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::core::scene::moon_primary;
 use crate::core::scene::{BodyId, Color, Scene};
 use crate::experiments::catalog::ExperimentSpec;
@@ -532,6 +533,7 @@ pub fn record_trails_system(
 /// `controls_tests` asserts that no binding collides across the two.
 pub fn toggle_trails_system(
     keys: Res<ButtonInput<KeyCode>>,
+    keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
     mut config: ResMut<TrailConfig>,
 ) {
@@ -542,7 +544,7 @@ pub fn toggle_trails_system(
         return;
     }
 
-    if keys.just_pressed(KeyCode::KeyT) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::ToggleTrails) {
         config.visible = !config.visible;
     }
 }

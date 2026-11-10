@@ -1,8 +1,10 @@
-//! Special relativity: the kinematics of two frames in uniform relative motion.
+//! Relativity: special relativity in full, and the closed-form results of general relativity.
 //!
-//! The first departure in this crate from Newtonian mechanics. Everything here follows from two
+//! The first departure in this crate from Newtonian mechanics. Special relativity follows from two
 //! postulates — the laws of physics are the same in every inertial frame, and `c` is the same in
-//! every inertial frame — and nothing here needs a force, a mass, or a scene. It is geometry.
+//! every inertial frame. [`gravity`] is the one module about general relativity.
+//!
+//! Nothing in the simulation calls this sub-layer. It is a library of formulas with tests.
 //!
 //! # What is where
 //!
@@ -16,6 +18,14 @@
 //! | [`momentum`] | `p = γmv`, its inverse, and the excess over `mv`. |
 //! | [`dynamics`] | Force and acceleration, where `F = ma` becomes `γ³ma` along the motion and `γma` across it. |
 //! | [`energy`] | `E = γmc²`, `KE = (γ−1)mc²`, and work — where `W = ΔKE` survives **unchanged**. |
+//! | [`spacetime`] | Events: the Lorentz transformation, the interval, and the relativity of simultaneity. |
+//! | [`rapidity`] | `φ = atanh β`, which adds where velocity does not, and motion under constant proper acceleration. |
+//! | [`doppler`] | Frequency shift of light from a moving source, along the line of sight and at any angle. |
+//! | [`energy_momentum`] | `E² = (pc)² + (mc²)²`, invariant mass, light (`m = 0`), and mass–energy conversion. |
+//! | [`collisions`] | The centre-of-momentum frame, and elastic and perfectly inelastic collisions on one axis. |
+//! | [`velocity_3d`] | Velocities in any direction, the Wigner rotation, and aberration. |
+//! | [`four_vector`] | `FourVector`, the Minkowski product, and the boost in any direction. |
+//! | [`gravity`] | General relativity around one mass: clock rates, redshift, perihelion precession, light bending. |
 //!
 //! The last two mirror the parent layer's own split — [`conservation_laws`] holds momentum and
 //! [`newtons_laws`] holds force, so [`momentum`] and [`dynamics`] sit in the same relationship here.
@@ -42,25 +52,40 @@
 //! answer available — and `f64::INFINITY`, which then silently poisons every arithmetic result
 //! downstream into `NaN`. `None` is the only answer that a caller cannot mistake for a measurement.
 //!
-//! # What is deliberately not here yet
+//! # One axis, and when that is not enough
 //!
-//! No spacetime interval, no four-vectors, no relativistic collision solver — the parent layer's
-//! `elastic_collision_1d` is Newtonian and has no counterpart here — no Doppler shift, no Thomas
-//! precession, and nothing about **general** relativity — no gravitational time dilation, no
-//! curvature, no perihelion precession. This module cannot correct Mercury's orbit and does not claim
-//! to; that is GR, and the crate's Newtonian integrator is still Newtonian.
-//!
-//! Boosts are along a single axis only. A general boost in an arbitrary direction does not decompose
+//! Most modules here are along a single axis. A boost in an arbitrary direction does not decompose
 //! componentwise the way the rest of [`crate::physics_utils`] does — two perpendicular boosts compose
-//! into a boost *plus a rotation* (Thomas–Wigner), so pretending otherwise would be a real physics
-//! error rather than a simplification. When a second axis is needed the honest move is a `4×4`
-//! transformation, not three calls to these functions.
+//! into a boost *plus a rotation* (Thomas–Wigner), so calling the one-axis functions per component
+//! is a physics error. For a second axis use [`velocity_3d`] and [`four_vector`], which are written
+//! for any direction.
+//!
+//! # What is not here
+//!
+//! - **A solver for general relativity.** [`gravity`] is closed-form results around one spherical,
+//!   non-rotating mass: no geodesics, no rotating masses, no gravitational waves. The crate's
+//!   integrator is still Newtonian, so a simulated Mercury does not precess; the module only says by
+//!   how much it should.
+//! - **Collisions beyond one axis and two bodies**, and collisions involving light.
+//! - **Orientation under boosts**: no rotation matrices, no Thomas precession rate.
+//! - **Electromagnetism**, and anything that draws what a fast observer would see.
+//!
+//! The original eight modules are re-exported from the crate root; the later ones are reached by
+//! path, for example `physics_utils::relativity::doppler::redshift`.
 
+pub mod collisions;
 pub mod constants;
+pub mod doppler;
 pub mod dynamics;
 pub mod energy;
+pub mod energy_momentum;
+pub mod four_vector;
+pub mod gravity;
 pub mod length_contraction;
 pub mod lorentz;
 pub mod momentum;
+pub mod rapidity;
+pub mod spacetime;
 pub mod time_dilation;
 pub mod velocity;
+pub mod velocity_3d;

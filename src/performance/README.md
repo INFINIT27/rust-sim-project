@@ -14,7 +14,7 @@ so two configurations can be compared without a rebuild. The API is documented i
 
 | File | Job |
 | --- | --- |
-| `mod.rs` | `PerformancePlugin`: inserts the settings, sets MSAA, adds SMAA/FXAA to cameras, runs the benchmark. |
+| `mod.rs` | `PerformancePlugin`: inserts the settings, sets MSAA, adds SMAA/FXAA to cameras, runs the benchmark. `apply_performance_settings_system` re-applies MSAA, the post-process pass, and vsync when the settings change (from the menu's video page). |
 | `settings.rs` | `PerformanceSettings` and `AntiAliasing`, parsed from the environment over a base (`from_env_over`), which `main.rs` takes from `config/performance.toml`; a misspelt value is an error. |
 | `bench.rs` | The benchmark: warm up, record frame times, print one `BENCH …` line, exit. |
 | `constants.rs` | Defaults and variable names, each with the measurement behind it. |

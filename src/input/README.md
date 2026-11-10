@@ -20,7 +20,7 @@ touches `Scene`.
 | `constants.rs` | Every constant the layer reads: the `FreeFlyController` defaults (`CAMERA_MOVE_SPEED_UNITS_S`, `CAMERA_BOOST_MULTIPLIER`, `LOOK_SENSITIVITY_RAD_PER_PX`), the pitch clamp's `PITCH_LIMIT_MARGIN_RAD`, and `TIME_SCALE_KEY_FACTOR`. |
 | `camera.rs` | `FreeFlyController` (per-entity tuning + yaw/pitch/captured state), `CameraSettings` (the tuning a new camera starts with, from `config/camera.toml`), the pure `clamp_pitch` helper, `free_fly_camera_system`, and `FreeFlyCameraPlugin`. Also the camera lock: `CameraTarget`, `CameraLock(Option<Orbit>)`, `toggle_camera_lock_system` (`F`), and `orbit_camera_system`, which places a locked camera on its orbit after scroll zoom in `PostUpdate`. Moves on **observer** time, so the camera is unaffected by the simulation being paused or rescaled. |
 | `controls.rs` | `SimulationControlsPlugin`, `simulation_controls_system`. The clock keys: `P`, `.`, `]`, `[`, `\`. |
-| `menu.rs` | `MenuState`, `menu_toggle_system`, `MenuInputPlugin`. Whether the `Esc` menu is open — the layer's **input mode** — and the key that toggles it. The panel itself is `ui/menu.rs`. |
+| `menu.rs` | `MenuState` (open or closed, the page and tab showing, and the action waiting for a key during a rebind), `MenuPage` / `SettingsTab` / `ConfigTab`, `menu_toggle_system` (`Esc`, and capturing the new key for a rebind), `MenuInputPlugin`. The pages themselves are `ui/menu.rs`. |
 | `mission.rs` | `LaunchRequest`, `launch_input_system`, `LaunchInputPlugin`. `R` asks to pick the body at the crosshair as a rocket's origin or destination, and `G` asks for the next spacecraft in the fleet; `render/mission.rs` does the picking and flies it. |
 | `placement.rs` | `PlacementState`, `placement_input_system`, `PlacementInputPlugin`. The `B` picker: which interstellar object is selected, and whether a placement has been asked for. |
 | `popup.rs` | `PopupState`. Whether a dismissible pop-up (the arrival report) is open. While it is, the camera releases the cursor and stands down as it does for the menu, and `Esc` closes the pop-up before it opens the menu. Other keys stay bound. Opened and closed by `ui/arrival.rs`. |
@@ -49,34 +49,10 @@ consequences worth knowing:
 
 ## The full key map
 
-The source of truth is [`KEY_BINDINGS`](../constants.rs), which `--help` and the `Esc` menu
-both render, so those two cannot drift apart. This copy can — check it against `--help`.
-
-| Input                 | Action                                 |
-| --------------------- | -------------------------------------- |
-| Left-click the window | Capture cursor for mouse-look          |
-| Mouse                 | Look around (while captured)           |
-| `W` / `S`             | Move forward / backward                |
-| `A` / `D`             | Strafe left / right                    |
-| `Space` / `Left Ctrl` | Move up / down along world **Y**       |
-| `E` / `Q`             | Up / down as well — aliases for the above |
-| `C`                   | Cycle camera speed: normal (1x), fast (3x), slow (0.02x) |
-| `F`                   | Lock onto the body nearest the crosshair, or release the lock |
-| Mouse (while locked)  | Orbit the locked body, after a left click captures the cursor |
-| Scroll (while locked) | Zoom in / out on the locked body       |
-| `T`                   | Show / hide motion trails (on by default) |
-| `B`                   | Open / close the object placer         |
-| `Up` / `Down`         | Choose which object to place           |
-| `Enter`               | Place the selected object in front of the camera |
-| `R`                   | Rocket: `R` on the departure body, then `R` on the destination (`R` on the origin again cancels) |
-| `G`                   | Next spacecraft for the next launch: crewed `3 g` transfer (default), full thrust, coasting probe |
-| `Esc`                 | Open / close the menu (also releases the cursor) |
-| `P`                   | Pause / resume the simulation           |
-| `.`                   | Advance one frame while paused          |
-| `]` / `[`             | Double / halve the time scale           |
-| `\`                   | Reset the time scale to the experiment's own |
-| `-`                   | Ten times slower: divide the time scale by 10 |
-| `Cmd`-`Q` / `Alt`-`F4` / Ctrl-C | Quit — the window is full-screen and has no close button |
+Every key except `Esc` and the mouse can be rebound, in the menu (`Esc` > Settings > Controls) or
+in [`config/controls.toml`](../../config/README.md). The defaults are `ACTIONS` in
+[`src/constants.rs`](../constants.rs); `cargo run -- --help` and the menu list them, from the same
+rows the input systems act on, so they cannot drift apart.
 
 The camera keys keep working while the simulation is paused, because they run on the
 observer clock (see [`src/time/README.md`](../time/README.md)).
@@ -202,9 +178,11 @@ ignoring it, so dismissing the menu cannot reveal a forgotten picker with `Enter
   vertical movement uses world `Vec3::Y`, not the camera's local up.
 - **`clamp_pitch` is total:** the `NaN` branch runs *before* `f32::clamp` so a
   `NaN` can never reach `Quat::from_euler`.
-- **A new binding gets a row in `KEY_BINDINGS`, in the same change.** That table is what
-  `--help` prints and what the menu draws, and nothing enforces the link — a key bound in
-  code and forgotten there is simply undocumented.
+- **A key is read through the `KeyMap`, never as a `KeyCode`.** `keymap.just_pressed(&keys,
+  Action::Pause)`, so a rebind in the menu (or `config/controls.toml`) changes what the key does.
+  A new action is a variant of `Action`, a row of `ACTIONS` in `src/constants.rs`, and that call;
+  `--help` and the menu pick it up from the table. Only `Esc` (the menu) and the mouse are read
+  directly.
 - **This layer still never writes `Scene`, including for placement.** The placer records
   *what* and *whether*; the render layer decides *where* and does the adding.
 - **A new gated system takes `Option<Res<MenuState>>`, not `Res<MenuState>`.** Half the

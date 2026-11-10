@@ -123,8 +123,13 @@ pub(super) fn fly(
     let bodies = ephemeris.mu.len();
 
     let (mut r, mut v, mut t) = (r0, v0, 0.0);
-    let mut previous_offset = r - ephemeris.position(toward, 0.0);
-    let spacing = (r - ephemeris.position(destination, 0.0)).length() / TRANSFER_PATH_POINTS;
+    // Every body's position at `t`, interpolated once per step and shared by the gravity, the
+    // step size, the approach, the flyby record, and the crash test, which all want them at the
+    // same time. Interpolating per use made a step cost four or five times as many.
+    let mut at = Vec::with_capacity(bodies);
+    ephemeris.positions_into(t, &mut at);
+    let mut previous_offset = r - at[toward];
+    let spacing = (r - at[destination]).length() / TRANSFER_PATH_POINTS;
     let mut approach: Option<Approach> = None;
     let mut flight = Flight {
         approach: None,
@@ -146,7 +151,7 @@ pub(super) fn fly(
 
     // The acceleration at the current state. Each step ends by computing it at the new state,
     // and the next step starts from it, so a step costs one evaluation.
-    let mut a = ephemeris.acceleration(r, t);
+    let mut a = ephemeris.acceleration_at(r, &at);
     let mut steps: u32 = 0;
     while t < horizon {
         steps = steps.wrapping_add(1);
@@ -156,7 +161,7 @@ pub(super) fn fly(
         }
         let nearest = (0..bodies)
             .filter(|&body| ephemeris.mu[body] > 0.0)
-            .map(|body| (ephemeris.position(body, t) - r).length())
+            .map(|body| (at[body] - r).length())
             .fold(f64::INFINITY, f64::min);
         let dt = (TRANSFER_STEP_FRACTION * nearest / v.length().max(1.0))
             .clamp(
@@ -176,10 +181,11 @@ pub(super) fn fly(
         v += a * (0.5 * dt);
         r += v * dt;
         t += dt;
-        a = ephemeris.acceleration(r, t);
+        ephemeris.positions_into(t, &mut at);
+        a = ephemeris.acceleration_at(r, &at);
         v += a * (0.5 * dt);
 
-        let offset = r - ephemeris.position(toward, t);
+        let offset = r - at[toward];
         let relative_velocity = (offset - previous_offset) / dt;
 
         // Closest point of the step's straight relative segment to the body's centre, so the
@@ -212,7 +218,7 @@ pub(super) fn fly(
                 last_point = r;
             }
             for body in 0..bodies {
-                let offset = r - ephemeris.position(body, t);
+                let offset = r - at[body];
                 let distance = offset.length();
                 if distance > ephemeris.hill_m[body] {
                     left[body] = true;
@@ -231,7 +237,7 @@ pub(super) fn fly(
         let crashed = (0..bodies).any(|body| {
             body != destination
                 && ephemeris.radius_m[body] > 0.0
-                && (ephemeris.position(body, t) - r).length() < ephemeris.radius_m[body]
+                && (at[body] - r).length() < ephemeris.radius_m[body]
         });
         if crashed {
             flight.approach = approach;

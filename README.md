@@ -34,9 +34,9 @@ view, so you will see the Sun and the orbit trails. Fly toward a planet to see i
 | `C` | Cycle camera speed (normal, fast, slow) |
 | `F`, then mouse / scroll | Lock onto the body at the crosshair, orbit it, zoom in/out |
 | `R`, then `R` | Rocket: aim at the departure body and press `R`, then at the destination and press `R`. It flies under real gravity and its path is drawn |
-| `G` | Pick the next spacecraft: crewed transfer (default), full thrust, coasting probe; see below |
+| `G` | Pick the next spacecraft in the fleet: by default crewed transfer, full thrust, coasting probe; see below |
 | `P` / `]` / `[` | Pause, or double/halve the time scale |
-| `Esc` | Open the menu, which lists every key binding |
+| `Esc` | Close a pop-up, or open the menu: settings (rebind any key, video), configuration, exit |
 | `Cmd`-`Q` / `Alt`-`F4` | Quit |
 
 ### The spacecraft
@@ -50,10 +50,10 @@ Moon takes about 4.6 days, Earth to Mars about 17 months, Earth to Neptune 17 ye
 a pop-up shows the time of travel, top speed, speed change, engine time, energy and propellant
 used, peak g, and touchdown speed.
 
-`G` cycles to the other built-in craft: the same ship at **full thrust** (`178 g`, uncrewed), which
-burns straight at the target, flips, and brakes (Mercury to Jupiter in 13 hours at 12% of light
-speed), and a **coasting probe** that leaves at up to Voyager 2's `15.4 km/s` and can use gravity
-assists. The craft are plain data (`src/spacecraft/config.rs`), and the fleet is read from
+`G` cycles through the rest of the fleet. The built-in fleet also has the same ship at
+**full thrust** (`178 g`, uncrewed), which burns straight at the target, flips, and brakes
+(Mercury to Jupiter in 13 hours at 12% of light speed), and a **coasting probe** that leaves at
+up to Voyager 2's `15.4 km/s` and can use gravity assists. The craft are plain data (`src/spacecraft/config.rs`), and the fleet is read from
 `config/spacecraft.toml` at launch: edit it to change a craft or add your own.
 
 ### Settings
@@ -109,7 +109,7 @@ concerns live instead (**Not here**).
 | [`src/physics_utils/relativity/`](src/physics_utils/relativity/README.md) | Special-relativity formulas and `c` |
 | [`src/performance/`](src/performance/README.md) | The `RGA_*` frame-time switches and the benchmark |
 | [`src/config/`](src/config/README.md) | Loading the settings files: what each may contain, its validation, where the directory is found |
-| [`config/`](config/README.md) | The settings files themselves: fleet, camera, UI sizes, trails, performance. Edit and relaunch |
+| [`config/`](config/README.md) | The settings files themselves: key bindings, fleet, camera, UI sizes, trails, performance. Edit and relaunch, or save from the menu |
 | [`assets/`](assets/README.md) | The eclipse-shadow shader |
 | [`tst/`](tst/README.md) | How tests are laid out and wired in. `tst/<layer>/` holds the tests for `src/<layer>/` and has its own `README.md` |
 

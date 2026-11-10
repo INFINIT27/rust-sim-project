@@ -213,26 +213,6 @@ pub fn blocking(from: DVec3, to: DVec3, obstacles: &[Sighting]) -> Option<DVec3>
         .map(|(_, aim)| aim)
 }
 
-/// The first point at which the segment `from → to` enters the sphere of `radius_m` about the
-/// origin, or `None` if it never does. `f64` metres.
-pub fn segment_entry_m(from: DVec3, to: DVec3, radius_m: f64) -> Option<DVec3> {
-    if from.length() <= radius_m {
-        return Some(from);
-    }
-    let d = to - from;
-    let (a, b, c) = (
-        d.dot(d),
-        2.0 * from.dot(d),
-        from.dot(from) - radius_m * radius_m,
-    );
-    let discriminant = b * b - 4.0 * a * c;
-    if a <= 0.0 || discriminant < 0.0 {
-        return None;
-    }
-    let s = (-b - discriminant.sqrt()) / (2.0 * a);
-    (0.0..=1.0).contains(&s).then(|| from + d * s)
-}
-
 #[cfg(test)]
 #[path = "../../tst/spacecraft/guidance_tests.rs"]
 mod tests;

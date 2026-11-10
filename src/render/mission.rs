@@ -9,7 +9,7 @@
 //! A flight then goes:
 //!
 //! 1. **Plan.** [`plan_flight`] runs on a background task against a snapshot of the scene, with
-//!    the simulation clock paused. It takes milliseconds for a direct flight, seconds for a
+//!    the simulation clock held. It takes milliseconds for a direct flight, seconds for a
 //!    transfer, and can take minutes for a coasting probe to an outer planet; `R` cancels it. The
 //!    snapshot is then still the present when the plan comes back, and the camera stays live.
 //! 2. **Fly.** [`step_scene_system`](crate::render::plugin::step_scene_system) hands every substep
@@ -18,7 +18,7 @@
 //!    flight shorter than [`MISSION_MIN_WATCH_S`] at the current clock slows the clock to that, and
 //!    the old scale comes back on arrival.
 //! 3. **Correct.** At the times [`Flight::next_correction_at`] gives, [`plan_correction_for`] re-aims
-//!    from where the craft really is, again on a paused clock. A coasting craft takes the burn at
+//!    from where the craft really is, again on a held clock. A coasting craft takes the burn at
 //!    once; a transfer burns toward it at up to its acceleration.
 //! 4. **Land.** At touchdown the craft leaves the scene, a ring rides on the target's surface where
 //!    it came down, and the flight's [`FlightReport`](crate::spacecraft::FlightReport) is complete
@@ -70,24 +70,22 @@ pub enum MissionPhase {
     Choosing { origin: BodyId },
     /// Both ends are picked; the plan starts this frame.
     Requested { origin: BodyId, target: BodyId },
-    /// A flight is being planned; the clock is paused until it returns. `progress` is how a long
+    /// A flight is being planned; the clock is held until it returns (`SimulationClock::hold`). `progress` is how a long
     /// search shows its horizon and how `R` stops it.
     Planning {
         origin: BodyId,
         target: BodyId,
         task: PlanTask,
         progress: Arc<PlanProgress>,
-        was_paused: bool,
         /// The craft being planned for, selected when the plan started.
         craft: Spacecraft,
     },
     /// The craft is flying.
     Cruise(Flight),
-    /// A correction burn is being planned; the clock is paused until it returns.
+    /// A correction burn is being planned; the clock is held until it returns.
     Correcting {
         flight: Flight,
         task: CorrectionTask,
-        was_paused: bool,
     },
     /// The craft is on the target's surface.
     Landed { flight: Flight, landed_after_s: f64 },
@@ -299,6 +297,7 @@ fn why_not(reason: &NoFlight, names: &BodyNames, origin: BodyId, target: BodyId)
             format!("{} has no surface to launch from", names.label(origin))
         }
         NoFlight::Cancelled => "cancelled".to_string(),
+        NoFlight::NoForecast => "could not predict where the bodies will be for this flight".into(),
         NoFlight::Blocked(body) => format!(
             "no powered path: {} is in the way even when steering around it",
             names.label(*body)
@@ -397,12 +396,12 @@ pub fn mission_system(
         MissionPhase::Requested { origin, target } => {
             let progress = Arc::new(PlanProgress::default());
             let craft = fleet.selected().clone();
+            clock.hold();
             MissionPhase::Planning {
                 origin,
                 target,
                 task: spawn_plan(&scene, craft.clone(), origin, target, Arc::clone(&progress)),
                 progress,
-                was_paused: pause(&mut clock),
                 craft,
             }
         }
@@ -411,7 +410,6 @@ pub fn mission_system(
             target,
             mut task,
             progress,
-            was_paused,
             craft,
         } => match block_on(future::poll_once(&mut task)) {
             None => MissionPhase::Planning {
@@ -419,11 +417,10 @@ pub fn mission_system(
                 target,
                 task,
                 progress,
-                was_paused,
                 craft,
             },
             Some(plan) => {
-                clock.set_paused(was_paused);
+                clock.release();
                 match plan {
                     Ok(plan) => {
                         *restore_scale = slow_for(&mut clock, plan.transfer.flight_seconds);
@@ -457,7 +454,18 @@ pub fn mission_system(
             restore(&mut clock, restore_scale);
             MissionPhase::Idle
         }
+        // A frame can step past the planned arrival while a correction is still due: at a fast
+        // clock one frame is many hours, more than the last correction's lead. A correction then
+        // has no time left to plan for, so the slot is skipped and the craft carries on.
+        MissionPhase::Cruise(mut flight)
+            if flight.next_correction_at().is_some_and(|at| now >= at)
+                && now >= flight.voyage.arrival_at_s =>
+        {
+            flight.skip_correction(now);
+            MissionPhase::Cruise(flight)
+        }
         MissionPhase::Cruise(flight) if flight.next_correction_at().is_some_and(|at| now >= at) => {
+            clock.hold();
             MissionPhase::Correcting {
                 task: spawn_correction(
                     &scene,
@@ -467,35 +475,22 @@ pub fn mission_system(
                     flight.voyage.arrival_at_s - now,
                     flight.next_flyby(now),
                 ),
-                was_paused: pause(&mut clock),
                 flight,
             }
         }
         MissionPhase::Correcting {
             mut flight,
             mut task,
-            was_paused,
         } => match block_on(future::poll_once(&mut task)) {
-            None => MissionPhase::Correcting {
-                flight,
-                task,
-                was_paused,
-            },
+            None => MissionPhase::Correcting { flight, task },
             Some(fix) => {
-                clock.set_paused(was_paused);
+                clock.release();
                 flight.apply_correction(&mut scene, fix, now);
                 MissionPhase::Cruise(flight)
             }
         },
         other => other,
     };
-}
-
-/// Pause the clock for a plan, returning whether it was already paused so it can be restored.
-fn pause(clock: &mut SimulationClock) -> bool {
-    let was_paused = clock.is_paused();
-    clock.set_paused(true);
-    was_paused
 }
 
 /// Slow the clock so a flight of `flight_s` simulated seconds lasts at least

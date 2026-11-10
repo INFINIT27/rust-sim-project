@@ -138,7 +138,7 @@ pub fn experiment_line(spec: &ExperimentSpec) -> String {
 ///   [`Scene::two_body_free_fall_seconds`](crate::core::scene::Scene::two_body_free_fall_seconds):
 ///   when `sim` passes it, the shipped spheres have met.
 /// - **real** — wall time from [`ObserverClock`], and the frame rate.
-/// - **clock** — `running`, `paused`, or `paused (step queued)`, so the pause key's
+/// - **clock** — `running`, `paused`, `paused (step queued)`, or `held for a flight plan`, so the pause key's
 ///   effect is visible rather than inferred from the numbers having stopped.
 ///
 /// Simulated seconds are shown in exponent form because they reach `1e8`; real
@@ -146,7 +146,9 @@ pub fn experiment_line(spec: &ExperimentSpec) -> String {
 pub fn clock_lines(simulation: &SimulationClock, observer: &ObserverClock) -> Vec<String> {
     let elapsed_sim = simulation.elapsed_seconds();
 
-    let state = if simulation.is_paused() {
+    let state = if simulation.is_held() {
+        "held for a flight plan"
+    } else if simulation.is_paused() {
         if simulation.single_step_pending() {
             "paused (step queued)"
         } else {

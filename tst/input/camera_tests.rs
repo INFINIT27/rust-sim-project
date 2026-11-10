@@ -995,3 +995,51 @@ fn the_plugin_registers_the_lock_systems() {
     app.add_plugins(FreeFlyCameraPlugin);
     app.update();
 }
+
+#[test]
+fn an_open_popup_makes_the_speed_key_inert_too() {
+    use crate::input::popup::PopupState;
+
+    // The pop-up stands the camera down like the menu does, for every camera binding, not only
+    // capture and movement.
+    let mut app = app_with_camera();
+    app.init_resource::<PopupState>();
+    app.world_mut().resource_mut::<PopupState>().open();
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::KeyC);
+    app.update();
+
+    let speed = app
+        .world_mut()
+        .query::<&FreeFlyController>()
+        .single(app.world())
+        .speed;
+    assert_eq!(speed, CameraSpeed::Normal);
+}
+
+#[test]
+fn changed_camera_settings_reach_the_flying_camera_without_resetting_its_view() {
+    let mut app = app_with_camera();
+    app.init_resource::<CameraSettings>();
+    app.add_systems(Update, apply_camera_settings_system);
+    app.update();
+    {
+        let mut query = app.world_mut().query::<&mut FreeFlyController>();
+        let mut controller = query.single_mut(app.world_mut());
+        controller.yaw = 1.25;
+    }
+
+    app.world_mut().resource_mut::<CameraSettings>().move_speed = 77.0;
+    app.update();
+
+    let controller = *app
+        .world_mut()
+        .query::<&FreeFlyController>()
+        .single(app.world());
+    assert_eq!(controller.move_speed, 77.0);
+    assert_eq!(
+        controller.yaw, 1.25,
+        "the view is the camera's, not the settings'"
+    );
+}

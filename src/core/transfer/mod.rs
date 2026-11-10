@@ -22,9 +22,9 @@
 //!
 //! # Why the live flight still needs corrections
 //!
-//! The planner integrates the craft in `f64` with steps sized to its distance from the nearest
-//! body; the live scene integrates it in `f32` with whatever substep the frame gets. Over a
-//! two-month flight those differ by thousands of kilometres, which is comparable to Mars. Real
+//! The planner integrates the craft with second-order leapfrog steps sized to its distance from the
+//! nearest body; the live scene integrates it with first-order symplectic Euler at whatever substep
+//! the frame gets. The two drift apart over a long flight. Real
 //! missions have the same problem for different reasons and solve it the same way:
 //! [`plan_correction`] re-aims from wherever the craft actually is.
 
@@ -68,9 +68,7 @@ pub use self::ephemeris::PlanProgress;
 use self::ephemeris::*;
 use self::flight::*;
 pub use self::forecast::{solve_coast, solve_coast_with, Coast, Forecast};
-#[cfg(test)]
-use self::voyage::segment_entry;
-pub use self::voyage::Voyage;
+pub use self::voyage::{segment_entry, Voyage};
 
 /// A solved trajectory: where the craft starts, how fast, and where it will go.
 #[derive(Clone, Debug, PartialEq)]
@@ -427,11 +425,13 @@ pub fn physical_radius_m(prop: &Prop) -> f64 {
     f64::from(units) * METRES_PER_UNIT
 }
 
-fn to_metres(units: DVec3) -> DVec3 {
+/// World units to metres, for a position or a velocity (units/s to m/s).
+pub fn to_metres(units: DVec3) -> DVec3 {
     units * METRES_PER_UNIT
 }
 
-fn to_units(metres: DVec3) -> DVec3 {
+/// Metres to world units, the inverse of [`to_metres`].
+pub fn to_units(metres: DVec3) -> DVec3 {
     metres / METRES_PER_UNIT
 }
 

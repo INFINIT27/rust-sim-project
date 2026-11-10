@@ -298,10 +298,11 @@ pub const TRANSFER_FIRST_CORRECTION_S: f64 = 3.0 * 86_400.0;
 /// The rest of a voyage's correction burns, as fractions of the way from launch to arrival.
 ///
 /// **Why these values.** Halfway, then progressively closer to Mars. Each burn removes the drift
-/// since the last one; the live scene's `f32` positions round to `15 km` near Mars's orbit, so the
-/// drift grows with distance flown and the last burn has to be close enough that what remains is
-/// well inside Mars's `3,390 km` radius. Measured: the final predicted miss is under `10 km` and the
-/// live flight passes `835 km` from the centre.
+/// since the last one. The live scene integrates the craft less accurately than the planner did (see
+/// `src/core/transfer/mod.rs`), so the drift grows with distance flown and the last burn has to be
+/// close enough that what remains is well inside Mars's `3,390 km` radius. Measured when positions
+/// were still `f32`: the final predicted miss was under `10 km` and the live flight passed `835 km`
+/// from the centre.
 ///
 /// **Used by.** [`crate::core::transfer::Voyage::next_correction_at`].
 ///

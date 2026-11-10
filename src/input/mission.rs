@@ -8,6 +8,7 @@ use bevy::ecs::system::{Res, ResMut, Resource};
 use bevy::input::keyboard::KeyCode;
 use bevy::input::ButtonInput;
 
+use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::input::menu::MenuState;
 
 /// Whether a launch, or a switch of engine, has been asked for and not yet acted on.
@@ -49,16 +50,17 @@ impl LaunchRequest {
 /// like every other key.
 pub fn launch_input_system(
     keys: Res<ButtonInput<KeyCode>>,
+    keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
     mut request: ResMut<LaunchRequest>,
 ) {
     if menu.as_ref().is_some_and(|menu| menu.is_open()) {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyR) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::Launch) {
         request.request();
     }
-    if keys.just_pressed(KeyCode::KeyG) {
+    if keymap_or_default(&keymap).just_pressed(&keys, Action::NextCraft) {
         request.request_engine_switch();
     }
 }

@@ -7,6 +7,57 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-10
+
+### Added
+
+- **A menu with pages, and every setting editable from it.** `Esc` always opens the first page:
+  **Settings**, **Configuration**, **Exit** (quits the app), and a summary of the run.
+  - **Settings > Controls** lists every binding. Click one and press a key to rebind it; `Esc`
+    cancels, and a key already in use swaps with it. `Esc` and the mouse cannot be rebound, so the
+    menu stays reachable. **Settings > Video**: anti-aliasing, vsync, and the floor's eclipse
+    shadows, applied while running (`apply_performance_settings_system`).
+  - **Configuration** has a tab per file: camera (applied to the flying camera at once,
+    `apply_camera_settings_system`), interface (crosshair, compass, arrival pop-up), trails, and
+    the spacecraft fleet (each craft's mass, size, colour, engine, limit, and which flies next).
+  - **Every editing page has Reset and Save.** Reset puts the page back to the built-in values.
+    Save writes the page's file in `config/` (`ConfigPlugin`, `save_requested_system`), so the
+    change survives a restart; a saved file is generated, so hand comments in it are not kept.
+    Edits are written back only when they change something, so an open page does not make the
+    camera and video re-apply their settings every frame.
+- **Keys are rebindable everywhere, through one `KeyMap`.** Every input system asks the `KeyMap`
+  (`keymap.just_pressed(&keys, Action::Pause)`) instead of naming a key, and the defaults are the
+  new `ACTIONS` table in `src/constants.rs`, so `--help`, the menu, and what the keys do can no
+  longer disagree. The bindings load from, and save to, the new `config/controls.toml`; a file
+  that puts two actions on one key is an error naming both.
+- **The rest of relativity, in `src/physics_utils/relativity/`.** Eight new files finish what that
+  directory's README listed as missing. Nothing outside the directory calls them and they are not
+  re-exported from the crate root; they are reached by path
+  (`physics_utils::relativity::doppler::redshift`).
+  - `spacetime.rs`: the Lorentz transformation of an event, the interval and its three kinds, proper
+    time and distance between events, and the relativity of simultaneity.
+  - `rapidity.rs`: rapidity, and motion under constant proper acceleration (the `1 g` ship).
+  - `doppler.rs`: longitudinal, transverse and any-angle Doppler shift, and redshift.
+  - `energy_momentum.rs`: `E² = (pc)² + (mc²)²`, invariant mass, light as `m = 0`, and mass–energy
+    conversion.
+  - `collisions.rs`: the centre-of-momentum frame and elastic and perfectly inelastic collisions on
+    one axis. The inelastic solver returns the merged mass, which is more than the sum.
+  - `velocity_3d.rs` and `four_vector.rs`: velocities and boosts in any direction, the Wigner
+    rotation, aberration, and four-momentum.
+  - `gravity.rs`: general relativity's closed forms around one mass (Schwarzschild radius, clock
+    rates, redshift, perihelion precession, light bending, the GPS clock offset). It is formulas
+    only; the integrator is still Newtonian.
+  - 177 tests, in `tst/physics_utils/relativity/`, check them against measurements (Mercury's
+    `42.98″` per century, `1.75″` at the Sun, GPS `+38.5 µs/day`) and against the older files that
+    cover each one's special case.
+
+### Changed
+
+- **`KEY_BINDINGS` is gone**, replaced by `ACTIONS` (rebindable), `FIXED_BINDINGS` (mouse, `Esc`,
+  quit keys), and `BINDABLE_KEYS`. Paired rows like `W / S` are now one row per key. The numpad's
+  `+` is no longer a second key for "time scale x10"; bind it in the menu if you want it.
+- **`MenuState` has pages** (`MenuPage`, `SettingsTab`, `ConfigTab`) and a rebind in progress.
+
 ## 2026-11-09
 
 ### Added
@@ -155,6 +206,31 @@ one exists. The convention is specified in
   that landing; `Esc` closes a pop-up before it opens the menu. It runs after the camera system,
   so the click on ✕ does not capture the cursor. The crosshair now paints on egui's background
   layer, under every window, so the pop-up and the menu cover it rather than being crossed by it.
+  `F`, `C` and scroll-zoom stand down behind it too, not only capture and movement.
+- **A crewed flight could crash the app near its arrival.** The last correction comes due up to
+  `6 h` before arrival, and at a fast clock one frame is longer than that, so a frame could step
+  past the arrival with the correction still due. It was then planned with a negative time to
+  arrival, which built a prediction of one sample and overflowed on the first lookup. Now
+  `Ephemeris::build` refuses a horizon that is not positive, and an overdue correction is skipped
+  (`Flight::skip_correction`, `Voyage::skip_correction`) rather than planned.
+- **`P` during a flight plan or a correction let the planets move.** The plan relied on pausing
+  the clock, and `P` cleared that pause, so the craft launched from where its origin had been, and
+  a powered craft drifted unsteered during a correction. The mission now holds the clock
+  (`SimulationClock::hold`), which `P` cannot release; a pause pressed meanwhile takes effect
+  afterwards. The overlay and menu show the clock as held.
+- **A failed prediction was reported as a cancel.** `plan_flight` now reports `NoFlight::NoForecast`
+  ("could not predict where the bodies will be") unless the search really was cancelled.
+
+### Changed (from the code review)
+
+- **Trial flights are about twice as fast.** `fly` interpolated every body's position four or five
+  times per step; it now does so once (`Ephemeris::positions_into`). Same results; the planner
+  tests went from `37 s` to `16.6 s`.
+- **The live gravity step checks each prop's validity once per substep**, not once per pair.
+- **One copy of `segment_entry`, `to_metres` and `to_units`**, in `core::transfer`. The spacecraft
+  layer's copies, including the public `segment_entry_m`, are gone.
+- **Comments brought up to date** with `f64` positions, and the `G` and `Esc` bindings now say the
+  fleet is configurable and that `Esc` closes a pop-up.
 
 ### Docs
 

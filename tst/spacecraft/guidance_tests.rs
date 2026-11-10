@@ -213,9 +213,23 @@ fn a_body_on_the_line_is_flown_around_and_a_clear_line_is_not() {
 
 #[test]
 fn the_touchdown_test_finds_the_entry_point() {
-    let entry = segment_entry_m(DVec3::new(3.0, 0.0, 0.0), DVec3::new(-3.0, 0.0, 0.0), 1.0)
-        .expect("the segment crosses the sphere");
+    let entry = crate::core::transfer::segment_entry(
+        DVec3::new(3.0, 0.0, 0.0),
+        DVec3::new(-3.0, 0.0, 0.0),
+        1.0,
+    )
+    .expect("the segment crosses the sphere");
     assert!((entry - DVec3::X).length() < 1.0e-12);
-    assert!(segment_entry_m(DVec3::new(3.0, 2.0, 0.0), DVec3::new(-3.0, 2.0, 0.0), 1.0).is_none());
-    assert!(segment_entry_m(DVec3::new(3.0, 0.0, 0.0), DVec3::new(2.0, 0.0, 0.0), 1.0).is_none());
+    assert!(crate::core::transfer::segment_entry(
+        DVec3::new(3.0, 2.0, 0.0),
+        DVec3::new(-3.0, 2.0, 0.0),
+        1.0
+    )
+    .is_none());
+    assert!(crate::core::transfer::segment_entry(
+        DVec3::new(3.0, 0.0, 0.0),
+        DVec3::new(2.0, 0.0, 0.0),
+        1.0
+    )
+    .is_none());
 }

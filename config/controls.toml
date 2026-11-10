@@ -1,0 +1,31 @@
+# Which key each action is on. Any action left out keeps its default key.
+# Change them here or in the menu (Esc > Settings > Controls), whose Save rewrites this file.
+# Key names are Bevy's: KeyA-KeyZ, Digit0-Digit9, Space, Enter, ArrowUp, ControlLeft,
+# BracketLeft, Minus, Equal, Period, F1-F12, Numpad0-Numpad9, and so on. Esc cannot be bound:
+# it always opens the menu.
+
+[keys]
+move_forward = "KeyW"
+move_back = "KeyS"
+move_left = "KeyA"
+move_right = "KeyD"
+move_up = "Space"
+move_down = "ControlLeft"
+move_up_alt = "KeyE"
+move_down_alt = "KeyQ"
+cycle_speed = "KeyC"
+lock_target = "KeyF"
+pause = "KeyP"
+single_step = "Period"
+time_faster = "BracketRight"
+time_slower = "BracketLeft"
+time_ten_times_faster = "Equal"
+time_ten_times_slower = "Minus"
+time_reset = "Backslash"
+toggle_trails = "KeyT"
+toggle_picker = "KeyB"
+picker_up = "ArrowUp"
+picker_down = "ArrowDown"
+picker_place = "Enter"
+launch = "KeyR"
+next_craft = "KeyG"

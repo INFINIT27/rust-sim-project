@@ -19,11 +19,13 @@
 //! the process exits non-zero with the Bevy diagnostic on stderr, per
 //! Requirement 1.3.
 
+use std::path::PathBuf;
+
 use bevy::prelude::*;
 use physics_sandbox::constants::{WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE, WINDOW_WIDTH_PX};
 use physics_sandbox::{
     catalog_lines, config_dir, help_text, parse_args, ArrivalPopupPlugin, Command, CompassPlugin,
-    Config, CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin,
+    Config, ConfigPlugin, CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin,
     LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin,
     PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin,
     Selection, SimulationControlsPlugin, TrailPlugin,
@@ -55,7 +57,8 @@ fn main() {
     // The configuration files (`config/*.toml`; see `src/config/`). Same contract again: a bad
     // file stops the run, naming the file and the key, rather than running on a setting that
     // silently did nothing.
-    let config = match Config::load(&config_dir()) {
+    let dir = config_dir();
+    let config = match Config::load(&dir) {
         Ok(config) => config,
         Err(error) => {
             eprintln!("error: {error}");
@@ -75,7 +78,7 @@ fn main() {
     };
 
     point_bevy_at_the_assets_directory();
-    run(selection, config, performance);
+    run(selection, dir, config, performance);
 }
 
 /// Make `assets/` findable however the binary was started.
@@ -119,7 +122,7 @@ fn point_bevy_at_the_assets_directory() {
 ///
 /// Split from `main` so the argument handling above reads as a decision and this reads
 /// as the wiring it always was.
-fn run(selection: Selection, config: Config, performance: PerformanceSettings) {
+fn run(selection: Selection, dir: PathBuf, config: Config, performance: PerformanceSettings) {
     let mut app = App::new();
     // Before any plugin: each one `init_resource`s its settings, which keeps a resource that is
     // already there, so inserting the configured ones first is what makes them take effect.
@@ -168,6 +171,8 @@ fn run(selection: Selection, config: Config, performance: PerformanceSettings) {
     .add_plugins(MissionPlugin)
     // The report shown when a spacecraft lands, after the mission that flies it.
     .add_plugins(ArrivalPopupPlugin)
+    // Writes a page of the menu to its file in `config/` when the menu asks.
+    .add_plugins(ConfigPlugin::new(dir))
     // Anti-aliasing, the floor-eclipse switch, and the benchmark; see `src/performance/`.
     .add_plugins(PerformancePlugin::new(performance))
     .run();

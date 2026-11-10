@@ -22,7 +22,7 @@ hard, and toward what, and counts what the flight cost.
 | `config.rs` | `Spacecraft`, `Propulsion` (`Coasting`, `Direct`, `Transfer`), `Engine`, and `Fleet`, the roster `G` cycles. Plain data, so a settings menu can build or edit it. `Fleet::default` is the built-in set: crewed transfer (selected), full-thrust direct, coasting probe. |
 | `plan.rs` | `plan_flight`, by propulsion: the coasting planner, the direct flight flown through the forecast, or the least-energy transfer. `departure_burn`, `plan_transfer_correction`, `plan_correction_for`, `central_body`, `NoFlight`. |
 | `lambert.rs` | `lambert`: the two-body arc between two points in a given time, universal variables, solved by bisection. The transfer search's cost model. |
-| `guidance.rs` | The steering laws: `steer` (land on the braking curve; a direct flight also burns toward it and flies around bodies), `match_velocity` (correction burns), `braking_m_s2`, `blocking`, `segment_entry_m`. |
+| `guidance.rs` | The steering laws: `steer` (land on the braking curve; a direct flight also burns toward it and flies around bodies), `match_velocity` (correction burns), `braking_m_s2`, `blocking`. Touchdown uses `core::transfer::segment_entry`. |
 | `flight.rs` | `Flight`: a craft in the live scene, its `Phase`, its `f64` state for a powered craft, its correction schedule, and its report. |
 | `report.rs` | `FlightReport`: time, peak speed, Δv, engine time, peak g, energy, propellant, touchdown. |
 

@@ -13,7 +13,7 @@ conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 
 | Path | Job |
 | --- | --- |
-| `bindings_tests.rs` | Unit tests for `src/bindings.rs` and the `KEY_BINDINGS` table: no duplicated key, no empty row, no empty group, and that `--help` and the menu draw the same rows. The one root-level `*_tests.rs`, mirroring the one root-level module. |
+| `bindings_tests.rs` | Unit tests for `src/bindings.rs` and its tables (`ACTIONS`, `FIXED_BINDINGS`, `BINDABLE_KEYS`): one key per action, rebinds that swap rather than double up, key names that round-trip, a file override that clashes is an error, and `--help` and the menu drawing the same rows. The one root-level `*_tests.rs`, mirroring the one root-level module. |
 | `headless_app.rs` | The only true integration test: builds `MinimalPlugins` + `ScenePlugin`, ticks 5 frames, asserts the Scene↔ECS mirror invariants. Declared as a `[[test]]` target in `Cargo.toml`. |
 | `core/` | Unit + property tests for `src/core/`. |
 | `collision/` | Unit + property tests for `src/collision/`, including the end-to-end "the spheres bounce instead of phasing through" check. |

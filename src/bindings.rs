@@ -1,36 +1,29 @@
-//! The key bindings, as data — one table that both `--help` and the in-window menu read.
+//! The key bindings, as data: which key does what, read by every input system, by `--help`, and by
+//! the in-window menu.
 //!
-//! Every key the app responds to is a row of [`crate::constants::KEY_BINDINGS`]. Nothing
-//! here reads or writes input: this module is the *description* of the bindings, not their
-//! implementation. The
-//! systems that actually bind the keys live in the layers that own what the key changes —
-//! `input/camera.rs` for movement, `input/controls.rs` for the clock, `render/trail.rs`
-//! for `T`, `input/menu.rs` for `Esc`.
+//! Every rebindable action is an [`Action`], described by a row of
+//! [`crate::constants::ACTIONS`] (its label, group, and default key). The keys in use are a
+//! [`KeyMap`] resource, which starts on the defaults, can be loaded from `config/controls.toml`,
+//! and is changed from the menu's controls page. The systems that act on a key ask the `KeyMap`
+//! (`keymap.just_pressed(&keys, Action::Pause)`) rather than naming a `KeyCode`, so what the menu
+//! and `--help` show is what the keys do. The bindings that cannot change (the mouse, `Esc`, the
+//! OS quit keys) are [`crate::constants::FIXED_BINDINGS`].
 //!
-//! # Why the table is not in a layer
+//! # Why this is not in a layer
 //!
-//! Two very different consumers need the same list:
-//!
-//! - [`help_text`](crate::experiments::selection::help_text), in the `experiments` layer,
-//!   which prints it to a terminal before any window exists;
-//! - [`ui::menu`](crate::ui::menu), which draws it on screen.
-//!
-//! Neither layer may import the other, so a table owned by either would have to be
-//! duplicated in the other — and a duplicated key list drifts the first time a binding
-//! changes, in the one place a user goes to *find out* what the bindings are. So it sits
-//! at the crate root next to [`crate::constants`], on the same rule that module states: a
-//! thing read by more than one layer belongs above all of them.
-//!
-//! # This is documentation, and documentation can lie
-//!
-//! Nothing checks at compile time that a row here matches a `just_pressed` call over in
-//! `input/`. What is checked is the other direction: the key-collision test in
-//! `tst/input/controls_tests.rs` asserts no two *implementations* claim one key, and
-//! `tst/bindings_tests.rs` asserts every group is non-empty, no key string appears twice,
-//! and every row is renderable. A binding added in code and forgotten here will simply be
-//! undocumented — so add the row in the same change, which is what the layer READMEs say.
+//! `--help` ([`crate::experiments::selection::help_text`]) prints the bindings before any window
+//! exists, the menu ([`crate::ui::menu`]) draws them, and `input/` and `render/` act on them. Those
+//! layers may not import one another, so the bindings sit at the crate root next to
+//! [`crate::constants`], on the same rule that module states: a thing read by more than one layer
+//! belongs above all of them.
 
-use crate::constants::KEY_BINDINGS;
+use std::borrow::Cow;
+
+use bevy::ecs::system::{Res, Resource};
+use bevy::input::keyboard::KeyCode;
+use bevy::input::ButtonInput;
+
+use crate::constants::{ACTIONS, BINDABLE_KEYS, FIXED_BINDINGS};
 
 /// Which part of the app a binding belongs to.
 ///
@@ -45,7 +38,7 @@ pub enum BindingGroup {
     Simulation,
     /// Observer aids that are drawn but change nothing: trails.
     View,
-    /// Adding interstellar objects to the running scene.
+    /// Adding objects and rockets to the running scene.
     Place,
     /// The menu itself.
     Menu,
@@ -57,9 +50,7 @@ impl BindingGroup {
     /// Every group, in the order they are displayed.
     ///
     /// `Camera` first because it is what a new viewer needs to do anything at all, and
-    /// `Window` last because quitting is the thing you need exactly once — but it is on
-    /// the list, because the window is full-screen and has no close button (amendment
-    /// A12).
+    /// `Window` last because quitting is the thing you need exactly once.
     pub const ALL: [Self; 6] = [
         Self::Camera,
         Self::Simulation,
@@ -69,7 +60,7 @@ impl BindingGroup {
         Self::Window,
     ];
 
-    /// The heading shown above the group.
+    /// The heading the group is shown under.
     #[inline]
     pub fn title(&self) -> &'static str {
         match self {
@@ -83,69 +74,358 @@ impl BindingGroup {
     }
 }
 
-/// One binding: the keys, and what they do.
-///
-/// `keys` is a display string rather than a `KeyCode`, deliberately. It has to say things
-/// no single `KeyCode` can — `"W / S"` is two keys with opposite effects, `"Space / Left
-/// Ctrl"` names one axis, `"Cmd-Q / Alt-F4"` is platform-dependent and not ours to bind at
-/// all. Making this a `KeyCode` would buy a compile-time link to the implementation for
-/// the simple rows and force a second, stringly-typed mechanism for the rest.
+/// A binding that cannot be changed: its keys as shown, and what they do.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct KeyBinding {
-    /// The keys, as they should be shown: `"W / S"`, `"Left Shift"`, `"]"`.
+    /// The keys, as they should be shown: `"Left click"`, `"Cmd-Q"`.
     pub keys: &'static str,
-    /// What they do, phrased as an action: `"Fly forward / back"`.
+    /// What they do, phrased as an action.
     pub action: &'static str,
     /// Which part of the app this belongs to.
     pub group: BindingGroup,
 }
 
 impl KeyBinding {
-    /// Validation_Rules for `KeyBinding`: neither field is empty.
-    ///
-    /// A blank row renders as a gap with no explanation, which is worse than an absent
-    /// row — the reader cannot tell whether the key does nothing or the label is missing.
+    /// Neither field is empty. A blank row renders as an unexplained gap.
     #[inline]
     pub fn is_valid(&self) -> bool {
         !self.keys.trim().is_empty() && !self.action.trim().is_empty()
     }
 }
 
-/// The bindings in `group`, in table order.
+/// Something a key does that the user may rebind. Described by its row of
+/// [`crate::constants::ACTIONS`], in the same order.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Action {
+    /// Fly forward.
+    MoveForward,
+    /// Fly back.
+    MoveBack,
+    /// Fly left.
+    MoveLeft,
+    /// Fly right.
+    MoveRight,
+    /// Fly up, along world `+Y`.
+    MoveUp,
+    /// Fly down, along world `-Y`.
+    MoveDown,
+    /// A second key for flying up.
+    MoveUpAlt,
+    /// A second key for flying down.
+    MoveDownAlt,
+    /// Cycle the camera's speed mode.
+    CycleSpeed,
+    /// Lock onto the body at the crosshair, or release the lock.
+    LockTarget,
+    /// Pause or resume the simulation.
+    Pause,
+    /// Advance one frame while paused.
+    SingleStep,
+    /// Double the time scale.
+    TimeFaster,
+    /// Halve the time scale.
+    TimeSlower,
+    /// Multiply the time scale by ten.
+    TimeDecadeFaster,
+    /// Divide the time scale by ten.
+    TimeDecadeSlower,
+    /// Reset the time scale.
+    TimeReset,
+    /// Show or hide the motion trails.
+    ToggleTrails,
+    /// Open or close the object picker.
+    TogglePicker,
+    /// Move the picker's selection up.
+    PickerUp,
+    /// Move the picker's selection down.
+    PickerDown,
+    /// Place the picker's selection.
+    PickerPlace,
+    /// Pick the body at the crosshair as a rocket's origin or destination.
+    Launch,
+    /// Select the next spacecraft.
+    NextCraft,
+}
+
+/// The description of one [`Action`]: a row of [`crate::constants::ACTIONS`].
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ActionInfo {
+    /// The action this row describes.
+    pub action: Action,
+    /// Its key in `config/controls.toml`.
+    pub name: &'static str,
+    /// What it does, as shown in `--help` and the menu.
+    pub label: &'static str,
+    /// Which part of the app it belongs to.
+    pub group: BindingGroup,
+    /// The key it is bound to until changed.
+    pub default_key: KeyCode,
+}
+
+impl Action {
+    /// Every action, in the order of [`crate::constants::ACTIONS`].
+    pub const ALL: [Action; 24] = [
+        Action::MoveForward,
+        Action::MoveBack,
+        Action::MoveLeft,
+        Action::MoveRight,
+        Action::MoveUp,
+        Action::MoveDown,
+        Action::MoveUpAlt,
+        Action::MoveDownAlt,
+        Action::CycleSpeed,
+        Action::LockTarget,
+        Action::Pause,
+        Action::SingleStep,
+        Action::TimeFaster,
+        Action::TimeSlower,
+        Action::TimeDecadeFaster,
+        Action::TimeDecadeSlower,
+        Action::TimeReset,
+        Action::ToggleTrails,
+        Action::TogglePicker,
+        Action::PickerUp,
+        Action::PickerDown,
+        Action::PickerPlace,
+        Action::Launch,
+        Action::NextCraft,
+    ];
+
+    /// This action's row of [`crate::constants::ACTIONS`].
+    #[inline]
+    pub fn info(self) -> &'static ActionInfo {
+        &ACTIONS[self as usize]
+    }
+
+    /// The action whose `config/controls.toml` name is `name`.
+    pub fn from_name(name: &str) -> Option<Action> {
+        ACTIONS
+            .iter()
+            .find(|info| info.name == name)
+            .map(|info| info.action)
+    }
+}
+
+/// The key each [`Action`] is bound to. One key per action and one action per key:
+/// [`set`](Self::set) swaps when the new key is already taken.
 ///
 /// # Examples
 ///
 /// ```
-/// use physics_sandbox::{bindings_in, BindingGroup};
+/// use bevy::input::keyboard::KeyCode;
+/// use physics_sandbox::{Action, KeyMap};
 ///
-/// let menu: Vec<_> = bindings_in(BindingGroup::Menu).collect();
+/// let mut keys = KeyMap::default();
+/// assert_eq!(keys.key(Action::Pause), KeyCode::KeyP);
 ///
-/// assert_eq!(menu.len(), 1, "one key opens the menu");
-/// assert_eq!(menu[0].keys, "Esc");
+/// // `K` is free, so pause simply moves to it.
+/// keys.set(Action::Pause, KeyCode::KeyK);
+/// assert_eq!(keys.key(Action::Pause), KeyCode::KeyK);
+///
+/// // `T` belongs to the trails, so they take pause's old key.
+/// let displaced = keys.set(Action::Pause, KeyCode::KeyT);
+/// assert_eq!(displaced, Some(Action::ToggleTrails));
+/// assert_eq!(keys.key(Action::ToggleTrails), KeyCode::KeyK);
 /// ```
-pub fn bindings_in(group: BindingGroup) -> impl Iterator<Item = &'static KeyBinding> {
-    KEY_BINDINGS
-        .iter()
-        .filter(move |binding| binding.group == group)
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+pub struct KeyMap {
+    keys: [KeyCode; 24],
 }
 
-/// Width of the key column, in characters: the longest `keys` string in the table.
-///
-/// Measured rather than declared, so a new binding with a long key string widens the
-/// column instead of overflowing it. Used by [`binding_help_text`] for the terminal
-/// layout; the on-screen menu uses egui's own grid and does not need it.
-pub fn key_column_width() -> usize {
-    KEY_BINDINGS
-        .iter()
-        .map(|binding| binding.keys.chars().count())
-        .max()
-        .unwrap_or(0)
+impl Default for KeyMap {
+    fn default() -> Self {
+        Self {
+            keys: ACTIONS.map(|info| info.default_key),
+        }
+    }
 }
 
-/// The bindings as a plain-text block, grouped, for `--help`.
+impl KeyMap {
+    /// The key `action` is bound to.
+    #[inline]
+    pub fn key(&self, action: Action) -> KeyCode {
+        self.keys[action as usize]
+    }
+
+    /// Bind `action` to `key`. If another action had `key`, it takes `action`'s old key instead,
+    /// so no key ever does two things; that action is returned.
+    pub fn set(&mut self, action: Action, key: KeyCode) -> Option<Action> {
+        let old = self.key(action);
+        let displaced = self.action_for(key).filter(|&other| other != action);
+        if let Some(other) = displaced {
+            self.keys[other as usize] = old;
+        }
+        self.keys[action as usize] = key;
+        displaced
+    }
+
+    /// The action bound to `key`, if any.
+    pub fn action_for(&self, key: KeyCode) -> Option<Action> {
+        Action::ALL
+            .into_iter()
+            .find(|&action| self.key(action) == key)
+    }
+
+    /// The defaults with `overrides` applied as given, for reading a saved file: unlike
+    /// [`set`](Self::set) nothing is swapped, so two actions ending on one key is an error naming
+    /// both, rather than a silent reshuffle of what the file said.
+    pub fn with_overrides(
+        overrides: impl IntoIterator<Item = (Action, KeyCode)>,
+    ) -> Result<Self, String> {
+        let mut map = Self::default();
+        for (action, key) in overrides {
+            map.keys[action as usize] = key;
+        }
+        for (index, &first) in Action::ALL.iter().enumerate() {
+            for &second in &Action::ALL[index + 1..] {
+                if map.key(first) == map.key(second) {
+                    return Err(format!(
+                        "`{}` and `{}` are both on {}",
+                        first.info().name,
+                        second.info().name,
+                        key_name(map.key(first))
+                    ));
+                }
+            }
+        }
+        Ok(map)
+    }
+
+    /// Every action back on its default key.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Is `action`'s key held?
+    #[inline]
+    pub fn pressed(&self, input: &ButtonInput<KeyCode>, action: Action) -> bool {
+        input.pressed(self.key(action))
+    }
+
+    /// Was `action`'s key pressed this frame?
+    #[inline]
+    pub fn just_pressed(&self, input: &ButtonInput<KeyCode>, action: Action) -> bool {
+        input.just_pressed(self.key(action))
+    }
+}
+
+/// The app's [`KeyMap`], or the defaults when there is none. Systems take the key map as an
+/// `Option` so a test app that adds one system without its plugin still runs.
+pub fn keymap_or_default<'a>(keymap: &'a Option<Res<KeyMap>>) -> Cow<'a, KeyMap> {
+    match keymap {
+        Some(keymap) => Cow::Borrowed(&**keymap),
+        None => Cow::Owned(KeyMap::default()),
+    }
+}
+
+/// Whether `key` may be bound to an action: one of [`crate::constants::BINDABLE_KEYS`].
+#[inline]
+pub fn is_bindable(key: KeyCode) -> bool {
+    BINDABLE_KEYS.contains(&key)
+}
+
+/// `key`'s name in `config/controls.toml`: Bevy's own (`"KeyW"`, `"BracketRight"`).
+pub fn key_name(key: KeyCode) -> String {
+    format!("{key:?}")
+}
+
+/// The bindable key named `name` by [`key_name`], or `None`.
+pub fn parse_key(name: &str) -> Option<KeyCode> {
+    BINDABLE_KEYS.into_iter().find(|&key| key_name(key) == name)
+}
+
+/// `key` as a person would write it: `"W"`, `"1"`, `"Space"`, `"Left Ctrl"`, `"]"`, `"Up"`.
+pub fn key_label(key: KeyCode) -> String {
+    let name = key_name(key);
+    if let Some(letter) = name.strip_prefix("Key") {
+        return letter.to_string();
+    }
+    if let Some(digit) = name.strip_prefix("Digit") {
+        return digit.to_string();
+    }
+    if let Some(arrow) = name.strip_prefix("Arrow") {
+        return arrow.to_string();
+    }
+    if let Some(pad) = name.strip_prefix("Numpad") {
+        return format!("Numpad {pad}");
+    }
+    let side = |stem: &str, label: &str| {
+        name.strip_prefix(stem)
+            .map(|side| format!("{side} {label}"))
+    };
+    if let Some(label) = side("Control", "Ctrl")
+        .or_else(|| side("Shift", "Shift"))
+        .or_else(|| side("Alt", "Alt"))
+    {
+        return label;
+    }
+    match key {
+        KeyCode::Backquote => "`",
+        KeyCode::Minus => "-",
+        KeyCode::Equal => "=",
+        KeyCode::BracketLeft => "[",
+        KeyCode::BracketRight => "]",
+        KeyCode::Backslash => "\\",
+        KeyCode::Semicolon => ";",
+        KeyCode::Quote => "'",
+        KeyCode::Comma => ",",
+        KeyCode::Period => ".",
+        KeyCode::Slash => "/",
+        KeyCode::PageUp => "Page Up",
+        KeyCode::PageDown => "Page Down",
+        KeyCode::CapsLock => "Caps Lock",
+        _ => return name,
+    }
+    .to_string()
+}
+
+/// One row of the bindings as shown: the key, what it does, its group, and, when it can be
+/// rebound, which action it is.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BindingRow {
+    /// The key as shown, from [`key_label`] or a fixed row.
+    pub keys: String,
+    /// What it does.
+    pub action: &'static str,
+    /// Which part of the app it belongs to.
+    pub group: BindingGroup,
+    /// The action, when the row can be rebound; `None` for a fixed row.
+    pub rebind: Option<Action>,
+}
+
+/// Every binding under `keymap`, grouped in [`BindingGroup::ALL`] order: within a group, the
+/// rebindable actions in table order, then the fixed rows.
+pub fn binding_rows(keymap: &KeyMap) -> Vec<BindingRow> {
+    BindingGroup::ALL
+        .into_iter()
+        .flat_map(|group| {
+            let actions = ACTIONS
+                .iter()
+                .filter(move |info| info.group == group)
+                .map(move |info| BindingRow {
+                    keys: key_label(keymap.key(info.action)),
+                    action: info.label,
+                    group,
+                    rebind: Some(info.action),
+                });
+            let fixed = FIXED_BINDINGS
+                .iter()
+                .filter(move |binding| binding.group == group)
+                .map(move |binding| BindingRow {
+                    keys: binding.keys.to_string(),
+                    action: binding.action,
+                    group,
+                    rebind: None,
+                });
+            actions.chain(fixed)
+        })
+        .collect()
+}
+
+/// The bindings as a plain-text block, grouped, for `--help`. The default keys: `--help` runs
+/// before any `config/controls.toml` is read.
 ///
-/// Indented two levels to match the rest of the usage text. Ends with a newline, so a
-/// caller can append directly.
+/// Indented two levels to match the rest of the usage text. Ends with a newline.
 ///
 /// # Examples
 ///
@@ -159,12 +439,17 @@ pub fn key_column_width() -> usize {
 /// assert!(text.ends_with('\n'));
 /// ```
 pub fn binding_help_text() -> String {
-    let width = key_column_width();
+    let rows = binding_rows(&KeyMap::default());
+    let width = rows
+        .iter()
+        .map(|row| row.keys.chars().count())
+        .max()
+        .unwrap_or(0);
     let mut text = String::new();
 
     for group in BindingGroup::ALL {
-        let mut rows = bindings_in(group).peekable();
-        if rows.peek().is_none() {
+        let mut in_group = rows.iter().filter(|row| row.group == group).peekable();
+        if in_group.peek().is_none() {
             continue;
         }
 
@@ -172,14 +457,14 @@ pub fn binding_help_text() -> String {
         text.push_str(group.title());
         text.push_str(":\n");
 
-        for binding in rows {
+        for row in in_group {
             text.push_str("        ");
-            text.push_str(binding.keys);
-            for _ in binding.keys.chars().count()..width {
+            text.push_str(&row.keys);
+            for _ in row.keys.chars().count()..width {
                 text.push(' ');
             }
             text.push_str("   ");
-            text.push_str(binding.action);
+            text.push_str(row.action);
             text.push('\n');
         }
     }
