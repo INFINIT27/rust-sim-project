@@ -7,10 +7,12 @@ use bevy::prelude::{Msaa, Resource};
 use bevy::window::PresentMode;
 
 use crate::performance::constants::{
-    ANTI_ALIASING_VAR, BENCH_SECONDS_VAR, BENCH_VAR, BENCH_WARMUP_VAR, DEFAULT_ANTI_ALIASING,
-    DEFAULT_BENCH_SECONDS, DEFAULT_BENCH_WARMUP_SECONDS, DEFAULT_FLOOR_ECLIPSE, DEFAULT_VSYNC,
-    FLOOR_ECLIPSE_VAR, VSYNC_VAR,
+    ANTI_ALIASING_VAR, BENCH_SECONDS_VAR, BENCH_VAR, BENCH_WARMUP_VAR, BLACK_HOLE_QUALITY_VAR,
+    BLACK_HOLE_STARS_VAR, BLACK_HOLE_VAR, DEFAULT_ANTI_ALIASING, DEFAULT_BENCH_SECONDS,
+    DEFAULT_BENCH_WARMUP_SECONDS, DEFAULT_BLACK_HOLE, DEFAULT_BLACK_HOLE_QUALITY,
+    DEFAULT_BLACK_HOLE_STARS, DEFAULT_FLOOR_ECLIPSE, DEFAULT_VSYNC, FLOOR_ECLIPSE_VAR, VSYNC_VAR,
 };
+use crate::render::constants::{KERR_RAY_MAX_STEPS, KERR_RAY_STEP_FRACTION};
 
 /// How edges are smoothed.
 ///
@@ -63,6 +65,60 @@ impl AntiAliasing {
     }
 }
 
+/// How finely the black hole's light is followed: the ray-marcher's step and step budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlackHoleQuality {
+    /// Steps twice as long: about half the cost. Every accuracy test of the shader's twin still
+    /// passes.
+    Low,
+    /// [`KERR_RAY_STEP_FRACTION`] and [`KERR_RAY_MAX_STEPS`].
+    Medium,
+    /// Steps half as long, and twice the budget: for screenshots.
+    High,
+}
+
+impl BlackHoleQuality {
+    /// Every quality, lowest first.
+    pub const ALL: [Self; 3] = [Self::Low, Self::Medium, Self::High];
+
+    /// Each step, as a fraction of the light's distance from the hole.
+    pub fn step_fraction(self) -> f32 {
+        match self {
+            Self::Low => 2.0 * KERR_RAY_STEP_FRACTION,
+            Self::Medium => KERR_RAY_STEP_FRACTION,
+            Self::High => 0.5 * KERR_RAY_STEP_FRACTION,
+        }
+    }
+
+    /// The most steps one ray takes. Shorter steps need more of them for the same path.
+    pub fn max_steps(self) -> u32 {
+        match self {
+            Self::Low => KERR_RAY_MAX_STEPS / 2,
+            Self::Medium => KERR_RAY_MAX_STEPS,
+            Self::High => KERR_RAY_MAX_STEPS * 2,
+        }
+    }
+
+    /// Parse a quality by name, case-insensitively: `low`, `medium`, or `high`.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    /// The quality's name, the one [`parse`](Self::parse) reads back.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
 /// How long the frame-time benchmark warms up and records.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BenchConfig {
@@ -80,6 +136,12 @@ pub struct PerformanceSettings {
     /// Whether the floor slab computes eclipse shadows. Spheres always do.
     pub floor_eclipse: bool,
     pub vsync: bool,
+    /// Whether the black hole is ray-marched on the GPU; off draws its plain body.
+    pub black_hole: bool,
+    /// How finely the black hole's light is followed.
+    pub black_hole_quality: BlackHoleQuality,
+    /// Whether the black hole's sky has stars.
+    pub black_hole_stars: bool,
     /// `Some` when the frame-time benchmark is on.
     pub bench: Option<BenchConfig>,
 }
@@ -90,6 +152,9 @@ impl Default for PerformanceSettings {
             anti_aliasing: DEFAULT_ANTI_ALIASING,
             floor_eclipse: DEFAULT_FLOOR_ECLIPSE,
             vsync: DEFAULT_VSYNC,
+            black_hole: DEFAULT_BLACK_HOLE,
+            black_hole_quality: DEFAULT_BLACK_HOLE_QUALITY,
+            black_hole_stars: DEFAULT_BLACK_HOLE_STARS,
             bench: None,
         }
     }
@@ -155,6 +220,19 @@ impl PerformanceSettings {
         }
         if let Some(value) = lookup(VSYNC_VAR) {
             settings.vsync = parse_switch(VSYNC_VAR, value)?;
+        }
+        if let Some(value) = lookup(BLACK_HOLE_VAR) {
+            settings.black_hole = parse_switch(BLACK_HOLE_VAR, value)?;
+        }
+        if let Some(value) = lookup(BLACK_HOLE_QUALITY_VAR) {
+            settings.black_hole_quality = BlackHoleQuality::parse(&value).ok_or(SettingsError {
+                variable: BLACK_HOLE_QUALITY_VAR,
+                value,
+                expected: "low, medium, or high",
+            })?;
+        }
+        if let Some(value) = lookup(BLACK_HOLE_STARS_VAR) {
+            settings.black_hole_stars = parse_switch(BLACK_HOLE_STARS_VAR, value)?;
         }
         if let Some(value) = lookup(BENCH_VAR) {
             if parse_switch(BENCH_VAR, value)? {

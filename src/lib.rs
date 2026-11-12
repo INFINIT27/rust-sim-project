@@ -71,21 +71,29 @@ pub use crate::experiments::objects::{stellar_object, StellarObject};
 
 // `experiment_5`: the static size-comparison row.
 pub use crate::experiments::scale_check::{scale_check, scale_check_layout, scale_rows, ScaleRow};
+// `experiment_6`: Sgr A* above the ground plane.
+pub use crate::experiments::black_hole::{
+    black_hole, black_hole_centre_units, black_hole_radii, s_star_state, spinning_horizon_units,
+    BlackHoleRadii, SStar, SGR_A_STAR_NAME,
+};
 
 // `experiment_4`: Jupiter and the Galilean moons.
 pub use crate::experiments::constants::{
+    BLACK_HOLE_BOUNDS_EXTENT_UNITS, BLACK_HOLE_CAMERA_OFFSET_UNITS, BLACK_HOLE_FRAMED_RADIUS_UNITS,
+    BLACK_HOLE_SOFTENING_UNITS, BLACK_HOLE_TIME_SCALE, BLACK_HOLE_TRAIL_LENGTH_UNITS,
     DEFAULT_RANDOM_SEED, EARTH_MOONS, EARTH_RADIUS_M, JOVIAN_BOUNDS_MARGIN_UNITS,
     JOVIAN_CAMERA_POSITION_UNITS, JOVIAN_DISPLAY_EXAGGERATION, JOVIAN_FRAMED_RADIUS_UNITS,
     JOVIAN_MOONS, JOVIAN_SOFTENING_UNITS, JOVIAN_TIME_SCALE, JOVIAN_TRAIL_LENGTH_UNITS,
     MOON_SYSTEMS, SCALE_CHECK_CAMERA_OFFSET_UNITS, SCALE_CHECK_FRAMED_RADIUS_UNITS,
-    SCALE_CHECK_GAP_UNITS, SCALE_CHECK_TIME_SCALE, SOLAR_SYSTEM_CAMERA_POSITION_UNITS,
-    SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS, SOLAR_SYSTEM_FRAMED_RADIUS_UNITS, SOLAR_SYSTEM_PLANETS,
-    SOLAR_SYSTEM_SOFTENING_UNITS, SOLAR_SYSTEM_SUN_COLOR, SOLAR_SYSTEM_SUN_MASS_KG,
-    SOLAR_SYSTEM_SUN_RADIUS_M, SOLAR_SYSTEM_TIME_SCALE, SOLAR_SYSTEM_TRAIL_LENGTH_UNITS,
-    STELLAR_OBJECTS, THREE_BODY_CAMERA_POSITION_UNITS, THREE_BODY_FRAMED_RADIUS_UNITS,
-    THREE_BODY_HEIGHT_UNITS, THREE_BODY_MASS_KG, THREE_BODY_MAX_SPEED_FACTOR,
-    THREE_BODY_MIN_SPEED_FACTOR, THREE_BODY_RING_RADIUS_UNITS, THREE_BODY_TIME_SCALE,
-    THREE_BODY_VISUAL_RADIUS_UNITS, TWO_BODY_CAMERA_POSITION_UNITS, TWO_BODY_FRAMED_RADIUS_UNITS,
+    SCALE_CHECK_GAP_UNITS, SCALE_CHECK_TIME_SCALE, SGR_A_STAR_COLOR, SGR_A_STAR_MASS_KG,
+    SGR_A_STAR_SPIN, SOLAR_SYSTEM_CAMERA_POSITION_UNITS, SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS,
+    SOLAR_SYSTEM_FRAMED_RADIUS_UNITS, SOLAR_SYSTEM_PLANETS, SOLAR_SYSTEM_SOFTENING_UNITS,
+    SOLAR_SYSTEM_SUN_COLOR, SOLAR_SYSTEM_SUN_MASS_KG, SOLAR_SYSTEM_SUN_RADIUS_M,
+    SOLAR_SYSTEM_TIME_SCALE, SOLAR_SYSTEM_TRAIL_LENGTH_UNITS, STELLAR_OBJECTS,
+    THREE_BODY_CAMERA_POSITION_UNITS, THREE_BODY_FRAMED_RADIUS_UNITS, THREE_BODY_HEIGHT_UNITS,
+    THREE_BODY_MASS_KG, THREE_BODY_MAX_SPEED_FACTOR, THREE_BODY_MIN_SPEED_FACTOR,
+    THREE_BODY_RING_RADIUS_UNITS, THREE_BODY_TIME_SCALE, THREE_BODY_VISUAL_RADIUS_UNITS,
+    TWO_BODY_CAMERA_POSITION_UNITS, TWO_BODY_FRAMED_RADIUS_UNITS,
 };
 pub use crate::experiments::jovian::{
     jovian_drawn_radius_units, jovian_orbit_period_seconds, jovian_orbit_speed_units_s,
@@ -125,7 +133,10 @@ pub use crate::core::constants::{
 };
 
 // The gravitation integrator that now fills the `Scene::step` seam.
-pub use crate::core::integrator::{gravitational_acceleration, integrate_gravity};
+pub use crate::core::integrator::{
+    gravitational_acceleration, integrate_gravity, integrate_gravity_with, kerr_schild_to_world,
+    world_to_kerr_schild, GravityModel,
+};
 
 // Planning a craft's path between two bodies under the scene's gravity, and flying it.
 pub use crate::core::transfer::{
@@ -218,6 +229,23 @@ pub use crate::render::plugin::{
 };
 
 // Motion trails: the last few units of each body's path, fading out behind it.
+pub use crate::render::accretion_disc::{
+    advance_accretion_disc_system, blackbody_rgb, disc_source, ergosphere_outline, AccretionDisc,
+    AccretionDiscPlugin, DiscParticle, DiscProfile, Plunge,
+};
+pub use crate::render::black_hole_view::{
+    gas_image, hide_hole_body_system, hole_body, ray_marched, sphere_radius_rg, splat_gas,
+    sync_black_hole_view_system, toggle_black_hole_view_system, toggle_stars_system,
+    update_gas_texture_system, BlackHoleMaterial, BlackHoleSphere, BlackHoleUniform, BlackHoleView,
+    BlackHoleViewPlugin,
+};
+pub use crate::render::kerr_ray::{
+    composite, emitter, march, march_with, DiscShading, RayCrossing, RayEnd, RayHole, RayTrace,
+};
+pub use crate::render::light_streams::{
+    advance_light_streams_system, draw_light_streams_system, stream_source, LightStreamGizmos,
+    LightStreams, LightStreamsPlugin, Photon,
+};
 pub use crate::render::trail::{
     apply_experiment_trail_length, draw_trails_system, record_trails_system, toggle_trails_system,
     TrailConfig, TrailGizmos, TrailPath, TrailPlugin, TrailSegment, Trails,
@@ -323,6 +351,7 @@ pub use crate::ui::compass::{
 pub use crate::ui::crosshair::{
     crosshair_segments, crosshair_system, CrosshairConfig, CrosshairPlugin,
 };
+pub use crate::ui::hud::{hud_shown, toggle_hud_system, HudPlugin, HudVisibility};
 
 // Re-export the physics surface so consumers can write
 // `physics_sandbox::gravitational_constant_calculator(..)` and

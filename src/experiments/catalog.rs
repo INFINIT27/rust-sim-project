@@ -70,6 +70,8 @@ pub enum ExperimentId {
     Jovian,
     /// The Sun and the eight planets in a static row, for checking the scale by eye.
     ScaleCheck,
+    /// Sgr A*, the Milky Way's central black hole, spinning, with an accretion disc.
+    BlackHole,
 }
 
 impl Default for ExperimentId {
@@ -85,15 +87,16 @@ impl ExperimentId {
     ///
     /// The order is the order a `--list` prints and a picker would show, so it is
     /// stable and matches the slugs: `experiment_1` first.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::TwoBody,
         Self::ThreeBodyRing,
         Self::SolarSystem,
         Self::Jovian,
         Self::ScaleCheck,
+        Self::BlackHole,
     ];
 
-    /// The canonical slug: `"experiment_1"` through `"experiment_5"`.
+    /// The canonical slug: `"experiment_1"` through `"experiment_6"`.
     ///
     /// Numbered rather than named because that is how they are referred to in
     /// conversation and on the command line. [`name`](Self::name) is the human label
@@ -106,6 +109,7 @@ impl ExperimentId {
             Self::SolarSystem => "experiment_3",
             Self::Jovian => "experiment_4",
             Self::ScaleCheck => "experiment_5",
+            Self::BlackHole => "experiment_6",
         }
     }
 
@@ -118,6 +122,7 @@ impl ExperimentId {
             Self::SolarSystem => "Solar system",
             Self::Jovian => "Jovian system",
             Self::ScaleCheck => "Scale check",
+            Self::BlackHole => "Black hole",
         }
     }
 
@@ -145,6 +150,10 @@ impl ExperimentId {
                 "The Sun and eight planets in a static row at true size, bottoms aligned \
                  — a ruler for checking the scale by eye. Nothing moves."
             }
+            Self::BlackHole => {
+                "Sgr A*, the Milky Way's central black hole, spinning at a = 0.9, with a glowing \
+                 accretion disc dragged round it, glowing with the heat of its friction."
+            }
         }
     }
 
@@ -160,6 +169,7 @@ impl ExperimentId {
             Self::SolarSystem => &["3", "solar-system", "solar_system", "solar", "planets"],
             Self::Jovian => &["4", "jovian", "jupiter", "moons", "galilean"],
             Self::ScaleCheck => &["5", "scale", "scale-check", "sizes", "ruler"],
+            Self::BlackHole => &["6", "black-hole", "black_hole", "blackhole", "sgr-a"],
         }
     }
 
@@ -182,6 +192,7 @@ impl ExperimentId {
             Self::SolarSystem => super::solar_system::solar_system(),
             Self::Jovian => super::jovian::jovian_system(),
             Self::ScaleCheck => super::scale_check::scale_check(),
+            Self::BlackHole => super::black_hole::black_hole(),
         }
     }
 
@@ -247,6 +258,13 @@ pub struct ExperimentSpec {
     /// says whether flying makes sense in it. The size-comparison ruler says no, since nothing in it
     /// is meant to move.
     pub launches: bool,
+    /// Whether the scene gets the renderer's general light: the fixed directional light (when it
+    /// has no star of its own) and the ambient fill.
+    ///
+    /// True everywhere but the black hole, which is lit by nothing but its own glowing accretion
+    /// disc ([`crate::render::accretion_disc`]). With it off, unlit things still show: a
+    /// floor's grid, trails, and the streams themselves.
+    pub general_lighting: bool,
 }
 
 /// Display names for the bodies of a scene, by id. A body with no entry is shown by its id.
@@ -331,6 +349,7 @@ pub fn two_body() -> Experiment {
             // right length, so this experiment has nothing to say about it.
             trail_length_units: None,
             launches: true,
+            general_lighting: true,
         },
         names: BodyNames::default(),
     }
@@ -427,6 +446,7 @@ pub fn three_body_ring(seed: u64) -> Experiment {
             framed_radius_units: THREE_BODY_FRAMED_RADIUS_UNITS,
             trail_length_units: None,
             launches: true,
+            general_lighting: true,
         },
         names: BodyNames::default(),
     }

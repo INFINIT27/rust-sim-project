@@ -145,6 +145,14 @@ pub enum Action {
     Launch,
     /// Select the next spacecraft.
     NextCraft,
+    /// Switch the black hole's disc between its shaded light and a flat test pattern.
+    ToggleBlackHoleView,
+    /// Show or hide the stars round the black hole.
+    ToggleStars,
+    /// Show or hide the HUD: the debug panel, crosshair, compass, mission readout, and picker.
+    ToggleHud,
+    /// Show or hide the outline of the black hole's event horizon.
+    ToggleOutline,
 }
 
 /// The description of one [`Action`]: a row of [`crate::constants::ACTIONS`].
@@ -164,7 +172,7 @@ pub struct ActionInfo {
 
 impl Action {
     /// Every action, in the order of [`crate::constants::ACTIONS`].
-    pub const ALL: [Action; 24] = [
+    pub const ALL: [Action; 28] = [
         Action::MoveForward,
         Action::MoveBack,
         Action::MoveLeft,
@@ -189,6 +197,10 @@ impl Action {
         Action::PickerPlace,
         Action::Launch,
         Action::NextCraft,
+        Action::ToggleBlackHoleView,
+        Action::ToggleStars,
+        Action::ToggleHud,
+        Action::ToggleOutline,
     ];
 
     /// This action's row of [`crate::constants::ACTIONS`].
@@ -229,7 +241,7 @@ impl Action {
 /// ```
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub struct KeyMap {
-    keys: [KeyCode; 24],
+    keys: [KeyCode; 28],
 }
 
 impl Default for KeyMap {

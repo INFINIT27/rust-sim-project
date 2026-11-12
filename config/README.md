@@ -21,7 +21,7 @@ make it stick).
 | `camera.toml` | Movement speed, the boost and precision multipliers, look sensitivity. |
 | `ui.toml` | `[crosshair]` size and colour, `[compass]` size and placement, `[arrival]` pop-up width. |
 | `trails.toml` | Whether trails show at launch, their length, sample spacing and count, and fade. |
-| `performance.toml` | Anti-aliasing, the floor's eclipse shadows, vsync. The `RGA_AA`, `RGA_FLOOR_ECLIPSE` and `RGA_VSYNC` environment variables override them for one run. |
+| `performance.toml` | Anti-aliasing, the floor's eclipse shadows, vsync, and the black hole's ray-marcher (on or off, its quality, its stars). The `RGA_AA`, `RGA_FLOOR_ECLIPSE`, `RGA_VSYNC`, `RGA_BLACK_HOLE`, `RGA_BLACK_HOLE_QUALITY` and `RGA_BLACK_HOLE_STARS` environment variables override them for one run. |
 | `controls.toml` | Which key each action is on (`pause = "KeyP"`). `Esc` and the mouse cannot be rebound. |
 
 - **A mistake stops the app** with the file, the key, and what is wrong, rather than running with

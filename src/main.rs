@@ -24,11 +24,12 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use physics_sandbox::constants::{WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE, WINDOW_WIDTH_PX};
 use physics_sandbox::{
-    catalog_lines, config_dir, help_text, parse_args, ArrivalPopupPlugin, Command, CompassPlugin,
-    Config, ConfigPlugin, CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin,
-    LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin,
-    PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin,
-    Selection, SimulationControlsPlugin, TrailPlugin,
+    catalog_lines, config_dir, help_text, parse_args, AccretionDiscPlugin, ArrivalPopupPlugin,
+    BlackHoleViewPlugin, Command, CompassPlugin, Config, ConfigPlugin, CrosshairPlugin,
+    DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, HudPlugin, LaunchInputPlugin,
+    MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin, PerformanceSettings,
+    PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin, Selection,
+    SimulationControlsPlugin, TrailPlugin,
 };
 
 fn main() {
@@ -147,6 +148,11 @@ fn run(selection: Selection, dir: PathBuf, config: Config, performance: Performa
     // Motion trails, after `ScenePlugin` for the same reason as the grid: it reads the
     // `Scene` that plugin inserts.
     .add_plugins(TrailPlugin)
+    // The HUD as a whole: `H` hides the debug panel, crosshair, compass, and picker.
+    .add_plugins(HudPlugin)
+    .add_plugins(AccretionDiscPlugin)
+    // The hole ray-marched on the GPU, after the disc, whose CPU drawing it switches off.
+    .add_plugins(BlackHoleViewPlugin)
     .add_plugins(FreeFlyCameraPlugin)
     .add_plugins(DebugUiPlugin)
     .add_plugins(CrosshairPlugin)

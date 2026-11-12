@@ -250,7 +250,7 @@ pub const WINDOW_HEIGHT_PX: f32 = 600.0;
 /// **If you change it.** Changing a default key rebinds it for everyone who has not saved their
 /// own `config/controls.toml`. Two actions on one key fail `tst/bindings_tests.rs`. Adding an
 /// action means a variant in [`Action`], a row here, and a `KeyMap` call in the system that acts.
-pub const ACTIONS: [ActionInfo; 24] = [
+pub const ACTIONS: [ActionInfo; 28] = [
     ActionInfo {
         action: Action::MoveForward,
         name: "move_forward",
@@ -418,6 +418,34 @@ pub const ACTIONS: [ActionInfo; 24] = [
         label: "Next spacecraft in the fleet",
         group: BindingGroup::Place,
         default_key: KeyCode::KeyG,
+    },
+    ActionInfo {
+        action: Action::ToggleBlackHoleView,
+        name: "toggle_black_hole_view",
+        label: "Black hole disc: shaded / test pattern",
+        group: BindingGroup::View,
+        default_key: KeyCode::KeyV,
+    },
+    ActionInfo {
+        action: Action::ToggleStars,
+        name: "toggle_stars",
+        label: "Show / hide the stars round the black hole",
+        group: BindingGroup::View,
+        default_key: KeyCode::KeyN,
+    },
+    ActionInfo {
+        action: Action::ToggleHud,
+        name: "toggle_hud",
+        label: "Show / hide the HUD (debug panel, crosshair, compass)",
+        group: BindingGroup::View,
+        default_key: KeyCode::KeyH,
+    },
+    ActionInfo {
+        action: Action::ToggleOutline,
+        name: "toggle_black_hole_outline",
+        label: "Show / hide the outline of the black hole's event horizon",
+        group: BindingGroup::View,
+        default_key: KeyCode::KeyO,
     },
 ];
 

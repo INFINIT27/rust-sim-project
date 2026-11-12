@@ -22,6 +22,8 @@ use crate::constants::{
 };
 use crate::time::simulation::TimeStep;
 
+pub use crate::core::integrator::GravityModel;
+
 use crate::core::constants::{
     DEMO_BOUNDS_MAX_UNITS, DEMO_BOUNDS_MIN_UNITS, DEMO_FLOOR_COLOR, DEMO_FLOOR_HALF_SIZE_UNITS,
     GRAVITY_SOFTENING_UNITS, MOON_MAX_MASS_RATIO, ROTATION_UNIT_TOLERANCE, TWO_BODY_LEFT_COLOR,
@@ -685,6 +687,10 @@ pub struct Scene {
     /// Must be finite and non-negative. `0.0` is legal and means true point-mass gravitation,
     /// singularity included — see the constant's docs for what that costs.
     pub softening_units: f32,
+    /// Which law of gravity this scene's black holes obey. [`GravityModel::Newtonian`] everywhere
+    /// except the black-hole experiment, which sets [`GravityModel::Schwarzschild`]. See
+    /// [`crate::core::integrator::GravityModel`].
+    pub gravity_model: GravityModel,
     /// `BodyId` for each entry in `props`, kept in lockstep (same length, same
     /// order). Private so callers cannot desynchronize the two vectors.
     ids: Vec<BodyId>,
@@ -738,6 +744,7 @@ impl Scene {
             props: Vec::new(),
             bounds,
             softening_units: GRAVITY_SOFTENING_UNITS,
+            gravity_model: GravityModel::Newtonian,
             ids: Vec::new(),
             next_id: 0,
         }
@@ -790,6 +797,7 @@ impl Scene {
             props: Vec::new(),
             bounds,
             softening_units: GRAVITY_SOFTENING_UNITS,
+            gravity_model: GravityModel::Newtonian,
             ids: Vec::new(),
             next_id: 0,
         };
@@ -1189,7 +1197,8 @@ impl Scene {
         // Read once: `integrate_gravity` takes `&mut self.props`, so the field cannot be
         // borrowed from `self` inside the call.
         let softening = self.softening_units;
-        crate::core::integrator::integrate_gravity(&mut self.props, substep, softening);
+        let model = self.gravity_model;
+        crate::core::integrator::integrate_gravity_with(&mut self.props, substep, softening, model);
         // Absorption first, and that ordering is load-bearing: a prop swallowed by a
         // black hole is gone before the elastic pass can see it, so nothing bounces off
         // an event horizon on its way in. Both passes use the same overlap test, so

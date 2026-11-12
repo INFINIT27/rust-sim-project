@@ -222,6 +222,7 @@ pub fn scale_check() -> Experiment {
             // Immovable props are never trailed, so this would have no effect either way.
             trail_length_units: None,
             launches: false,
+            general_lighting: true,
         },
         names: BodyNames::default(),
     }

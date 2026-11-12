@@ -921,6 +921,42 @@ fn a_star_lights_its_own_scene_and_a_starless_one_falls_back() {
         assert_eq!(points, 0, "{id:?} has no star");
         assert_eq!(directional, 1, "{id:?} must still be lit somehow");
     }
+
+    // The black hole has no general light: only its S-stars shine, each a light of its own.
+    let (points, directional, _) = lights(ExperimentId::BlackHole);
+    assert_eq!(
+        (points, directional),
+        (crate::experiments::constants::S_STARS.len(), 0),
+        "the black hole is lit by nothing but its S-stars"
+    );
+}
+
+/// The black hole turns off the ambient fill too, which every other experiment keeps.
+#[test]
+fn the_black_hole_has_no_ambient_light() {
+    use bevy::pbr::AmbientLight;
+    use bevy::MinimalPlugins;
+
+    use crate::experiments::selection::Selection;
+
+    let ambient = |id: ExperimentId| -> Option<f32> {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<Assets<Mesh>>();
+        app.init_resource::<Assets<BodyMaterial>>();
+        app.add_plugins(ScenePlugin::new(Selection { id, seed: Some(1) }));
+        app.update();
+        app.world()
+            .get_resource::<AmbientLight>()
+            .map(|light| light.brightness)
+    };
+
+    assert_eq!(ambient(ExperimentId::BlackHole), Some(0.0));
+    assert_ne!(
+        ambient(ExperimentId::TwoBody),
+        Some(0.0),
+        "the others keep Bevy's default fill (or none at all headless)"
+    );
 }
 
 /// A star's light must be a **child** of the star, not a component on it.

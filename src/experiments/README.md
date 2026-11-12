@@ -1,7 +1,7 @@
 # `src/experiments/` — which simulation to run
 
 > **Purpose:** The catalog of runnable simulations (two-body, three-body ring, solar system,
-> Jovian moons, size ruler), each one's clock scale and starting camera, the command-line
+> Jovian moons, size ruler, black hole), each one's clock scale and starting camera, the command-line
 > parsing, and the objects the `B` key places.
 > **Edit here to:** add or change an experiment, change planet or moon data, starting camera
 > poses, CLI arguments or `--help`, the random seed, or the `B`-key objects.
@@ -30,8 +30,9 @@ description of a world, not a renderer.
 | `objects.rs` | `StellarObject` and `stellar_object`: the dwarfs, neutron star, and black holes the `B` key places into a running experiment. |
 | `jovian.rs` | `experiment_4`: Jupiter and the Galilean moons. `jovian_primary`, `jovian_orbit_speed_units_s`, `jovian_orbit_period_seconds`. |
 | `scale_check.rs` | `experiment_5`: a static size-comparison row. `ScaleRow`, `scale_rows`, `scale_check_layout`. A ruler, not a simulation. |
+| `black_hole.rs` | `experiment_6`: Sgr A*, spinning, with an accretion disc and six real S-stars on their measured orbits. `black_hole`, `SStar` and `s_star_state` (a measured orbit to a position and velocity), `spinning_horizon_units`, `BlackHoleRadii` and `black_hole_radii` (the non-spinning radii, for comparison), `black_hole_centre_units`, `SGR_A_STAR_NAME`. |
 
-## The five experiments
+## The six experiments
 
 | Slug | Also | What it is |
 | --- | --- | --- |
@@ -40,6 +41,7 @@ description of a world, not a renderer.
 | `experiment_3` | `3`, `solar-system`, `planets` | The Sun, the eight planets, Earth's Moon, and Jupiter's four moons — everything at true scale with nothing compensating for it. Deterministic. |
 | `experiment_4` | `4`, `jovian`, `jupiter`, `moons` | Jupiter and the four Galilean moons, with the 1:2:4 Laplace resonance. The one system that is **visible** at true scale. |
 | `experiment_5` | `5`, `scale`, `sizes`, `ruler` | The Sun and eight planets in a static row at true size, bottoms aligned. Nothing moves — it is a ruler. |
+| `experiment_6` | `6`, `black-hole`, `sgr-a` | Sgr A*, spinning at `a = 0.9`, with a glowing accretion disc dragged round it. |
 
 ```bash
 cargo run --release                          # experiment_1
@@ -48,6 +50,7 @@ cargo run --release -- three-body --seed 42  # the same ring, every time
 cargo run --release -- solar-system          # the solar system
 cargo run --release -- moons                 # Jupiter and the Galilean moons
 cargo run --release -- scale                 # the size-comparison row
+cargo run --release -- black-hole            # Sgr A*, spinning, with its disc
 cargo run --release -- --list                # the catalog
 ```
 
@@ -248,6 +251,121 @@ compares the whole scene for equality. A ruler must not be able to bend.
 The radii come from `SOLAR_SYSTEM_PLANETS` and the Sun's own constant rather than a table of their
 own: an instrument has to be measuring the same object as the experiment it checks.
 
+## `experiment_6`, where relativity stops being a rounding error
+
+Sgr A*, the black hole at the centre of the Milky Way, at its published mass (`4.3e6 M☉`, shared
+with the `B`-key row as `SGR_A_STAR_MASS_KG`), **spinning** at `a = 0.9` (`SGR_A_STAR_SPIN`) about
+the world's vertical axis, alone at the origin with no floor. Its size is not stored:
+`spinning_horizon_units` computes it from the mass and spin with the relativity library's Kerr
+solution (`physics_utils/relativity/kerr.rs`).
+
+| Radius (Boyer–Lindquist) | `r_g = GM/c²` | Drawn (equatorial) | What it is |
+| --- | --- | --- | --- |
+| Event horizon | `1.44` | `10.8` u | Drawn, and where things are captured. `12.7` u without spin. |
+| Ergosphere at the equator | `2` | `13.9` u | Inside it nothing can stand still. Not drawn. |
+| Prograde photon orbit | `1.56` | | Light circling with the spin. |
+| Prograde ISCO | `2.32` | `15.8` u | The disc's inner edge. `38.1` u without spin. |
+
+A Boyer–Lindquist radius `r` in the equatorial plane is a circle of radius `√(r² + a²) r_g` in the
+Cartesian (Kerr–Schild) coordinates the scene uses, which is why the drawn sizes are a little larger.
+
+**Gravity is that of a spinning hole.** `Scene::gravity_model` is `GravityModel::Kerr { spin }`: the
+hole's pull on anything placed with `B` is the exact Kerr equation of motion
+(`kerr_schild_acceleration`), in Kerr–Schild coordinates and time. Matter is dragged round with the
+spin, and crosses the horizon in a finite time, so the hole captures at its horizon. The scene's
+integrator takes second-order (Heun) steps under the relativistic models; the first-order step it
+uses elsewhere pumped energy into orbits near the hole. `black_hole_tests` checks the result: an
+orbit at `1.2×` the prograde ISCO holds, where the same release round a non-spinning hole is
+swallowed; an orbit just inside the ISCO plunges.
+
+**The accretion disc.** `render/accretion_disc.rs` draws `10,000` clumps of gas in the equatorial
+plane, from the ISCO out to `20 r_g` (`127` units):
+
+- each orbits prograde at the exact Kerr rate `Ω = 1/(r^{3/2} + a)`, inner rings lapping outer ones;
+- each drifts inward, sped up to three orbits per factor `e` in radius (a real disc's inflow takes
+  thousands of orbits, which could not be watched); this is the one non-physical rate;
+- at the ISCO it starts to fall, whirling round with the spin, along a real Kerr path, and is
+  replaced at the outer edge once it crosses the horizon;
+- it glows at the temperature a thin disc fed at a tenth of the Eddington rate reaches there (the
+  Page–Thorne model: `2.7e5 K` at the hottest, in the ultraviolet).
+
+**Drawn on the GPU** (`render/black_hole_view.rs`). Every pixel's light is followed backwards
+along its exact Kerr path, every frame, until it reaches the gas, falls into the hole, or comes from
+the sky, so the view is right from anywhere the camera goes. Nothing about the shape is drawn in;
+it comes out of the light's paths:
+
+- the **far side** of the disc, whose light goes over the top of the hole, appears **arched over
+  it**: a point `6 r_g` behind the hole, which would sit `1.4 r_g` above its centre if light went
+  straight, appears `6 r_g` above it;
+- the far side's **underside**, whose light is bent round under the hole, appears as a **second
+  image below it**, seen through the gaps in the near side;
+- light that goes round once more makes a hairline third image hugging the shadow;
+- the **shadow** is lopsided, flatter on the side coming towards the camera, where light orbiting
+  with the spin can come closer;
+- the **stars**, scattered over the whole sky, crowd towards the shadow's edge and are stretched
+  into arcs round it: from `53 r_g` the hole's Einstein ring for distant stars is `16°` across.
+
+The disc is the simulation's own: every frame its clumps are splatted into a texture the shader
+reads, so the gas seen orbiting, drifting in, and plunging is the gas being simulated. Its light is
+what the camera would receive: the blackbody colour at the temperature it sees after gravitational
+redshift and the Doppler shift of the gas's motion, orbiting or plunging, at an intensity `g⁴`
+times the disc's flux, exposed and tone-mapped like a photograph. So the side coming towards the
+camera is far brighter than the side going away, and the plunging gas fades into the shadow.
+
+`V` switches the disc to a flat test pattern (rings every `2 r_g`, spokes every `30°`; orange for
+the first image, blue for the second, green for the third) that makes the bending easy to read.
+**Settings > Video** has the ray-marcher's quality (Low about `160` fps at `1080p`, Medium `85`,
+High `40` on the machine it was built on), the stars, and the fallback: off draws the hole as a
+plain black ball.
+
+At these temperatures every part of the disc is blue-white: that is the true colour of a blackbody
+above about `20,000 K`. The brightness, not the hue, is what varies.
+
+This is Sgr A* as it would be if it were fed like a quasar. The real Sgr A* takes in about a
+billionth of its Eddington rate, and its gas is a hot, faint, puffed-up flow rather than a thin
+disc.
+
+**The S-stars.** Six real stars orbit the hole just outside its disc: S2, S12, S13, S14, S38, and
+S55, the S-stars of Gillessen et al. (2017) with orbits under `0.3″`. Their real orbits are far
+larger (S2 never comes within `120` AU, `18,000` units), so each is brought in close
+(`s_star_close_state`): it keeps the **plane** of its measured orbit and its direction from the hole
+on 11 November 2026, but goes round a **circle** just outside the disc. How close is set by tides: a
+star nearer than its tidal radius `R★ (M/m)^{1/3}` (`tidal_radius_m`) is torn apart, `41`–`44 r_g`
+for the B dwarfs, `31` for the small S55, and `141` for the giant S38. Each orbits at `1.1`–`1.3`
+times its own, `36`–`58 r_g` (`230`–`370` units, against the disc's `127`), and S38 at `160 r_g`.
+
+The spin's direction on the sky is not measured well, so the plane of the sky is taken as the
+hole's equatorial plane, with the spin towards Earth: each star's tilt to the equator is then its
+real orbit's inclination, and every star is north of the equator on half its circle and south on
+the other. S13 and S12 go round with the spin, tilted `25°` and `34°`; S14 nearly over the poles;
+S2, S55, and S38 against it. They move at `13`–`17%` of the speed of light, an orbit every `8`–`16`
+simulated hours (`5`–`10` minutes at the `100×` clock), under the hole's Kerr gravity, which twists
+the tilted orbits slowly round the spin axis (Lense–Thirring precession, about `2°` an orbit). The
+masses, sizes, and luminosities are typical of each star's type, not measured (see `S_STARS`).
+They are not lensed: like anything else in the scene they are drawn where they are, and hidden
+behind the shadow or the disc.
+
+**Keys.** `V` switches the disc to the test pattern, `N` turns the stars off and on, `O` outlines
+the event horizon itself in amber (off at the start), showing the hole's true size well inside
+the shadow, and `H` hides the
+HUD for a clean view.
+
+**Only the disc, the stars, and the S-stars.** `general_lighting` is off, and nothing else is drawn
+round the hole: the light streams and the ergosphere outline were taken out so the disc is easy to see. `render/light_streams.rs`
+(light bent and dragged by the spin) is still in the library, just not added to the app. The camera
+is framed on the disc, `135` units round the hole, and `10°` above its plane. That is low enough for
+the second image: light passing under the hole crosses the plane in front of it, and from higher up
+it crosses on the disc, which blocks it. From `15°` the far side's underside is hidden.
+
+The clock runs at `100×`: an orbit at the ISCO takes about ten minutes, six seconds to watch; the
+disc's outer edge takes two minutes to watch.
+
+**Known limits.** Only black holes pull relativistically; every other pull, and a placed body's pull
+on the hole, is Newtonian. The drawn sphere has the horizon's equatorial radius, but the horizon is
+flattened at the poles (`9.1` units), so a body arriving over a pole is captured a little early. The
+disc is drawn by the renderer: it has no mass, collides with nothing, and lights no
+surfaces.
+
 ## Determinism, and why the seed is on screen
 
 Randomised initial conditions are only useful if a run can be repeated. Every experiment
@@ -312,6 +430,11 @@ already-touching bodies, and that it survives 400 frames of being run.
 
 ## Where the tests are
 
+- `tst/experiments/black_hole_tests.rs` — 16 unit tests: the published mass, the spinning horizon
+  written out and compared, the hole alone at the origin capturing at its horizon, the view framing
+  the disc from above, and through the real integrator: the hole staying put, an orbit at
+  `1.2×` the prograde ISCO holding where a non-spinning hole swallows it, an orbit inside the ISCO
+  plunging, and a dropped rock never reaching `c`.
 - `tst/experiments/scale_check_tests.rs` — 13 unit tests in three groups, matching what an
   instrument has to get right: that it measures the real quantity, that it is readable, and that it
   cannot move.

@@ -7,3 +7,9 @@ anti_aliasing = "msaa4"
 floor_eclipse = true
 # Wait for the display's refresh.
 vsync = true
+# Ray-march the black hole on the GPU. Off draws it as a plain black ball.
+black_hole = true
+# low, medium, or high: how finely the black hole's light is followed.
+black_hole_quality = "medium"
+# Stars round the black hole, seen through its lens.
+black_hole_stars = true

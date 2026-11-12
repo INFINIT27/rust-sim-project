@@ -49,7 +49,7 @@ use crate::constants::METRES_PER_UNIT;
 use crate::experiments::catalog::ExperimentSpec;
 use crate::input::camera::CameraSettings;
 use crate::input::menu::{ConfigTab, MenuPage, MenuState, SettingsTab};
-use crate::performance::{AntiAliasing, PerformanceSettings};
+use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::render::mission::Mission;
 use crate::render::trail::TrailConfig;
@@ -503,7 +503,16 @@ fn controls_tab(ui: &mut egui::Ui, menu: &mut MenuState, resources: &mut MenuRes
     }
 }
 
-/// Settings > Video: anti-aliasing, vsync, and the floor's eclipse shadows.
+/// How a black hole quality is named in the menu.
+fn black_hole_quality_label(quality: BlackHoleQuality) -> &'static str {
+    match quality {
+        BlackHoleQuality::Low => "Low (fastest)",
+        BlackHoleQuality::Medium => "Medium",
+        BlackHoleQuality::High => "High (screenshots)",
+    }
+}
+
+/// Settings > Video: anti-aliasing, vsync, the floor's eclipse shadows, and the black hole.
 fn video_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     let Some(performance) = resources.performance.as_mut() else {
         ui.label("Video settings are not available in this app.");
@@ -529,6 +538,28 @@ fn video_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
             ui.end_row();
             ui.label("Floor shadows");
             ui.checkbox(&mut settings.floor_eclipse, "Eclipse shadows on the floor");
+            ui.end_row();
+            ui.label("Black hole");
+            ui.checkbox(
+                &mut settings.black_hole,
+                "Ray-marched on the GPU (off: a plain black ball)",
+            );
+            ui.end_row();
+            ui.label("Black hole quality");
+            egui::ComboBox::from_id_source("menu_black_hole_quality")
+                .selected_text(black_hole_quality_label(settings.black_hole_quality))
+                .show_ui(ui, |ui| {
+                    for quality in BlackHoleQuality::ALL {
+                        ui.selectable_value(
+                            &mut settings.black_hole_quality,
+                            quality,
+                            black_hole_quality_label(quality),
+                        );
+                    }
+                });
+            ui.end_row();
+            ui.label("Stars");
+            ui.checkbox(&mut settings.black_hole_stars, "Stars round the black hole");
             ui.end_row();
         });
     });

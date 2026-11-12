@@ -192,6 +192,7 @@ fn arbitrary_scene() -> impl Strategy<Value = Scene> {
                 max: Vec3::new(50.0, 50.0, 50.0),
             },
             softening_units: crate::core::constants::GRAVITY_SOFTENING_UNITS,
+            gravity_model: GravityModel::Newtonian,
             ids: Vec::new(),
             next_id: 0,
         };
@@ -1307,6 +1308,7 @@ fn get_with_unknown_body_id_returns_none() {
             max: Vec3::new(1.0, 1.0, 1.0),
         },
         softening_units: crate::core::constants::GRAVITY_SOFTENING_UNITS,
+        gravity_model: GravityModel::Newtonian,
         ids: Vec::new(),
         next_id: 0,
     };

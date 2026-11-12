@@ -46,6 +46,7 @@
 use bevy::app::{App, Plugin, Update};
 use bevy::core_pipeline::core_3d::Camera3d;
 use bevy::ecs::query::With;
+use bevy::ecs::schedule::IntoSystemConfigs;
 use bevy::ecs::system::{Query, Res};
 use bevy::transform::components::Transform;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -91,7 +92,10 @@ impl Plugin for DebugUiPlugin {
         if !app.is_plugin_added::<EguiPlugin>() {
             app.add_plugins(EguiPlugin);
         }
-        app.add_systems(Update, (debug_overlay_system, mission_overlay_system));
+        app.add_systems(
+            Update,
+            (debug_overlay_system, mission_overlay_system).run_if(crate::ui::hud::hud_shown),
+        );
     }
 }
 

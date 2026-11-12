@@ -51,8 +51,8 @@ use bevy::hierarchy::{BuildChildren, DespawnRecursiveExt};
 use bevy::math::primitives::{Cuboid, Plane3d, Sphere};
 use bevy::math::{UVec4, Vec3, Vec4};
 use bevy::pbr::{
-    DirectionalLightBundle, MaterialMeshBundle, MaterialPlugin, PointLight, PointLightBundle,
-    StandardMaterial,
+    AmbientLight, DirectionalLightBundle, MaterialMeshBundle, MaterialPlugin, PointLight,
+    PointLightBundle, StandardMaterial,
 };
 use bevy::render::camera::ClearColor;
 use bevy::render::camera::PerspectiveProjection;
@@ -352,10 +352,22 @@ pub fn spawn_scene_entities(
     // actually is — see `spawn_mirror` — and adding a fixed directional light on top would wash out
     // the terminator that lighting is there to produce. The two-body pair, the three-body ring, the
     // Jovian system, and the scale-check row have no star, so they keep this.
-    if !scene.props.iter().any(Prop::is_luminous) {
+    //
+    // And only when the experiment wants general light at all: the black hole turns it off, so
+    // nothing lights that scene but the light streams bending around it.
+    if spec.general_lighting && !scene.props.iter().any(Prop::is_luminous) {
         commands.spawn(DirectionalLightBundle {
             transform: Transform::from_translation(LIGHT_POSITION_UNITS)
                 .looking_at(Vec3::ZERO, Vec3::Y),
+            ..Default::default()
+        });
+    }
+
+    // No ambient fill either, in a scene without general light. Bevy's default ambient light would
+    // otherwise keep every surface faintly visible.
+    if !spec.general_lighting {
+        commands.insert_resource(AmbientLight {
+            brightness: 0.0,
             ..Default::default()
         });
     }

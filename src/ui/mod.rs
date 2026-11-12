@@ -17,6 +17,7 @@ pub mod arrival;
 pub mod compass;
 pub mod constants;
 pub mod crosshair;
+pub mod hud;
 pub mod menu;
 pub mod overlay;
 pub mod placement;

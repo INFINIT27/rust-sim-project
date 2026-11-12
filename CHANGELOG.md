@@ -7,6 +7,106 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-11
+
+### Added
+
+- **Continuous integration** (`.github/workflows/rust.yml`): on every push to `main` and every
+  pull request into it, GitHub checks formatting, runs clippy with warnings as errors, builds, and
+  runs every test, on Ubuntu with Bevy's system libraries installed and dependencies cached
+  between runs. It replaces the starter `rust.yaml` at the root, which GitHub never ran because
+  workflows must live in `.github/workflows/`.
+- **Six real S-stars orbit Sgr A* just outside its disc** in `experiment_6`: S2, S12, S13, S14, S38,
+  and S55, from Gillessen et al. (2017, *ApJ* 837, 30, Table 3). Each keeps the plane of its measured
+  orbit (with the plane of the sky taken as the hole's equatorial plane, spin towards Earth) and its
+  direction from the hole on 11 November 2026, but goes round a circle just outside the disc, at
+  `1.1`–`1.3` times its tidal radius (`tidal_radius_m`): `36`–`58 r_g`, and `160` for the giant S38.
+  So they lie north and south of the equator, move at `13`–`17%` of light, orbit every `8`–`16`
+  simulated hours, and precess round the spin under the scene's Kerr gravity (`S_STARS`,
+  `s_star_state`, `s_star_close_state`).
+- **`N` turns the stars round the black hole off and on** (`toggle_stars`), flipping the same setting
+  as the menu's.
+- **`O` outlines the black hole's event horizon** (`toggle_black_hole_outline`, `BlackHoleOutline`),
+  off by default: an amber line (`BLACK_HOLE_OUTLINE_COLOUR`) `2` pixels wide
+  (`BLACK_HOLE_OUTLINE_WIDTH_PX`) round the horizon itself, an oblate spheroid `√(r₊² + a²)` across
+  the equator and `r₊` to the poles, where it really is (`kerr_ray::horizon_measure`, the closest
+  approach of each straight sight line to it). It sits well inside the shadow, which is how the
+  bent light makes the horizon look; the outline shows the hole's true size within it. The measure
+  changes smoothly across the edge, so the shader draws the line an even width, and costs nothing
+  measurable.
+- **`H` hides the HUD** (`toggle_hud`, `ui/hud.rs`): the debug panel and mission readout, the
+  crosshair, the compass, and the `B` picker, for a clean view; again shows it. The menu and the
+  arrival pop-up stay.
+- **A lensed star field round the black hole** (phase 5 of `notes.md`). Stars are scattered evenly
+  over the whole sky, in every direction (`kerr_ray::star_field`: hashed cells in two layers, each
+  star kept only in its own cell), and every ray that leaves the scene ends on them, so the hole
+  lenses the whole sky: stars crowd towards the shadow's edge and are stretched into arcs round it
+  within its `16°` Einstein ring. The ray-marched sphere now grows with the camera's distance so it
+  always holds the camera (`sphere_radius_rg`, `BLACK_HOLE_VIEW_CAMERA_MARGIN`), and every pixel is
+  marched. The direction a ray leaves in at the march's escape radius is already its direction on
+  the sky to a few `10⁻⁴` rad, because in ingoing Kerr–Schild coordinates the rest of the bending is
+  in the coordinates (`kerr_ray_tests`).
+- **Black hole settings** (phase 7). **Settings > Video**, `config/performance.toml`, and new
+  environment variables: the ray-marcher on or off (`RGA_BLACK_HOLE`; off draws the hole as its
+  plain black ball, the fallback for a GPU that cannot run it), its quality (`RGA_BLACK_HOLE_QUALITY`:
+  `low`, `medium`, `high`, steps of `6%`, `3%`, `1.5%` of the distance from the hole; about `160`,
+  `85`, and `40` fps at `1080p` from the opening view), and the stars (`RGA_BLACK_HOLE_STARS`). The
+  gas splat is spread over up to eight threads, about `2 ms` a frame for `10,000` clumps.
+
+- **The ray-marched disc is the simulated disc** (phase 4 of `notes.md`). Every frame the
+  simulation's clumps are splatted into a gas texture (`splat_gas`, `512 × 128`, over the turn round
+  the hole and the radius from the horizon to the edge), each as a strip `DISC_CLUMP_WIDTH_RG` wide
+  along its streak. The shader reads how much of the plane the gas covers wherever the light
+  crosses it and sees through the gaps to the images behind (`kerr_ray::composite`), so the disc
+  orbits, drifts in, and has the CPU disc's streaky texture. Gas inside the ISCO is drawn too: its
+  plunge four-velocity comes from the ISCO orbit's conserved energy and angular momentum, solved in
+  the Kerr–Schild metric itself (`kerr_ray::emitter`), and matches a clump dropped as the simulation
+  drops them to within 5%. About 84 fps at 1080p. New constants: `DISC_GAS_TEXTURE_WIDTH`,
+  `DISC_GAS_TEXTURE_HEIGHT`, `DISC_CLUMP_WIDTH_RG`.
+- **The ray-marched disc is shaded** (phase 3 of `notes.md`): each pixel's colour is a blackbody at
+  the temperature the camera sees, `g T(r)`, with `g` from the light's own momentum where it left
+  the disc, brightened by `g⁴` on the side coming towards the camera, exactly as the CPU-drawn disc
+  shades its clumps (`kerr_ray::disc_colour`, matched against `DiscParticle::appearance_for` in
+  `kerr_ray_tests`). The disc's temperature and flux ride in the shader's uniform
+  (`KERR_RAY_PROFILE_SAMPLES = 64`). `V` now cycles three views: shaded, the flat test pattern, and
+  the CPU-drawn disc.
+- **`experiment_6`'s black hole is ray-marched on the GPU** (`render/black_hole_view.rs`,
+  `assets/shaders/black_hole.wgsl`), phases 1–2 of the plan in `notes.md`. A sphere round the hole
+  runs a fragment shader that follows every pixel's light backwards along its exact Kerr path, a
+  transcription of `kerr_ray.rs`. It draws the shadow and, for now, the disc as a flat test pattern
+  tinted by image order, from any camera position every frame (about 95 fps at 1080p), which fixes
+  the CPU lens map's lag and warping when the camera moves. `V` (`toggle_black_hole_view`, a new
+  rebindable action) switches back to the CPU-drawn disc; while the GPU view is on, the CPU disc is
+  neither drawn nor traced, and the hole's own opaque ball is hidden. New constants:
+  `BLACK_HOLE_SHADER_PATH`, `BLACK_HOLE_VIEW_SPHERE_RG`.
+- **The `f32` twin of the GPU black-hole ray-marcher** (`render/kerr_ray.rs`), phase 0 of the plan
+  in `notes.md` to draw `experiment_6`'s disc by following every pixel's light along its exact Kerr
+  path on the GPU. A shader cannot be unit-tested, so it is written first in Rust, in `f32`,
+  function for function as the WGSL will be: Hamiltonian equations of motion in Kerr–Schild
+  coordinates and `r_g` (no Christoffel symbols, no matrix inverse), RK4 stepped backwards from the
+  camera, plane crossings with image orders, shadow and sky endings, and the redshift from the
+  light's momentum at the disc. `kerr_ray_tests` checks it against the `f64` Kerr code, Bardeen's
+  analytic shadow (to `1%`, edge-on and from the pole), and its own conservation laws, which `f32`
+  keeps to `10⁻⁴`. Nothing is drawn with it yet. New constants: `KERR_RAY_STEP_FRACTION`,
+  `KERR_RAY_MAX_STEPS`, `KERR_RAY_MAX_CROSSINGS`.
+
+### Changed
+
+- **The ray-marched black hole writes its own depth**: the first gas the light crossed, the hole's
+  centre for the shadow, and the very back for the sky. Bodies now show against the stars instead of
+  behind them, and while the stars are on the material is opaque, so trails passing behind the disc
+  are hidden by it.
+### Removed
+
+- **The CPU-drawn disc and its lens map** (phase 6): `render/disc_lensing.rs` (`LensMap`,
+  `DiscLensing`), the gizmo drawing in `accretion_disc.rs` (`draw_accretion_disc_system`,
+  `lensed_streaks`, `unlensed_streaks`, `DiscStreak`, `AccretionDiscGizmos`,
+  `update_disc_lensing_system`, `DiscParticle::streak`, `appearance`, `appearance_for`), their tests,
+  and the constants only they used (`DISC_LENS_*`, `DISC_BRIGHTNESS_EXPONENT`,
+  `DISC_BEAMING_EXPONENT`, `DISC_LINE_WIDTH_PX`). The simulation stays, and the GPU ray-marcher
+  draws it. The ray-marcher's twin is tested against its own `f64` tracer, so the lens map was not
+  needed as an oracle.
+
 ## 2026-11-10
 
 ### Added
@@ -51,8 +151,109 @@ one exists. The convention is specified in
     `42.98″` per century, `1.75″` at the Sun, GPS `+38.5 µs/day`) and against the older files that
     cover each one's special case.
 
+- **`experiment_6`: Sgr A*, the Milky Way's central black hole** (`black-hole`, `6`). The ground
+  plane and one body: the hole at its published `4.3e6 M☉`, drawn at its true `12.7`-unit horizon
+  and `40` units up so the floor's grid gives it a scale. The radius is computed from the mass with
+  the relativity library's `schwarzschild_radius`, not stored. Whatever reaches the horizon is
+  absorbed. The clock runs at `100×` (an ISCO orbit, `32.6` minutes, takes `20` seconds).
+- **Relativistic motion near black holes.** `schwarzschild_acceleration` in
+  `physics_utils/relativity/gravity.rs` is the exact Schwarzschild equation of motion for a test
+  body, timed by a distant observer's clock. `Scene::gravity_model` (`GravityModel::Newtonian` by
+  default, so every other experiment is unchanged) selects it: under `Schwarzschild` a black hole's
+  pull on anything that is not a black hole uses it, through the new `integrate_gravity_with`. Its
+  tests integrate it with RK4 and check conserved energy and angular momentum, weak-field
+  precession, ISCO stability, and an infall that never crosses the horizon.
+- **`experiment_6` runs relativistically.** Anything placed near the hole with `B` falls under the
+  Schwarzschild equation. Capture moved from the horizon to `1.0101 r_s`, where a falling body's
+  light is redshifted tenfold, since nothing reaches the horizon in the distant observer's time.
+- **The gravity well: the black hole's equatorial plane drawn as curved space**
+  (`render/gravity_well.rs`, `GravityWellPlugin`). Around every black hole in a relativistic scene,
+  a grid of rings and radial spokes on Flamm's paraboloid, `z = 2√(r_s(r − r_s))`
+  (`flamm_paraboloid_height` in `physics_utils/relativity/gravity.rs`), the shape a sheet needs so
+  that distances measured along it are the true radial distances. It meets the horizon at the
+  hole's equator and rises to `6 r_s` at the `10 r_s` rim, so the hole sits at the bottom of a
+  funnel. The photon sphere (amber) and ISCO (green) are marked on it at their heights. A test
+  checks the defining property by integrating the proper distance and the arc length along the
+  sheet. The opening view pulls back and looks down into it.
+- **Light streams bending around the black hole** (`render/light_streams.rs`, `LightStreamsPlugin`).
+  Every `60` simulated seconds a row of `25` parallel rays crosses the hole's equatorial plane from
+  `11 r_s` out, spread over `±6 r_s`. Each starts at light's speed in the hole's coordinates
+  (`light_velocity`, new in `physics_utils/relativity/gravity.rs`) and is stepped with the
+  Schwarzschild equation: wide rays bend, rays inside `2.6 r_s` slow and are captured, rays just
+  outside whirl round the photon sphere. They are drawn as fading streaks lifted onto the curved
+  sheet, so one circling the photon sphere runs along its ring. Render-only: not scene props, no
+  mass, and they light nothing. New tests fire rays and check capture switching between `2.55` and
+  `2.65 r_s`, a ray at `2.65 r_s` turned back, and the weak-field bend to `1%`.
+- **`ExperimentSpec::general_lighting`.** Whether the renderer adds its fixed directional light and
+  ambient fill. True for every experiment but the black hole, which is lit by nothing but its light
+  streams.
+- **`photon_sphere_radius` and `innermost_stable_circular_orbit_radius`** in
+  `physics_utils/relativity/gravity.rs`, and `black_hole_radii` in `experiments/black_hole.rs`, which
+  gives the horizon, photon sphere and ISCO in world units. The tests find both radii by scanning
+  the effective potentials rather than trusting the `1.5` and `3`.
+
+- **Spinning black holes: `physics_utils/relativity/kerr.rs`.** The Kerr solution: horizon,
+  ergosphere, prograde and retrograde ISCO and photon orbits, frame dragging, circular orbits, the
+  radiative efficiency of a disc, the Page–Thorne thin-disc flux, and the Eddington limit and disc
+  temperature for a real mass. And the equation of motion for matter and light in Kerr–Schild
+  coordinates, with analytic Christoffel symbols. Its tests check published radii, the disc's energy
+  budget closing, orbits holding and plunging either side of the ISCO, conserved quantities, frame
+  dragging against the metric, and light escaping with the spin where it is captured against it.
+- **`GravityModel::Kerr { spin }`**, with the spin along world `+Y`. Under it (and under
+  `Schwarzschild`) the integrator takes second-order Heun steps: the first-order step pumped energy
+  into orbits near a hole, so a body nudged inside the ISCO drifted out instead of plunging.
+- **`experiment_6`'s Sgr A* spins (`a = 0.9`, `SGR_A_STAR_SPIN`) and has an accretion disc**
+  (`render/accretion_disc.rs`, `AccretionDiscPlugin`): `3,000` clumps of gas orbiting at the Kerr
+  rate, drifting inward (sped up), plunging along real paths inside the ISCO, and glowing at the
+  Page–Thorne temperature for a tenth of the Eddington rate, as the camera sees it: redshifted by
+  gravity, Doppler-shifted and `g⁴`-beamed by their motion. The ergosphere is drawn as an outline.
+  The hole is drawn at its spinning horizon (`10.8` units, down from `12.7`) and captures there, and
+  the camera is placed to see it (see Changed).
+
+- **The accretion disc is seen through the hole's gravitational lens** (`render/disc_lensing.rs`).
+  Rays traced backwards from the camera along exact Kerr light paths show where each part of the
+  disc appears: the far side arched over the hole, its underside as a second image below it, a
+  hairline third image at the shadow's edge, and the near side barely moved. Each image's redshift
+  uses the direction its light really left in. Traced in about three seconds on a background
+  thread, and again only when the camera moves in, out, up, or down. `equatorial_coordinates` in
+  `kerr.rs` inverts `equatorial_point`.
+
+### Removed
+
+- **`experiment_6` shows only its accretion disc.** The light streams (`LightStreamsPlugin`) are no
+  longer added to the app and the ergosphere outline is no longer drawn, so the disc is easy to see.
+  Both stay in the library (`render/light_streams.rs`, `ergosphere_outline`) with their tests. The
+  camera moves in to frame the disc (`135` units, from `160`).
+- **The redshift-ten capture radius** (`capture_radius_units`, `BLACK_HOLE_CAPTURE_REDSHIFT_FACTOR`).
+  Under the Kerr–Schild time `experiment_6` now uses, matter crosses the horizon in a finite time, so
+  there is nothing to stop short of.
+- **`experiment_6`'s floor and its curved equatorial sheet** (`render/gravity_well.rs`,
+  `GravityWellPlugin`, the photon-sphere and ISCO rings on it, and the `GRAVITY_WELL_*` and
+  `BLACK_HOLE_RING_*` constants), so the scene is the hole and its light alone. The hole moved to
+  the origin, and `BLACK_HOLE_HEIGHT_UNITS` went with the floor. `flamm_paraboloid_height` stays in
+  the relativity library with its tests.
+
+- **`experiment_6`'s three orbiting neutron stars and the flat photon-sphere and ISCO rings**, both
+  added earlier the same day. The stars made way for the gravity well; the rings moved onto it.
+  The check that an orbit inside the ISCO plunges, where its Newtonian twin does not, now places
+  its own body in the test.
+
 ### Changed
 
+- **The disc is denser** (`10,000` clumps, from `3,000`), and `experiment_6`'s camera starts `10°`
+  above the disc (`(0, 58.5, 331)`), low enough to see its underside below the hole.
+- **The light streams use the Kerr equation**, with the spin from the scene: a spinning hole drags
+  them, so its shadow is lopsided, and captured rays fall through the horizon rather than piling up
+  at it.
+- **The light falls in on the black hole from every direction, far more densely.** Instead of one
+  row of `25` parallel rays across the plane every `60 s`, `48` rays every `10 s` set off inward from
+  points spread evenly over a sphere `12 r_s` round the hole (fixed seed, `LIGHT_STREAM_SEED`), each
+  aimed off centre by an impact parameter spread over a `4 r_s` disc: about three to six thousand
+  rays in flight. They are drawn at their true positions in 3-D. A ray's step now scales with
+  `r/c` rather than with its distance to the horizon, which cut the cost fourfold (rays creeping
+  towards the horizon were taking hundredth-of-a-second steps) without changing any outcome.
+- **Sgr A*'s mass and colour are shared constants** (`SGR_A_STAR_MASS_KG`, `SGR_A_STAR_COLOR`), so
+  the `B`-key hole and `experiment_6` are the same object.
 - **`KEY_BINDINGS` is gone**, replaced by `ACTIONS` (rebindable), `FIXED_BINDINGS` (mouse, `Esc`,
   quit keys), and `BINDABLE_KEYS`. Paired rows like `W / S` are now one row per key. The numpad's
   `+` is no longer a second key for "time scale x10"; bind it in the menu if you want it.

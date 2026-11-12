@@ -19,11 +19,13 @@
 //!   its primary by name.
 //! - **The Jovian system** — `experiment_4`: the Galilean moons.
 //! - **The scale check** — `experiment_5`: the static size-comparison row.
+//! - **The black hole** — `experiment_6`: Sgr A*, spinning, with its disc, and the S-stars round it.
 //! - **Randomness** — the fallback seed.
 
 pub use bevy::math::Vec3;
 
 use crate::core::scene::Color;
+use crate::experiments::black_hole::SStar;
 use crate::experiments::objects::StellarObject;
 use crate::experiments::solar_system::{MoonSystem, Planet};
 
@@ -659,15 +661,10 @@ pub const STELLAR_OBJECTS: [StellarObject; 5] = [
     },
     StellarObject {
         name: "Sgr A*",
-        mass_kg: 8.5467e36,
+        mass_kg: SGR_A_STAR_MASS_KG,
         radius_m: 1.26933e10,
         capture_radius_m: Some(1.13104e11),
-        color: Color {
-            r: 0.01,
-            g: 0.01,
-            b: 0.02,
-            a: 1.0,
-        },
+        color: SGR_A_STAR_COLOR,
         absorbs: true,
         note: "4.3 million Msun, Sgr A* — horizon 12.7 million km",
         luminosity_solar: 0.0,
@@ -1034,5 +1031,330 @@ pub const MOON_SYSTEMS: [MoonSystem; 2] = [
     MoonSystem {
         primary: "Jupiter",
         moons: &JOVIAN_MOONS,
+    },
+];
+
+/// The mass of Sagittarius A*, the black hole at the centre of the Milky Way, in kilograms.
+///
+/// **Why this value.** `4.3e6 M☉`, from the orbits of the stars that circle it (the GRAVITY and
+/// Keck results, `4.15`–`4.3` million solar masses). Its horizon radius follows from it:
+/// `2GM/c² = 1.27e10 m`, `12.7` world units.
+///
+/// **Used by.** The `"Sgr A*"` row of [`STELLAR_OBJECTS`] (the `B`-key placement) and
+/// [`crate::experiments::black_hole::black_hole`] (`experiment_6`), so the two holes are the same
+/// object.
+///
+/// **If you change it.** Both change together. Keep it under `f32::MAX` (`3.4e38`), the ceiling of
+/// [`Prop::mass_kg`](crate::core::scene::Prop::mass_kg). `black_hole_tests` checks the table's
+/// stored horizon radius against the one computed from this mass.
+pub const SGR_A_STAR_MASS_KG: f64 = 8.5467e36;
+
+/// The colour Sgr A* is drawn in: almost black, with a trace of blue.
+///
+/// **Why this value.** A black hole emits nothing and reflects nothing, so it is drawn as dark as a
+/// lit material can be while still showing its outline against a dark sky. It is not pure black so
+/// that the directional light still gives its edge a hint of shape.
+///
+/// **Used by.** The `"Sgr A*"` row of [`STELLAR_OBJECTS`] and `experiment_6`.
+///
+/// **If you change it.** Visual only.
+pub const SGR_A_STAR_COLOR: Color = Color {
+    r: 0.01,
+    g: 0.01,
+    b: 0.02,
+    a: 1.0,
+};
+
+/// Where the camera starts for `experiment_6`, relative to the black hole's centre, in world units.
+///
+/// **Why this value.** The opening view frames [`BLACK_HOLE_FRAMED_RADIUS_UNITS`]. Through a 45°
+/// field of view that needs the camera at least `135 / tan(22.5°) = 326` units away;
+/// `(0, 58.5, 331)` is `336` units out and `10°` above the hole's equator: close enough that the disc
+/// fills the view, and low enough to see light bending both ways round the hole. The far side of
+/// the disc appears arched over the hole, and its underside, seen by light bent under the hole,
+/// appears below it. That second image only shows from near the disc's plane: light passing under
+/// the hole crosses the plane in front of it, and from higher up it crosses on the disc, which
+/// blocks it. From `15°` the underside is hidden; from `30°` the second image shows only `1.5%` of
+/// the disc.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+///
+/// **If you change it.** `catalog_tests::every_experiment_frames_its_own_scene` checks it is still
+/// far enough back.
+pub const BLACK_HOLE_CAMERA_OFFSET_UNITS: Vec3 = Vec3::new(0.0, 58.5, 331.0);
+
+/// Radius about the black hole that `experiment_6`'s opening view contains, in world units.
+///
+/// **Why this value.** The accretion disc reaches `20 r_g` (`render::constants::DISC_OUTER_RADIUS_RG`;
+/// this layer may not read it, so the two are kept in step by hand), which is `127` units in the
+/// scene's coordinates. `135` frames all of it with a little margin.
+///
+/// **Used by.** `black_hole`, as the spec's
+/// [`framed_radius_units`](crate::experiments::catalog::ExperimentSpec::framed_radius_units).
+///
+/// **If you change it.** Pinned against [`BLACK_HOLE_CAMERA_OFFSET_UNITS`] by `catalog_tests`.
+pub const BLACK_HOLE_FRAMED_RADIUS_UNITS: f32 = 135.0;
+
+/// Simulated seconds per real second for `experiment_6`.
+///
+/// **Why this value.** The natural clock near Sgr A* is its light-crossing time,
+/// `r_s/c = 42 s`, and an orbit at the ISCO takes `32.6` minutes. At `100×` that orbit takes `20`
+/// seconds to watch, and an object dropped from `100` units falls in within about a minute.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+///
+/// **If you change it.** Faster than about `1e4` and a fall from rest near the horizon happens
+/// within a frame or two.
+pub const BLACK_HOLE_TIME_SCALE: f32 = 100.0;
+
+/// How long motion trails are in `experiment_6`, in world units.
+///
+/// **Why this value.** Nothing moves here until something is placed with `B`, and a body placed
+/// near the hole falls or orbits on paths a few hundred units long. `200` shows most of a close
+/// orbit; the render layer's default of `10` would be a short dash.
+///
+/// **Used by.** `black_hole`, as the spec's
+/// [`trail_length_units`](crate::experiments::catalog::ExperimentSpec::trail_length_units).
+///
+/// **If you change it.** Visual only.
+pub const BLACK_HOLE_TRAIL_LENGTH_UNITS: f32 = 200.0;
+
+/// Gravitational softening for `experiment_6`, in world units.
+///
+/// **Why this value.** Softening stands for a body's finite size and weakens gravity inside about
+/// that distance. The crate-wide default of `1.0` unit would leave only `99.4%` of the true pull at
+/// Sgr A*'s horizon. At `0.1` it is `99.994%` there, and nothing gets closer than the horizon
+/// without being swallowed.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`], as the scene's
+/// [`softening_units`](crate::core::scene::Scene::softening_units).
+///
+/// **If you change it.** Keep it well below the horizon radius.
+pub const BLACK_HOLE_SOFTENING_UNITS: f32 = 0.1;
+
+/// How far the scene's bounds extend from the black hole's centre, in world units.
+///
+/// **Why this value.** Bounds are descriptive (nothing is removed for leaving them), and `150`
+/// takes in the whole accretion disc (`127` units).
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+///
+/// **If you change it.** Nothing in the simulation reads it; `catalog_tests` requires valid bounds.
+pub const BLACK_HOLE_BOUNDS_EXTENT_UNITS: f32 = 150.0;
+
+/// The dimensionless spin `a/M` of `experiment_6`'s Sgr A*, about the world's vertical axis.
+///
+/// **Why this value.** Spin is the hardest property of a black hole to measure, and Sgr A*'s is not
+/// pinned down. Event Horizon Telescope imaging and flare timing favour a high spin, with estimates
+/// commonly between about `0.5` and `0.94`; `0.9` sits in that range and is large enough that every
+/// effect of spin is plain: the horizon shrinks to `1.44 r_g`, the ISCO to `2.32 r_g`, and a disc's
+/// efficiency rises from `5.7%` to `15.6%`.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`], as the scene's
+/// `GravityModel::Kerr` spin, and so by the disc the render layer draws round it.
+///
+/// **If you change it.** Must be in `[0, 1)`. `0` is a Schwarzschild hole (and the disc, which
+/// needs spin, disappears).
+pub const SGR_A_STAR_SPIN: f64 = 0.9;
+
+/// One astronomical unit, in metres (IAU 2012, exact).
+///
+/// **Why this value.** It is the definition.
+///
+/// **Used by.** [`crate::experiments::black_hole::s_star_state`]: an arcsecond at a distance of `d`
+/// parsecs is `d` AU, which is how the S-stars' orbits are quoted.
+///
+/// **If you change it.** Don't.
+pub const ASTRONOMICAL_UNIT_M: f64 = 1.495_978_707e11;
+
+/// The Sun's mass, in kilograms (IAU 2015 nominal, `GM☉/G`).
+///
+/// **Why this value.** The S-stars' masses are quoted in solar masses.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`], for the S-stars.
+///
+/// **If you change it.** Every S-star's mass moves with it; their orbits do not, since the hole is
+/// `300,000` times heavier than any of them.
+pub const SOLAR_MASS_KG: f64 = 1.988_47e30;
+
+/// The Sun's radius, in metres (IAU 2015 nominal).
+///
+/// **Why this value.** The S-stars' radii are quoted in solar radii.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`], for the S-stars.
+///
+/// **If you change it.** Only their drawn size changes.
+pub const SOLAR_RADIUS_M: f64 = 6.957e8;
+
+/// The distance to the Galactic Centre the S-stars' orbits were fitted with, in parsecs.
+///
+/// **Why this value.** Gillessen et al. (2017) fit it together with the orbits and the hole's mass:
+/// `R0 = 8.32 kpc` (`8.323 ± 0.070` statistical). The orbits' angular sizes are only consistent with
+/// their periods at that distance and their mass of `4.28e6 M☉`, close to this scene's `4.3e6`.
+///
+/// **Used by.** [`crate::experiments::black_hole::s_star_state`]: an arcsecond is `8,323` AU.
+///
+/// **If you change it.** The orbits scale with it, and their periods (from Kepler's third law for
+/// the scene's mass) as its `1.5` power; they then no longer match the observed periods.
+pub const S_STAR_DISTANCE_PC: f64 = 8323.0;
+
+/// The date the S-stars start at, as a decimal year: 11 November 2026.
+///
+/// **Why this value.** The day `experiment_6` gained them; each opens where its measured orbit puts
+/// it then. S2, for one, is half a year past apocentre (2026.3) and heading back in towards its
+/// 2034 pericentre.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+///
+/// **If you change it.** Every star starts elsewhere on its orbit.
+pub const S_STAR_EPOCH_YR: f64 = 2026.86;
+
+/// The colour of the young, hot (B-type) S-stars, linear RGB: blue-white, as a blackbody at about
+/// `20,000 K`.
+///
+/// **Why this value.** All but one of these are early-type: B dwarfs of `10`–`15 M☉`.
+///
+/// **Used by.** [`S_STARS`].
+///
+/// **If you change it.** Visual only.
+pub const S_STAR_EARLY_TYPE_COLOR: Color = Color {
+    r: 0.62,
+    g: 0.72,
+    b: 1.0,
+    a: 1.0,
+};
+
+/// The colour of a late-type (cool giant) S-star, linear RGB: orange, as a blackbody at about
+/// `4,000 K`.
+///
+/// **Why this value.** S38 is classed late-type in Gillessen et al. (2017).
+///
+/// **Used by.** [`S_STARS`].
+///
+/// **If you change it.** Visual only.
+pub const S_STAR_LATE_TYPE_COLOR: Color = Color {
+    r: 1.0,
+    g: 0.55,
+    b: 0.22,
+    a: 1.0,
+};
+
+/// The S-stars `experiment_6` puts round Sgr A*: the six of Gillessen et al. (2017, *ApJ* 837, 30,
+/// Table 3) with orbits under `0.3″` (`2,500` AU).
+///
+/// **Why these values.** The orbits (`a`, `e`, `i`, `Ω`, `ω`, `t_P`) are the paper's, as printed.
+/// Between them they lie at every angle to the hole's equatorial plane: S13 and S12 `25`–`34°` from
+/// it (going round with the spin), S14 nearly at right angles to it, S2 and S55 tilted back past
+/// `90°` (going round against the spin), and S38 almost flat but retrograde, so each spends part of
+/// its orbit north of the equator and part south. On their real orbits S14 comes closest, `57` AU
+/// (`8,500` units) at pericentre.
+///
+/// `experiment_6` brings them in close ([`crate::experiments::black_hole::s_star_close_state`]):
+/// each keeps its orbit's plane but goes round a circle of `close_orbit_rg` gravitational radii,
+/// just outside the disc (`20 r_g`) and just outside its own tidal radius
+/// ([`crate::experiments::black_hole::tidal_radius_m`]), the closest a real star can orbit without
+/// being torn apart: `1.1`–`1.3` times it, staggered so no two share a radius. The B dwarfs' tidal
+/// radii are `41`–`44 r_g`, S55's `31`, and the giant S38's `141`, which is why it sits much
+/// further out. At `36`–`58 r_g` they move at `13`–`17%` of the speed of light, an orbit every
+/// `8`–`16` simulated hours (`5`–`10` minutes at the experiment's clock); S38 takes three days.
+///
+/// The stars themselves are mostly **not** measured, and these numbers are typical, not fitted:
+/// - **S2**: a B0–B2.5 dwarf; its mass is estimated at about `14 M☉` (Habibi et al. 2017), and a
+///   radius of `6 R☉` and luminosity of `2×10⁴ L☉` go with that.
+/// - **S12, S13, S14**: early-type (B) stars, given a typical B dwarf's `10 M☉`, `5 R☉`, `10⁴ L☉`.
+/// - **S38**: late-type, so a cool giant: `2 M☉`, `10 R☉`, `50 L☉`.
+/// - **S55**: spectral type unknown (the paper says so) and faint (`K = 17.5`), so a smaller B dwarf:
+///   `5 M☉`, `3 R☉`, `10³ L☉`.
+///
+/// None of that changes the orbits: each star is `300,000` or more times lighter than the hole.
+///
+/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+///
+/// **If you change it.** Adding a star from the same table is one row. Stars with larger orbits
+/// (S1, S8, S29 reach `5,000`–`10,000` AU) pass beyond the camera's far plane.
+pub const S_STARS: [SStar; 6] = [
+    SStar {
+        name: "S2",
+        semi_major_axis_arcsec: 0.1255,
+        eccentricity: 0.8839,
+        inclination_deg: 134.18,
+        ascending_node_deg: 226.94,
+        periapsis_deg: 65.51,
+        pericentre_yr: 2002.33,
+        mass_solar: 14.0,
+        radius_solar: 6.0,
+        luminosity_solar: 2.0e4,
+        color: S_STAR_EARLY_TYPE_COLOR,
+        close_orbit_rg: 58.0,
+    },
+    SStar {
+        name: "S12",
+        semi_major_axis_arcsec: 0.2987,
+        eccentricity: 0.8883,
+        inclination_deg: 33.56,
+        ascending_node_deg: 230.1,
+        periapsis_deg: 317.9,
+        pericentre_yr: 1995.59,
+        mass_solar: 10.0,
+        radius_solar: 5.0,
+        luminosity_solar: 1.0e4,
+        color: S_STAR_EARLY_TYPE_COLOR,
+        close_orbit_rg: 46.0,
+    },
+    SStar {
+        name: "S13",
+        semi_major_axis_arcsec: 0.2641,
+        eccentricity: 0.4250,
+        inclination_deg: 24.70,
+        ascending_node_deg: 74.5,
+        periapsis_deg: 245.2,
+        pericentre_yr: 2004.86,
+        mass_solar: 10.0,
+        radius_solar: 5.0,
+        luminosity_solar: 1.0e4,
+        color: S_STAR_EARLY_TYPE_COLOR,
+        close_orbit_rg: 50.0,
+    },
+    SStar {
+        name: "S14",
+        semi_major_axis_arcsec: 0.2863,
+        eccentricity: 0.9761,
+        inclination_deg: 100.59,
+        ascending_node_deg: 226.38,
+        periapsis_deg: 334.59,
+        pericentre_yr: 2000.12,
+        mass_solar: 10.0,
+        radius_solar: 5.0,
+        luminosity_solar: 1.0e4,
+        color: S_STAR_EARLY_TYPE_COLOR,
+        close_orbit_rg: 54.0,
+    },
+    SStar {
+        name: "S38",
+        semi_major_axis_arcsec: 0.1416,
+        eccentricity: 0.8201,
+        inclination_deg: 171.1,
+        ascending_node_deg: 101.06,
+        periapsis_deg: 17.99,
+        pericentre_yr: 2003.19,
+        mass_solar: 2.0,
+        radius_solar: 10.0,
+        luminosity_solar: 50.0,
+        color: S_STAR_LATE_TYPE_COLOR,
+        close_orbit_rg: 160.0,
+    },
+    SStar {
+        name: "S55",
+        semi_major_axis_arcsec: 0.1078,
+        eccentricity: 0.7209,
+        inclination_deg: 150.1,
+        ascending_node_deg: 325.5,
+        periapsis_deg: 331.5,
+        pericentre_yr: 2009.34,
+        mass_solar: 5.0,
+        radius_solar: 3.0,
+        luminosity_solar: 1.0e3,
+        color: S_STAR_EARLY_TYPE_COLOR,
+        close_orbit_rg: 36.0,
     },
 ];

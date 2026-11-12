@@ -9,10 +9,14 @@
 //! Unlike [`crate::core`], modules here may import Bevy freely — that is the
 //! whole point of the split.
 
+pub mod accretion_disc;
+pub mod black_hole_view;
 pub mod bridge;
 pub mod constants;
 pub mod eclipse;
 pub mod grid;
+pub mod kerr_ray;
+pub mod light_streams;
 pub mod mission;
 pub mod placement;
 pub mod plugin;

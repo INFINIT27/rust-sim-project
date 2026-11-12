@@ -6,8 +6,8 @@
 > collisions, and four-vectors. Plus the closed-form results of general relativity around one mass
 > (clock rates, redshift, Mercury's precession, light bending).
 > **Edit here to:** add or fix a relativistic formula, or the speed of light.
-> **Not here:** Newtonian formulas and `G` are in [`physics_utils/`](../README.md). Nothing in the
-> simulation calls this directory; it is a library of formulas with tests.
+> **Not here:** Newtonian formulas and `G` are in [`physics_utils/`](../README.md). The black-hole
+> experiment that uses `gravity.rs` is [`experiments/black_hole.rs`](../../experiments/README.md).
 
 Everything in special relativity follows from two postulates: the laws of physics are the same in
 every inertial frame, and `c` is the same in every inertial frame. The files here build up from
@@ -38,7 +38,8 @@ its own constant (`c`), its own domain rule (`|v| < c`), and its own error conve
 | `collisions.rs` | `total_relativistic_momentum`, `total_relativistic_energy`, `centre_of_momentum_velocity`, `system_invariant_mass`, and the solvers `elastic_collision_1d` and `perfectly_inelastic_collision_1d` (which returns the merged **mass** as well as the velocity). |
 | `velocity_3d.rs` | Any direction: `transform_velocity_3d`, `compose_velocities_3d`, `speed`, `wigner_rotation_angle`, `aberration_angle`. |
 | `four_vector.rs` | `FourVector` with `minkowski_product`, `invariant`, `plus`, and `boost` (the `4×4` Lorentz transformation in any direction); `event_four_vector`, `four_momentum`. |
-| `gravity.rs` | **General relativity**, closed forms only: `schwarzschild_radius`, `gravitational_time_dilation_factor`, `gravitational_rate_deficit`, `gravitational_redshift`, `perihelion_precession_per_orbit`, `light_deflection_angle`, `orbiting_clock_rate_offset`. |
+| `gravity.rs` | **General relativity**, closed forms only: `schwarzschild_radius`, `photon_sphere_radius`, `innermost_stable_circular_orbit_radius`, `schwarzschild_acceleration` (the exact equation of motion near a black hole), `flamm_paraboloid_height` (the shape of the equatorial plane as curved space), `light_velocity` (light's velocity near the hole, for a given direction), `gravitational_time_dilation_factor`, `gravitational_rate_deficit`, `gravitational_redshift`, `perihelion_precession_per_orbit`, `light_deflection_angle`, `orbiting_clock_rate_offset`. |
+| `kerr.rs` | **Spinning black holes** (the Kerr solution), in gravitational radii `r_g = GM/c²`: `horizon_radius`, `ergosphere_radius`, `isco_radius` and `photon_orbit_radius` (prograde and retrograde), `frame_dragging_angular_velocity`, `horizon_angular_velocity`, `circular_orbit` (`Ω`, `E`, `L`), `radiative_efficiency`, `disc_flux` (Page–Thorne thin disc). `KerrBlackHole` for SI: Eddington luminosity, accretion rate, disc flux and temperature. Motion in Kerr–Schild coordinates: `kerr_schild_acceleration` (matter and light), `kerr_schild_light_velocity`, `kerr_schild_norm`, `kerr_schild_metric`, `kerr_schild_radius`, `equatorial_point` and its inverse `equatorial_coordinates`. |
 
 `momentum.rs`, `dynamics.rs` and `collisions.rs` mirror the parent layer's own split:
 `conservation_laws.rs` holds momentum and the collision solvers and `newtons_laws.rs` holds force.
@@ -53,7 +54,7 @@ constants ─ lorentz ─┬─ time_dilation, length_contraction, velocity
                      ├─ energy_momentum  (no γ at all: only c)
                      ├─ collisions       (uses velocity)
                      └─ velocity_3d, four_vector
-constants + G ─ gravity                  (nothing else here uses G)
+constants + G ─ gravity, kerr           (nothing else here uses G)
 ```
 
 The only constant is still `SPEED_OF_LIGHT_M_S`. `gravity.rs` takes `G` from the parent layer's
@@ -234,10 +235,10 @@ On one axis velocities compose in either order. In 3-D, `u ⊕ v` and `v ⊕ u` 
 `12.7°` for two perpendicular boosts at `0.6c`, `4.9e-9 rad` at Earth's orbital speed. This is why the
 one-axis functions must not be applied per component, and why `FourVector::boost` exists.
 
-## General relativity: formulas, not a solver
+## General relativity around one mass
 
-`gravity.rs` holds what the Schwarzschild solution gives in closed form. Each is tested against a
-measurement:
+`gravity.rs` holds what the Schwarzschild solution gives in closed form, and one equation of motion.
+Each closed form is tested against a measurement:
 
 | Function | Check |
 | --- | --- |
@@ -249,6 +250,59 @@ measurement:
 The GPS figure is where the two theories meet. Height makes the satellite clock fast by
 `45.7 µs/day`; speed makes it slow by the `7.2 µs/day` that `time_dilation.rs` computes. A test adds
 the two from separate code and compares with the combined formula.
+
+### Spinning holes: `kerr.rs`
+
+The Kerr solution is the exact spacetime of a spinning, uncharged black hole. Spin shrinks the
+horizon (`2 r_g` to `1.44 r_g` at `a = 0.9`), lets matter orbiting with the spin circle far closer
+in (the prograde ISCO falls from `6 r_g` to `2.32 r_g`), and so raises the fraction of rest energy an
+accretion disc radiates from `5.7%` to `15.6%` (`42%` at the limit). Inside the ergosphere
+(`2 r_g` at the equator) space is dragged round faster than anything can move against it.
+
+`disc_flux` is the Page–Thorne flux of a thin disc, from conservation of energy and angular momentum
+alone: zero at the ISCO, peaking just outside, `r⁻³` far out. Its test that matters most is the
+energy budget: the flux over both faces, weighted by each ring's orbital energy, adds up to
+`1 − E_ISCO`, to half a percent.
+
+`kerr_schild_acceleration` is the geodesic equation in Kerr–Schild coordinates, with the Christoffel
+symbols computed analytically from the metric's `η + f k k` form (a slower numerical version in the
+tests agrees with it). Its tests: a prograde circular orbit with the Bardeen–Press–Teukolsky rate is
+exactly centripetal and stays circular when integrated; energy and angular momentum about the spin
+axis are conserved; an orbit holds just outside the ISCO and plunges just inside; a body with no
+angular momentum co-rotates at the frame-dragging rate; and light passing with the spin escapes at
+`4 r_g` where light passing against it is captured.
+
+### The shape of space: Flamm's paraboloid
+
+`flamm_paraboloid_height` is `z = 2√(r_s(r − r_s))`. In a black hole's equatorial plane the distance
+measured outward between two circles exceeds the difference of their radii, by `1/√(1 − r_s/r)`, so
+the plane cannot be drawn flat. Lifting each circle to height `z(r)` makes distance along the sheet
+equal the true distance; the test checks exactly that, by integrating both. The sheet meets the
+horizon vertically and never flattens. Nothing draws it at the moment; `experiment_6` drew it as a
+grid for a while, and the function and its tests stay as part of the library.
+
+### The equation of motion
+
+`schwarzschild_acceleration` is the exact geodesic equation for a small body near a non-rotating
+black hole, in the hole's Schwarzschild coordinates with the distant observer's clock as time. It is
+the one function here the simulation steps with: `experiment_6` runs under
+`GravityModel::Schwarzschild`, and the integrator calls it for every black hole's pull. Its tests
+integrate it with RK4 so the formula, not the integrator, is what they measure:
+
+- the geodesic's energy and angular momentum, which come from the metric rather than the equation,
+  stay constant to `1e-10`;
+- a weak-field orbit precesses by `perihelion_precession_per_orbit` to `1%`;
+- an orbit released at `9 r_s` reaches the `4.5 r_s` periapsis worked by hand;
+- nudged circular orbits survive outside the ISCO and plunge inside it;
+- light circles at `1.5 r_s` at `c/√3`;
+- a body falling from far away peaks at `2c/(3√3) = 0.385c` and never crosses the horizon.
+
+The same equation moves light. `light_velocity` gives a ray its starting velocity: in these
+coordinates light near the hole moves slower than `c`, `A·c` radially and `√A·c` across, and the
+returned velocity satisfies the null condition exactly. The light tests fire rays and check that
+they stay null, that capture switches between impact parameters `2.55` and `2.65 r_s` (the critical
+value is `3√3/2 = 2.598`), that a ray at `2.65 r_s` comes back the way it came, and that a distant
+ray bends by `light_deflection_angle` to `1%`.
 
 ## Tests
 
@@ -269,11 +323,12 @@ source file, each `#[path]`-included into its subject. Proptest seeds go to
 
 ## What this cannot do
 
-- **No solver for general relativity.** `gravity.rs` is closed-form results around one spherical,
-  non-rotating mass. There are no geodesics, no curved-spacetime integrator, no rotating (Kerr) or
-  charged masses, no gravitational waves, no cosmology. The crate's integrator is still Newtonian,
-  so Mercury's orbit in the simulation does not precess; `perihelion_precession_per_orbit` only says
-  by how much it should.
+- **General relativity around one mass, spinning or not, for test bodies only.** The equations of
+  motion treat the orbiting body as massless and the hole as fixed in its own frame; two black holes
+  meeting, charged masses, gravitational waves, and cosmology are all absent. The accretion disc is
+  the thin-disc model only: no thick or hot flows, no magnetic fields, no radiation transfer. Only black holes pull relativistically, and only in a scene that asks for it, so
+  Mercury's orbit in `experiment_3` does not precess; `perihelion_precession_per_orbit` only says by
+  how much it should.
 - **Three of the gravity formulas are first order** in `r_s/r` (precession, light bending, the
   orbiting clock). They are right to parts per million in the solar system and wrong near a black
   hole.
@@ -288,6 +343,7 @@ source file, each `#[path]`-included into its subject. Proptest seeds go to
 - **No electromagnetism.** Fields do not transform here.
 - **No relativistic renderer.** Length contraction here is what a frame *measures*, not what a camera
   would photograph. A fast cube looks rotated (Penrose–Terrell), not squashed.
-- **Nothing in the simulation uses any of it.** At solar-system speeds γ−1 is `5e-9`, so
-  `experiment_3` is Newtonian to eight decimal places and is right to ignore this. These functions
-  are a tested library, not a change to what runs.
+- **Only `experiment_6` uses it.** At solar-system speeds γ−1 is `5e-9`, so `experiment_3` is
+  Newtonian to eight decimal places and is right to ignore this. `experiment_6` is a spinning Sgr A*:
+  it is sized, steps anything placed near it, draws its accretion disc, and bends light round it, all
+  with `kerr.rs`.

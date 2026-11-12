@@ -4,7 +4,9 @@
 //! postulates — the laws of physics are the same in every inertial frame, and `c` is the same in
 //! every inertial frame. [`gravity`] is the one module about general relativity.
 //!
-//! Nothing in the simulation calls this sub-layer. It is a library of formulas with tests.
+//! Mostly a library of formulas with tests. The one caller in the simulation is `experiment_6`
+//! ([`crate::experiments::black_hole`]), which sizes its black hole from [`gravity`], steps anything
+//! placed near it, draws its accretion disc, and bends light round it with [`kerr`].
 //!
 //! # What is where
 //!
@@ -26,6 +28,7 @@
 //! | [`velocity_3d`] | Velocities in any direction, the Wigner rotation, and aberration. |
 //! | [`four_vector`] | `FourVector`, the Minkowski product, and the boost in any direction. |
 //! | [`gravity`] | General relativity around one mass: clock rates, redshift, perihelion precession, light bending. |
+//! | [`kerr`] | Spinning black holes: horizon, ergosphere, ISCO, photon orbits, frame dragging, the accretion disc's flux, and motion in Kerr–Schild coordinates. |
 //!
 //! The last two mirror the parent layer's own split — [`conservation_laws`] holds momentum and
 //! [`newtons_laws`] holds force, so [`momentum`] and [`dynamics`] sit in the same relationship here.
@@ -81,6 +84,7 @@ pub mod energy;
 pub mod energy_momentum;
 pub mod four_vector;
 pub mod gravity;
+pub mod kerr;
 pub mod length_contraction;
 pub mod lorentz;
 pub mod momentum;

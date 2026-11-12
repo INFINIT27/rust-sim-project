@@ -21,7 +21,7 @@
 //!
 //! | Function | Validity |
 //! | --- | --- |
-//! | [`schwarzschild_radius`], [`gravitational_time_dilation_factor`], [`gravitational_rate_deficit`], [`gravitational_redshift`] | Exact outside a spherical non-rotating mass, for clocks at rest. |
+//! | [`schwarzschild_radius`], [`photon_sphere_radius`], [`innermost_stable_circular_orbit_radius`], [`gravitational_time_dilation_factor`], [`gravitational_rate_deficit`], [`gravitational_redshift`] | Exact outside a spherical non-rotating mass, for clocks at rest. |
 //! | [`perihelion_precession_per_orbit`], [`light_deflection_angle`], [`orbiting_clock_rate_offset`] | First order in `r_s/r`. Good to about `r_s/r` itself: parts per million at the Sun's surface, useless near a black hole. |
 //!
 //! # Radius means the Schwarzschild coordinate `r`
@@ -328,6 +328,295 @@ pub fn orbiting_clock_rate_offset(
     let offset = half_horizon * (1.0 / ground_radius_m - 1.5 / orbit_radius_m);
 
     offset.is_finite().then_some(offset)
+}
+
+/// The radius at which light can orbit a black hole in a circle: `r = 1.5·r_s = 3GM/c²`.
+///
+/// The **photon sphere**. Inside it no circular orbit exists for anything, light included. Light
+/// circling there is unstable: the slightest nudge sends it inwards across the horizon or out to
+/// infinity. The dark disc in a black-hole image is the photon sphere's shadow, seen magnified by
+/// the bending of light to `√27/2 ≈ 2.6` horizon radii.
+///
+/// Exact for a non-rotating, uncharged hole.
+///
+/// # Returns
+///
+/// Metres. `None` if the mass is not positive and finite.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::physics_utils::relativity::gravity::{
+///     photon_sphere_radius, schwarzschild_radius,
+/// };
+///
+/// let mass = 8.5467e36; // Sgr A*
+/// let ratio = photon_sphere_radius(mass).unwrap() / schwarzschild_radius(mass).unwrap();
+/// assert!((ratio - 1.5).abs() < 1.0e-15);
+/// ```
+pub fn photon_sphere_radius(mass_kg: f64) -> Option<f64> {
+    Some(1.5 * schwarzschild_radius(mass_kg)?)
+}
+
+/// The radius of the innermost stable circular orbit (ISCO) around a black hole:
+/// `r = 3·r_s = 6GM/c²`.
+///
+/// In Newtonian gravity a circular orbit is stable at every radius. Around a black hole circular
+/// orbits between the photon sphere and this radius exist but are unstable, and inside the photon
+/// sphere there are none. So the ISCO is where an accretion disc's inner edge sits: gas spirals
+/// in through the disc and, once it passes this radius, falls straight in.
+///
+/// Exact for a non-rotating, uncharged hole. A spinning hole's ISCO is smaller for orbits that go
+/// with the spin and larger for orbits against it.
+///
+/// # Returns
+///
+/// Metres. `None` if the mass is not positive and finite.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::physics_utils::relativity::gravity::{
+///     innermost_stable_circular_orbit_radius, schwarzschild_radius,
+/// };
+///
+/// let mass = 8.5467e36; // Sgr A*
+/// let isco = innermost_stable_circular_orbit_radius(mass).unwrap();
+/// assert!((isco / schwarzschild_radius(mass).unwrap() - 3.0).abs() < 1.0e-15);
+/// assert!((isco / 1.0e9 - 38.08).abs() < 0.01, "38 million km");
+/// ```
+pub fn innermost_stable_circular_orbit_radius(mass_kg: f64) -> Option<f64> {
+    Some(3.0 * schwarzschild_radius(mass_kg)?)
+}
+
+/// The height of Flamm's paraboloid at radius `r`: the shape of a black hole's equatorial plane,
+/// `z = 2√(r_s·(r − r_s))`, in metres above the horizon.
+///
+/// # What the shape is
+///
+/// Space around a mass is curved, so the equatorial plane of a black hole is not flat: a circle at
+/// coordinate radius `r` has circumference `2πr`, but the distance measured outward between two
+/// such circles is **more** than the difference of their radii, by a factor `1/√(1 − r_s/r)`. No
+/// flat sheet has that property. A sheet curved into a third dimension does, and Flamm (1916) found
+/// its shape: lift each circle of radius `r` to height `z(r)`, so a ruler laid along the sheet
+/// measures the true radial distance. The sheet meets the horizon at its equator, vertically, and
+/// opens out from there. This is the "rubber sheet" picture of gravity, drawn exactly.
+///
+/// The third dimension is not a direction in space. It is only how much room the sheet needs to
+/// hold the extra distance. And the shape is of space at one instant, not of the paths bodies take.
+///
+/// # Returns
+///
+/// Metres, `0` at the horizon and growing as `2√(r_s·r)` far out, with no upper bound: the sheet
+/// never becomes flat, though its slope `√(r_s/(r − r_s))` tends to zero. `None` if the mass is not
+/// positive and finite, `r` is not finite, or `r < r_s`.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::physics_utils::relativity::gravity::{
+///     flamm_paraboloid_height, schwarzschild_radius,
+/// };
+///
+/// let mass = 8.5467e36; // Sgr A*
+/// let r_s = schwarzschild_radius(mass).unwrap();
+///
+/// assert_eq!(flamm_paraboloid_height(mass, r_s), Some(0.0));
+///
+/// // At 5 r_s the sheet has risen 4 r_s; at 10 r_s, 6 r_s.
+/// assert!((flamm_paraboloid_height(mass, 5.0 * r_s).unwrap() / r_s - 4.0).abs() < 1.0e-12);
+/// assert!((flamm_paraboloid_height(mass, 10.0 * r_s).unwrap() / r_s - 6.0).abs() < 1.0e-12);
+///
+/// assert_eq!(flamm_paraboloid_height(mass, 0.5 * r_s), None);
+/// ```
+pub fn flamm_paraboloid_height(mass_kg: f64, radius_m: f64) -> Option<f64> {
+    let horizon = schwarzschild_radius(mass_kg)?;
+
+    if !radius_m.is_finite() || radius_m < horizon {
+        return None;
+    }
+
+    let height = 2.0 * (horizon * (radius_m - horizon)).sqrt();
+
+    height.is_finite().then_some(height)
+}
+
+/// The velocity of a ray of light at `offset_m` from a non-rotating black hole, heading in
+/// `direction`, in the coordinates and time of [`schwarzschild_acceleration`].
+///
+/// # Why light is not simply at `c` here
+///
+/// In the hole's Schwarzschild coordinates, timed by a distant clock, light near the hole moves
+/// **slower** than `c`, and by how much depends on its direction: `A·c` straight in or out and
+/// `√A·c` across, with `A = 1 − r_s/r`. That is the same statement as clocks running slow and radial
+/// distances stretching there (a local observer always measures `c`). The speed returned satisfies
+/// the null condition `A c² = ṙ²/A + v⊥²` exactly, so a ray started with it and stepped with
+/// [`schwarzschild_acceleration`] follows a path light really takes: bent, captured, or circling the
+/// photon sphere.
+///
+/// # Returns
+///
+/// Metres per second, along `direction`. `None` if the mass is not positive and finite, an input is
+/// not finite, `direction` has zero length, or the point is at or inside the horizon.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
+/// use physics_sandbox::physics_utils::relativity::gravity::{light_velocity, schwarzschild_radius};
+///
+/// let mass = 8.5467e36; // Sgr A*
+/// let r_s = schwarzschild_radius(mass).unwrap();
+/// let c = SPEED_OF_LIGHT_M_S;
+///
+/// // At 2 r_s, A = 1/2: light moves outward at c/2 and sideways at c/√2.
+/// let out = light_velocity(mass, [2.0 * r_s, 0.0, 0.0], [1.0, 0.0, 0.0]).unwrap();
+/// assert!((out[0] / c - 0.5).abs() < 1.0e-12);
+/// let across = light_velocity(mass, [2.0 * r_s, 0.0, 0.0], [0.0, 0.0, 3.0]).unwrap();
+/// assert!((across[2] / c - 0.5_f64.sqrt()).abs() < 1.0e-12);
+/// ```
+pub fn light_velocity(mass_kg: f64, offset_m: [f64; 3], direction: [f64; 3]) -> Option<[f64; 3]> {
+    if offset_m.iter().chain(&direction).any(|c| !c.is_finite()) {
+        return None;
+    }
+
+    let horizon = schwarzschild_radius(mass_kg)?;
+    let r = offset_m[0].hypot(offset_m[1]).hypot(offset_m[2]);
+    let length = direction[0].hypot(direction[1]).hypot(direction[2]);
+
+    if !r.is_finite() || r <= horizon || !length.is_finite() || length <= 0.0 {
+        return None;
+    }
+
+    let d = direction.map(|c| c / length);
+    let n = offset_m.map(|c| c / r);
+    let radial = d[0] * n[0] + d[1] * n[1] + d[2] * n[2];
+    let transverse_squared = (1.0 - radial * radial).max(0.0);
+    let a_factor = (r - horizon) / r;
+
+    // Speed s along d with A c² = (s·radial)²/A + (s·transverse)².
+    let speed = SPEED_OF_LIGHT_M_S * a_factor.sqrt()
+        / (radial * radial / a_factor + transverse_squared).sqrt();
+    let velocity = d.map(|c| c * speed);
+
+    velocity.iter().all(|c| c.is_finite()).then_some(velocity)
+}
+
+/// The acceleration of a small body near a non-rotating black hole, as a distant observer measures
+/// it: the exact Schwarzschild equation of motion, in metres per second squared.
+///
+/// # What this is
+///
+/// The geodesic equation of the Schwarzschild solution, written in the hole's own coordinates and
+/// with **coordinate time** `t` (the clock of an observer far away and at rest) as the time
+/// variable. Positions are Schwarzschild coordinates laid out as Cartesian ones: the body is at
+/// distance `r` in direction `n`, with `r` the coordinate whose circles have circumference `2πr`.
+/// With `A = 1 − r_s/r`, `ṙ = v·n` and `v⊥ = v − ṙn`:
+///
+/// ```text
+///       ⎡   GM          3 r_s          r_s        ⎤         r_s ṙ
+/// a = n ⎢ − ─── · A  +  ─────── ṙ²  −  ─── |v⊥|²  ⎥ + v⊥ · ───────
+///       ⎣   r²          2 r² A         r²         ⎦         r² A
+/// ```
+///
+/// The first term is Newton's pull weakened by `A`. The rest depend on the body's velocity, which
+/// Newtonian gravity never does. No approximation is made: this is the full equation for a test
+/// body, and the tests check that it conserves the geodesic's energy and angular momentum.
+///
+/// # What it gets right that Newton does not
+///
+/// - **Circular orbits run at Kepler's rate**, `Ω² = GM/r³` in coordinate time, at every radius
+///   outside the photon sphere. Only their stability changes: inside the ISCO a slightly disturbed
+///   circular orbit spirals in.
+/// - **Orbits precess**, by [`perihelion_precession_per_orbit`] in a weak field and by far more
+///   close in.
+/// - **Nothing reaches `c`.** A body falling in slows down as the distant observer sees it, and
+///   approaches the horizon without ever reaching it: `r − r_s` shrinks by a factor `e` every
+///   `r_s/c` or so. Light circles the hole at `1.5 r_s` at a coordinate speed of `c/√3`.
+///
+/// # Domain
+///
+/// `offset_m` is the body's position relative to the hole, `velocity_m_s` its velocity relative to
+/// the hole. The body is a test particle: its own mass does not appear, and it should be much
+/// lighter than the hole.
+///
+/// # Returns
+///
+/// `None` if the mass is not positive and finite, an input is not finite, or the body is at or
+/// inside the horizon (`r ≤ r_s`), where these coordinates stop describing motion.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::physics_utils::relativity::gravity::{
+///     schwarzschild_acceleration, schwarzschild_radius,
+/// };
+///
+/// let mass = 8.5467e36; // Sgr A*
+/// let r_s = schwarzschild_radius(mass).unwrap();
+/// let gm = 6.674_30e-11 * mass;
+///
+/// // A circular orbit at 5 r_s: the acceleration is exactly the centripetal v²/r, as in Kepler.
+/// let r = 5.0 * r_s;
+/// let v = (gm / r).sqrt();
+/// let a = schwarzschild_acceleration(mass, [r, 0.0, 0.0], [0.0, 0.0, v]).unwrap();
+/// assert!((a[0] / (-v * v / r) - 1.0).abs() < 1.0e-12);
+///
+/// // At rest just outside the horizon, the distant observer sees almost no pull: A is small.
+/// let a = schwarzschild_acceleration(mass, [1.01 * r_s, 0.0, 0.0], [0.0; 3]).unwrap();
+/// let newton = gm / (1.01 * r_s).powi(2);
+/// assert!((-a[0] / newton - 0.01 / 1.01).abs() < 1.0e-12);
+///
+/// // Inside the horizon there is no answer.
+/// assert_eq!(schwarzschild_acceleration(mass, [r_s, 0.0, 0.0], [0.0; 3]), None);
+/// ```
+pub fn schwarzschild_acceleration(
+    mass_kg: f64,
+    offset_m: [f64; 3],
+    velocity_m_s: [f64; 3],
+) -> Option<[f64; 3]> {
+    if offset_m.iter().chain(&velocity_m_s).any(|c| !c.is_finite()) {
+        return None;
+    }
+
+    let horizon = schwarzschild_radius(mass_kg)?;
+    let r = offset_m[0].hypot(offset_m[1]).hypot(offset_m[2]);
+
+    if !r.is_finite() || r <= horizon {
+        return None;
+    }
+
+    let n = offset_m.map(|c| c / r);
+    let radial_speed = n[0] * velocity_m_s[0] + n[1] * velocity_m_s[1] + n[2] * velocity_m_s[2];
+    let transverse = [
+        velocity_m_s[0] - radial_speed * n[0],
+        velocity_m_s[1] - radial_speed * n[1],
+        velocity_m_s[2] - radial_speed * n[2],
+    ];
+    let transverse_squared = transverse[0] * transverse[0]
+        + transverse[1] * transverse[1]
+        + transverse[2] * transverse[2];
+
+    // `A = 1 − r_s/r` as `(r − r_s)/r`: near the horizon the subtraction of radii keeps its digits.
+    let a_factor = (r - horizon) / r;
+    let gm = 0.5 * horizon * SPEED_OF_LIGHT_M_S * SPEED_OF_LIGHT_M_S;
+    let r_squared = r * r;
+
+    let radial = -gm / r_squared * a_factor
+        + 1.5 * horizon / (r_squared * a_factor) * radial_speed * radial_speed
+        - horizon / r_squared * transverse_squared;
+    let along_transverse = horizon * radial_speed / (r_squared * a_factor);
+
+    let acceleration = [
+        radial * n[0] + along_transverse * transverse[0],
+        radial * n[1] + along_transverse * transverse[1],
+        radial * n[2] + along_transverse * transverse[2],
+    ];
+
+    acceleration
+        .iter()
+        .all(|c| c.is_finite())
+        .then_some(acceleration)
 }
 
 #[cfg(test)]

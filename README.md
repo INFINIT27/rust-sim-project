@@ -73,6 +73,7 @@ cargo run --release -- --list   # every experiment
 cargo run --release -- --help   # arguments and all in-window keys
 cargo run --release -- moons    # Jupiter and the Galilean moons
 cargo run --release -- scale    # the planets side by side at true size
+cargo run --release -- black-hole  # Sgr A*, the Milky Way's central black hole
 ```
 
 Running with no argument starts `experiment_1`, the two-body free fall.
@@ -84,6 +85,11 @@ cargo test
 ```
 
 These run headlessly, so you need no window or GPU.
+
+GitHub runs the same checks on every push to `main` and every pull request into it
+([`.github/workflows/rust.yml`](.github/workflows/rust.yml)): `cargo fmt --check`,
+`cargo clippy --all-targets -- -D warnings` (any lint fails it), the build, and `cargo test`.
+To check a commit before pushing, run those four yourself.
 
 ## Where the details are
 

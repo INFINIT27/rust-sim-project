@@ -103,11 +103,16 @@ fn every_experiment_builds_a_valid_scene_and_spec() {
             "{:?} produced invalid bounds",
             id
         );
+        // Every experiment has at least one body. Most also have a floor; the black hole is alone
+        // in empty space, and others (the Jovian system, the ruler) have no floor either.
         assert!(
-            experiment.scene.props.len() >= 2,
-            "{:?} needs a floor and at least one body, got {}",
-            id,
-            experiment.scene.props.len()
+            experiment
+                .scene
+                .props
+                .iter()
+                .any(|prop| !matches!(prop.body, Body::Plane { .. })),
+            "{:?} has no bodies",
+            id
         );
 
         for prop in &experiment.scene.props {

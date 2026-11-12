@@ -30,6 +30,10 @@
 //!   aid drawn on the ground plane. Two spacings: a fine one out to
 //!   [`GRID_CORE_EXTENT_UNITS`] and a coarse one over the whole floor. Visual only: no grid
 //!   constant affects physics.
+//! - **Light streams** — the `LIGHT_STREAM_*` values behind [`crate::render::light_streams`]: where
+//!   the rays start, how many, how often, how they are stepped, and how they are drawn.
+//! - **The accretion disc** — the `DISC_*` and `ERGOSPHERE_*` values behind
+//!   [`crate::render::accretion_disc`]: its size, accretion rate, inflow, plunge, and drawing.
 
 pub use bevy::math::Vec3;
 
@@ -660,3 +664,487 @@ pub const MISSION_MARKER_ANGULAR_RADIUS: f32 = 0.007;
 /// **If you change it.** Shorter and short hops land less reliably. Longer and every flight under
 /// it is slowed further.
 pub const MISSION_MIN_WATCH_S: f64 = 20.0;
+
+/// The radius of the sphere the light rays set off from, in horizon radii.
+///
+/// **Why this value.** Far enough out that a ray starts nearly straight (the bend accumulated beyond
+/// `12 r_s` is a few degrees at most), and close enough that the whole sphere fits the experiment's
+/// opening view: `152` units for Sgr A*, framed by
+/// `experiments::constants::BLACK_HOLE_FRAMED_RADIUS_UNITS`, kept in step by hand.
+///
+/// **Used by.** [`crate::render::light_streams::LightStreams::emit`].
+///
+/// **If you change it.** Change that framing too, and keep it below [`LIGHT_STREAM_ESCAPE_RS`].
+pub const LIGHT_STREAM_SOURCE_DISTANCE_RS: f32 = 12.0;
+
+/// The widest a ray is aimed off the hole's centre, in horizon radii.
+///
+/// **Why this value.** The critical impact parameter is `3√3/2 = 2.6 r_s`: inside it light is
+/// captured, just outside it light whirls round the photon sphere. Offsets are spread evenly over a
+/// disc of radius `4 r_s`, so `(2.6/4)² = 42%` of the rays fall in and the rest bend round,
+/// many of them hard.
+///
+/// **Used by.** [`crate::render::light_streams::LightStreams::emit`].
+///
+/// **If you change it.** Larger means more rays that only bend a little.
+pub const LIGHT_STREAM_MAX_IMPACT_RS: f32 = 4.0;
+
+/// How many rays set off each time the emitter fires.
+///
+/// **Why this value.** With [`LIGHT_STREAM_EMISSION_INTERVAL_S`] it sets the density: `48` every
+/// `10 s` keeps about three thousand rays in flight, enough to fill every direction round the hole
+/// while staying cheap to step and draw.
+///
+/// **Used by.** [`crate::render::light_streams::LightStreams::emit`].
+///
+/// **If you change it.** Cost is linear in it.
+pub const LIGHT_STREAM_RAYS: u32 = 48;
+
+/// Simulated seconds between bursts of rays.
+///
+/// **Why this value.** At the experiment's `100×` clock a burst sets off every tenth of a second,
+/// a continuous stream. See [`LIGHT_STREAM_RAYS`].
+///
+/// **Used by.** [`crate::render::light_streams::LightStreams::advance`].
+///
+/// **If you change it.** Smaller means more rays in flight.
+pub const LIGHT_STREAM_EMISSION_INTERVAL_S: f64 = 10.0;
+
+/// The seed for where the rays set off from and how they are aimed.
+///
+/// **Why this value.** Arbitrary. Fixed so a run is the same every time and the tests can rely on
+/// it.
+///
+/// **Used by.** [`crate::render::light_streams::LightStreams`].
+///
+/// **If you change it.** A different but equivalent pattern of rays.
+pub const LIGHT_STREAM_SEED: u64 = 0x5167_A57A;
+
+/// The radius, in horizon radii, at which a falling ray is counted as captured.
+///
+/// **Why this value.** The same as the experiment's capture radius: where light from the hole's
+/// neighbourhood is redshifted tenfold. In the distant observer's time a ray never reaches the
+/// horizon; it slows and creeps towards it, and this is where it is let go.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Must be above `1`. Closer to `1` and captured rays linger longer.
+pub const LIGHT_STREAM_CAPTURE_RS: f64 = 1.0101;
+
+/// The radius, in horizon radii, beyond which an outbound ray is removed.
+///
+/// **Why this value.** A little past the source sphere, so a ray that bends round and leaves is
+/// seen leaving.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Keep it above [`LIGHT_STREAM_SOURCE_DISTANCE_RS`].
+pub const LIGHT_STREAM_ESCAPE_RS: f64 = 13.5;
+
+/// The longest a ray is kept, in simulated seconds, whatever it is doing.
+///
+/// **Why this value.** A crossing takes about `1000 s`; a ray whirling near the photon sphere can
+/// take several times that. `5000` lets it finish and bounds the rare one that would circle for a
+/// very long time.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Visual only.
+pub const LIGHT_STREAM_MAX_AGE_S: f64 = 5000.0;
+
+/// Each ray's step, as a fraction of its light-travel time to the hole's centre, `r/c`.
+///
+/// **Why this value.** Steps shrink near the hole, where the path bends hardest. `0.02` is `1.3 s`
+/// at the photon sphere, which keeps the classical fourth-order Runge–Kutta steps accurate through
+/// a whirl round it (the tests check rays at `2.5`, `2.62`, and `6 r_s` against what they must do).
+/// Scaling by `r` rather than by the distance to the horizon matters: the latter made rays creeping
+/// towards the horizon take steps of a hundredth of a second, and cost ten times as much.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Larger is cheaper and less accurate near the hole.
+pub const LIGHT_STREAM_STEP_FRACTION: f64 = 0.02;
+
+/// The longest step a ray takes, in simulated seconds.
+///
+/// **Why this value.** Far from the hole the fractional rule allows steps of tens of seconds; `2 s`
+/// keeps the streak's samples and the bending smooth there too.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Cost is inverse in it.
+pub const LIGHT_STREAM_MAX_STEP_S: f64 = 2.0;
+
+/// The most steps a ray takes in one frame.
+///
+/// **Why this value.** A bound on cost at a very fast clock: past it the steps grow rather than
+/// multiply. At the experiment's clock a ray takes far fewer.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Must be at least `1`.
+pub const LIGHT_STREAM_MAX_STEPS_PER_FRAME: u32 = 2000;
+
+/// Simulated seconds between the points of a ray's streak.
+///
+/// **Why this value.** With [`LIGHT_STREAM_TRAIL_SAMPLES`] it sets the streak's length: `16` points
+/// `4 s` apart is `64 s` of travel, about `1.5 r_s` far out. Sampled by simulated time, so the
+/// streak is the same length at any frame rate.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Visual only.
+pub const LIGHT_STREAM_SAMPLE_INTERVAL_S: f64 = 4.0;
+
+/// How many earlier points each ray's streak keeps.
+///
+/// **Why this value.** See [`LIGHT_STREAM_SAMPLE_INTERVAL_S`]. Shorter than a lone beam's would be,
+/// because with three thousand rays in flight long streaks would fill the view.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Drawing cost is linear in it.
+pub const LIGHT_STREAM_TRAIL_SAMPLES: u32 = 16;
+
+/// The colour of the light streams at their heads, linear RGB with alpha.
+///
+/// **Why this value.** A warm white, bright against the black sky. Each streak fades from this to
+/// transparent at its tail, and the slight transparency keeps a dense crowd of streaks from
+/// saturating into a solid blob.
+///
+/// **Used by.** [`crate::render::light_streams`].
+///
+/// **If you change it.** Visual only.
+pub const LIGHT_STREAM_COLOR: Color = Color {
+    r: 1.0,
+    g: 0.9,
+    b: 0.65,
+    a: 0.85,
+};
+
+/// The width of the light streams, in screen pixels.
+///
+/// **Why this value.** Thin enough that thousands of streaks stay separate; wide enough to read.
+///
+/// **Used by.** [`crate::render::light_streams::LightStreamsPlugin`], on its own gizmo group.
+///
+/// **If you change it.** Visual only.
+pub const LIGHT_STREAM_LINE_WIDTH_PX: f32 = 2.0;
+
+/// How many clumps of gas make up the accretion disc.
+///
+/// **Why this value.** Dense enough that the disc reads as a continuous sheet of gas rather than
+/// separate streaks from the opening view, and that its lensed images, where fewer clumps land per
+/// unit of screen, read as continuous too.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Cost is linear in it.
+pub const DISC_PARTICLES: u32 = 10_000;
+
+/// The accretion disc's outer edge, in gravitational radii `r_g = GM/c²`.
+///
+/// **Why this value.** `20 r_g` (`127` units for Sgr A*) takes in the hot inner disc, where nearly
+/// all the light is made (the flux falls as `r⁻³`), and stays inside the sphere the light streams
+/// start from.
+///
+/// **Used by.** [`crate::render::accretion_disc::DiscProfile`].
+///
+/// **If you change it.** Larger reaches cooler, dimmer gas; it is kept at least `1.5` times the
+/// ISCO.
+pub const DISC_OUTER_RADIUS_RG: f32 = 20.0;
+
+/// The disc's accretion rate, as a fraction of the Eddington rate.
+///
+/// **Why this value.** `0.1`, typical of a bright quasar and inside the range where a thin disc is
+/// the right model (above about `0.3` the disc puffs up; below about `0.01` it becomes a hot, faint
+/// flow). For Sgr A* at spin `0.9` the inner disc then reaches a few hundred thousand kelvin and
+/// glows in the ultraviolet. The real Sgr A* is fed about a billion times more slowly.
+///
+/// **Used by.** [`crate::render::accretion_disc::DiscProfile`].
+///
+/// **If you change it.** The temperature goes as its fourth root.
+pub const DISC_EDDINGTON_FRACTION: f64 = 0.1;
+
+/// How many orbits it takes the gas to drift inward by a factor `e` in radius.
+///
+/// **Why this value.** Sped up, on purpose: a real thin disc's gas takes thousands of orbits to
+/// cross the disc, which would make the drift invisible. At `3` a clump released at the outer edge
+/// reaches the ISCO in about seven of its own orbits, slowly enough that the disc still reads as
+/// orbiting and fast enough that the plunge can be seen to happen.
+///
+/// **Used by.** [`crate::render::accretion_disc`]. The one non-physical rate there.
+///
+/// **If you change it.** Smaller drifts faster.
+pub const DISC_INFLOW_ORBITS_PER_EFOLD: f64 = 3.0;
+
+/// The fraction of the circular speed a clump keeps as it crosses the ISCO and starts to fall.
+///
+/// **Why this value.** At the ISCO a circular orbit is marginally stable; a `0.5%` loss is the nudge
+/// that tips it in, and keeps the start of the plunge a slow whirl, as it is in a real disc.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Smaller drops the gas in more steeply.
+pub const DISC_PLUNGE_SPEED_FACTOR: f64 = 0.995;
+
+/// A plunging clump's step, as a fraction of its light-travel time to the hole's centre.
+///
+/// **Why this value.** The same rule and value as the light streams use.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Larger is cheaper and less accurate.
+pub const DISC_PLUNGE_STEP_FRACTION: f64 = 0.02;
+
+/// Simulated seconds between the points of a plunging clump's streak.
+///
+/// **Why this value.** A plunge from the ISCO takes a few hundred seconds; `2 s` samples it finely.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Visual only.
+pub const DISC_PLUNGE_SAMPLE_INTERVAL_S: f64 = 2.0;
+
+/// How many earlier points a plunging clump's streak keeps.
+///
+/// **Why this value.** `12` points `2 s` apart: a streak about as long as an orbiting clump's arc.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Visual only.
+pub const DISC_PLUNGE_TRAIL_SAMPLES: u32 = 12;
+
+/// How many radii the disc's temperature and flux are tabulated at.
+///
+/// **Why this value.** The Page–Thorne flux needs an integral per radius, so it is computed once per
+/// hole and interpolated. `256` samples, spaced closer near the ISCO where the profile is steep,
+/// keep the interpolation far below anything visible.
+///
+/// **Used by.** [`crate::render::accretion_disc::DiscProfile`].
+///
+/// **If you change it.** Cost is paid once, when the disc is built.
+pub const DISC_PROFILE_SAMPLES: u32 = 256;
+
+/// The seed for where the disc's clumps start.
+///
+/// **Why this value.** Arbitrary; fixed so every run is the same.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** A different but equivalent disc.
+pub const DISC_SEED: u64 = 0xD15C_0A11;
+
+/// The length of an orbiting clump's streak, as an angle along its orbit, in radians.
+///
+/// **Why this value.** About `17°`: long enough to show which way the disc turns, short enough that
+/// the disc reads as clumps rather than rings.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Visual only.
+pub const DISC_STREAK_ARC_RAD: f64 = 0.3;
+
+/// How many points an orbiting clump's arc is drawn through.
+///
+/// **Why this value.** Enough for a smooth arc of [`DISC_STREAK_ARC_RAD`].
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Drawing cost is linear in it. At least `2`.
+pub const DISC_STREAK_POINTS: u32 = 5;
+
+/// The colour of the ergosphere's outline, linear RGB with alpha.
+///
+/// **Why this value.** A faint violet: present but behind everything else.
+///
+/// **Used by.** [`crate::render::accretion_disc`].
+///
+/// **If you change it.** Visual only.
+pub const ERGOSPHERE_COLOR: Color = Color {
+    r: 0.6,
+    g: 0.45,
+    b: 1.0,
+    a: 0.35,
+};
+
+/// How many meridians of the ergosphere's outline are drawn, besides its equator.
+///
+/// **Why this value.** `6`, one every `60°`: enough to show its shape, flattened at the poles where
+/// it meets the horizon.
+///
+/// **Used by.** [`crate::render::accretion_disc::ergosphere_outline`].
+///
+/// **If you change it.** Visual only.
+pub const ERGOSPHERE_MERIDIANS: u32 = 6;
+
+/// How many segments the ergosphere's equator is drawn with (its meridians use half as many).
+///
+/// **Why this value.** Smooth at the opening view's distance.
+///
+/// **Used by.** [`crate::render::accretion_disc::ergosphere_outline`].
+///
+/// **If you change it.** Visual only.
+pub const ERGOSPHERE_SEGMENTS: u32 = 96;
+
+/// Each step of the GPU ray-marcher (and its Rust twin), as a fraction of the light's distance from
+/// the hole.
+///
+/// **Why this value.** Steps then shrink near the hole, where light bends hardest, and grow far out,
+/// where it barely bends, so a ray from the camera to the disc and back out takes a few hundred
+/// steps. At `3%` the twin's plane crossings agree with the `f64` tracer to well under a percent,
+/// and the null condition holds to `10⁻⁴` even for light that swings round the photon orbit
+/// (`kerr_ray_tests`). Every test also passes at `6%`, so there is room to trade accuracy for speed
+/// in the performance settings.
+///
+/// **Used by.** [`crate::render::kerr_ray`].
+///
+/// **If you change it.** The cost per pixel is inversely proportional to it; the accuracy tests in
+/// `kerr_ray_tests` say how far it can grow.
+pub const KERR_RAY_STEP_FRACTION: f32 = 0.03;
+
+/// The most steps one ray of the GPU ray-marcher (and its Rust twin) takes before it is abandoned.
+///
+/// **Why this value.** A ray that reaches the disc or the sky takes a few hundred steps
+/// ([`KERR_RAY_STEP_FRACTION`]); only light skimming the photon orbit, circling many times before it
+/// escapes or falls in, needs more, and those pixels are a hairline at the shadow's edge.
+///
+/// **Used by.** [`crate::render::kerr_ray`].
+///
+/// **If you change it.** Lower, and the hairline at the shadow's edge goes dark sooner; higher costs
+/// only those pixels.
+pub const KERR_RAY_MAX_STEPS: u32 = 2000;
+
+/// How many crossings of the disc's plane a ray of the GPU ray-marcher (and its Rust twin) records:
+/// image orders `0` to `2`.
+///
+/// **Why this value.** Order `0` is the disc arched over the hole, `1` its underside below the
+/// hole, `2` a hairline ring at the shadow's edge; each is about `e^π ≈ 23` times thinner than the
+/// one before, so a third is the last a pixel can show.
+///
+/// **Used by.** [`crate::render::kerr_ray`].
+///
+/// **If you change it.** Each further order adds a ring too thin to see; fewer drops the rings.
+pub const KERR_RAY_MAX_CROSSINGS: usize = 3;
+
+/// Where the black hole's ray-marching fragment shader lives, relative to `assets/`.
+///
+/// **Why this value.** Beside `eclipse.wgsl`, the only other shader.
+///
+/// **Used by.** [`BlackHoleMaterial`](crate::render::black_hole_view::BlackHoleMaterial).
+///
+/// **If you change it.** The file must move with it. A missing shader is a runtime error: the app
+/// logs an asset-not-found and the hole is not drawn.
+pub const BLACK_HOLE_SHADER_PATH: &str = "shaders/black_hole.wgsl";
+
+/// The radius, in gravitational radii, of the sphere the black hole is ray-marched on.
+///
+/// **Why this value.** Light is followed only inside it; outside it, it is taken to go straight.
+/// At `100 r_g` that ignores a bend of about `4/100` rad over a whole path, and it contains the disc
+/// (`20 r_g`) and the opening camera (`53 r_g`) with room to spare. Steps grow with distance from
+/// the hole, so a larger sphere costs only a few more steps per pixel.
+///
+/// **Used by.** [`crate::render::black_hole_view`].
+///
+/// **If you change it.** Smaller starts rays where the bending is not yet negligible; it must stay
+/// well outside the disc's edge, [`DISC_OUTER_RADIUS_RG`].
+pub const BLACK_HOLE_VIEW_SPHERE_RG: f32 = 100.0;
+
+/// How many samples of the disc's temperature and flux the GPU ray-marcher (and its Rust twin)
+/// carries, from the ISCO to the outer edge.
+///
+/// **Why this value.** Spaced uniformly in `√(r − r_ISCO)`, as [`DISC_PROFILE_SAMPLES`] are, `64`
+/// reproduce the profile to well under a percent (`kerr_ray_tests`), and at one `vec4` each they
+/// are `1 KiB` of uniform, far inside the `16 KiB` every GPU allows.
+///
+/// **Used by.** [`crate::render::kerr_ray::DiscShading`], and `PROFILE_SAMPLES` in
+/// `assets/shaders/black_hole.wgsl`, which must match (a test checks).
+///
+/// **If you change it.** Change the shader's `PROFILE_SAMPLES` and its array length with it.
+pub const KERR_RAY_PROFILE_SAMPLES: usize = 64;
+
+/// The gas texture's width: texels round the hole.
+///
+/// **Why this value.** `512` texels round the hole are `0.7°` each, `0.12 r_g` at `10 r_g`, finer
+/// than a clump's streak ([`DISC_STREAK_ARC_RAD`] is `0.3` rad, `25` texels), so each streak stays a
+/// streak. With [`DISC_GAS_TEXTURE_HEIGHT`] it is `64 KiB`, uploaded every frame.
+///
+/// **Used by.** [`crate::render::black_hole_view::splat_gas`].
+///
+/// **If you change it.** Coarser blurs the clumps into a smooth sheet; finer costs upload and
+/// splatting time and shows each streak's edges.
+pub const DISC_GAS_TEXTURE_WIDTH: usize = 512;
+
+/// The gas texture's height: texels from the horizon to the disc's edge, uniformly in `√(r − r₊)`.
+///
+/// **Why this value.** `128` rows put about `40` inside `5 r_g`, where the gas plunges and the disc
+/// is brightest, and rows `0.2 r_g` apart at `10 r_g`.
+///
+/// **Used by.** [`crate::render::black_hole_view::splat_gas`].
+///
+/// **If you change it.** As [`DISC_GAS_TEXTURE_WIDTH`].
+pub const DISC_GAS_TEXTURE_HEIGHT: usize = 128;
+
+/// How wide a strip of the plane each clump's streak covers in the ray-marched disc, in `r_g`.
+///
+/// **Why this value.** It sets how much of the disc the gas covers. The clumps are spread so that
+/// at `10 r_g` there are about `9` per `r_g²`, each with a streak `3 r_g` long; at `0.05 r_g` wide
+/// they cover a texel `1.3` times over on average, so about `70%` of the disc is gas
+/// (`1 − e^{−1.3}`) and the rest is gaps through which the images behind show.
+///
+/// **Used by.** [`crate::render::black_hole_view::splat_gas`].
+///
+/// **If you change it.** Wider makes the disc a solid sheet; narrower, a sparse web of streaks.
+pub const DISC_CLUMP_WIDTH_RG: f32 = 0.05;
+
+/// How much bigger than the camera's distance from the hole the ray-marched sphere is made.
+///
+/// **Why this value.** The sphere must hold the camera, so that every pixel looks through it and the
+/// whole sky, stars included, is lensed; `1.25` keeps its far side well clear of the camera's near
+/// side as the camera moves within a frame.
+///
+/// **Used by.** [`crate::render::black_hole_view::sphere_radius_rg`].
+///
+/// **If you change it.** Below `1` the camera leaves the sphere and the sky outside it is the
+/// scene's background, unlensed and starless.
+pub const BLACK_HOLE_VIEW_CAMERA_MARGIN: f32 = 1.25;
+
+/// The exposure the ray-marched black hole is shown at: what the light is multiplied by before
+/// tone mapping, `1 − e^{−exposure · I}`, with `I = 1` the disc's peak flux seen without any shift.
+///
+/// **Why this value.** The disc's light spans more than a thousandfold: `g⁴` beaming makes the inner
+/// edge coming towards the camera several times its peak flux, and the flux falls as `r⁻³` to the
+/// outer edge. At `6`, the outer disc (`1%` of the peak) shows at about `6%` grey, the peak is near
+/// white, and the beamed side saturates smoothly rather than clipping.
+///
+/// **Used by.** [`crate::render::kerr_ray::DiscShading`], and through the uniform the shader.
+///
+/// **If you change it.** Lower shows the inner disc's structure and loses the outer disc; higher
+/// washes the inner disc out to white.
+pub const BLACK_HOLE_EXPOSURE: f32 = 6.0;
+
+/// The colour the black hole's event horizon is outlined in while the outline is on, linear RGB.
+///
+/// **Why this value.** A warm amber, bright enough to stand out against the black shadow it sits in, but distinct from the disc's white-hot inner edge and the stars' white points, so the line
+/// reads as a marker, not as light from the scene.
+///
+/// **Used by.** [`crate::render::black_hole_view::BlackHoleOutline`]; the shader's
+/// `OUTLINE_COLOUR` mirrors it.
+///
+/// **If you change it.** Change `OUTLINE_COLOUR` in `assets/shaders/black_hole.wgsl` to match; a
+/// test checks the two agree.
+pub const BLACK_HOLE_OUTLINE_COLOUR: [f32; 3] = [1.0, 0.45, 0.1];
+
+/// How wide the outline of the black hole's event horizon is drawn, in pixels, measured across it.
+///
+/// **Why this value.** The edge is where [`crate::render::kerr_ray::horizon_measure`] is zero; the
+/// shader draws the line where it is within this many pixels' worth of its own change of zero, so
+/// the line is the same width all the way round however the horizon is squashed. `2` reads clearly
+/// at a glance and stays a thin line on a horizon only a few dozen pixels across.
+///
+/// **Used by.** The shader (`OUTLINE_WIDTH_PX` mirrors it), through
+/// [`crate::render::black_hole_view::BlackHoleOutline`].
+///
+/// **If you change it.** Change `OUTLINE_WIDTH_PX` in `assets/shaders/black_hole.wgsl` too; a test
+/// checks they agree.
+pub const BLACK_HOLE_OUTLINE_WIDTH_PX: f32 = 2.0;

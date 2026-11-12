@@ -40,6 +40,7 @@
 //! by construction rather than by convention.
 
 use bevy::app::{App, Plugin, Update};
+use bevy::ecs::schedule::IntoSystemConfigs;
 use bevy::ecs::system::{Res, Resource};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
@@ -268,7 +269,7 @@ impl Plugin for CrosshairPlugin {
         }
 
         app.init_resource::<CrosshairConfig>();
-        app.add_systems(Update, crosshair_system);
+        app.add_systems(Update, crosshair_system.run_if(crate::ui::hud::hud_shown));
     }
 }
 

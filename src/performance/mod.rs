@@ -35,7 +35,9 @@ mod floor_eclipse_tests;
 #[path = "../../tst/performance/plugin_tests.rs"]
 mod plugin_tests;
 
-pub use settings::{AntiAliasing, BenchConfig, PerformanceSettings, SettingsError};
+pub use settings::{
+    AntiAliasing, BenchConfig, BlackHoleQuality, PerformanceSettings, SettingsError,
+};
 
 /// Applies a [`PerformanceSettings`]: inserts it as a resource, sets MSAA, puts the post-process
 /// anti-aliasing on every 3D camera, and runs the benchmark when it is on.

@@ -73,7 +73,66 @@ use crate::core::scene::Prop;
 use crate::physics_utils::kinematics::{displacement, velocity_after};
 use crate::physics_utils::newtons_laws::acceleration_from_net_force;
 use crate::physics_utils::physics_formulas::gravitational_constant_calculator;
+use crate::physics_utils::relativity::gravity::schwarzschild_acceleration;
+use crate::physics_utils::relativity::kerr::kerr_schild_acceleration;
 use crate::time::simulation::TimeStep;
+
+/// Which law of gravity a scene's black holes obey.
+///
+/// Set per scene in [`Scene::gravity_model`](crate::core::scene::Scene::gravity_model).
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub enum GravityModel {
+    /// Newton's law for every pair. Every scene but the black-hole one.
+    #[default]
+    Newtonian,
+    /// The pull of a black hole (a prop that [`absorbs`](Prop::absorbs)) on anything that is not
+    /// itself a black hole follows the exact Schwarzschild equation of motion,
+    /// [`schwarzschild_acceleration`], with the body treated as a test particle and timed by a
+    /// distant observer's clock. Every other pair, and the hole's own response, stays Newtonian.
+    ///
+    /// The hole's velocity is subtracted first, so the equation sees the body's motion relative
+    /// to the hole. No softening is applied to these pairs: the horizon, not a softened core, is
+    /// what keeps them finite, and a body at or inside the horizon falls back to the Newtonian
+    /// pull for the one substep before it is absorbed.
+    Schwarzschild,
+    /// Every black hole in the scene **spins**, with dimensionless spin `spin` (`a/M`, in `[0, 1)`)
+    /// about the world's vertical `+Y` axis, counter-clockwise seen from above. Its pull on anything
+    /// that is not a black hole follows the exact Kerr equation of motion,
+    /// [`kerr_schild_acceleration`], in Kerr–Schild coordinates: matter is dragged round with the
+    /// spin, and falls through the horizon in a finite time rather than creeping up to it. Like
+    /// `Schwarzschild`, every other pair stays Newtonian, and a body at or inside the horizon falls
+    /// back to the Newtonian pull for the substep before it is absorbed.
+    Kerr {
+        /// The dimensionless spin `a/M` of every black hole in the scene.
+        spin: f64,
+    },
+}
+
+impl GravityModel {
+    /// The black holes' spin under this model: `Some(spin)` for `Kerr`, `Some(0.0)` for
+    /// `Schwarzschild`, `None` for `Newtonian`, where black holes pull like any other mass.
+    pub fn black_hole_spin(&self) -> Option<f64> {
+        match self {
+            GravityModel::Newtonian => None,
+            GravityModel::Schwarzschild => Some(0.0),
+            GravityModel::Kerr { spin } => Some(*spin),
+        }
+    }
+}
+
+/// A world-space vector (`+Y` up) in Kerr–Schild axes (spin along `+z`): `(Z, X, Y)`. A cyclic
+/// relabelling, so handedness is kept and counter-clockwise about `+Y` is counter-clockwise about
+/// `+z`.
+#[inline]
+pub fn world_to_kerr_schild(v: DVec3) -> [f64; 3] {
+    [v.z, v.x, v.y]
+}
+
+/// The inverse of [`world_to_kerr_schild`].
+#[inline]
+pub fn kerr_schild_to_world(v: [f64; 3]) -> DVec3 {
+    DVec3::new(v[1], v[2], v[0])
+}
 
 /// The softening length to actually use, given what a caller asked for.
 ///
@@ -168,9 +227,13 @@ pub fn gravitational_acceleration(props: &[Prop], target: usize, softening_units
         props[target]
     );
 
-    acceleration_on(props, target, softening_units, |index| {
-        props[index].is_valid()
-    })
+    acceleration_on(
+        props,
+        target,
+        softening_units,
+        GravityModel::Newtonian,
+        |index| props[index].is_valid(),
+    )
 }
 
 /// [`gravitational_acceleration`] with each prop's validity supplied by `is_valid`, so a caller
@@ -180,6 +243,7 @@ fn acceleration_on(
     props: &[Prop],
     target: usize,
     softening_units: f32,
+    model: GravityModel,
     is_valid: impl Fn(usize) -> bool,
 ) -> DVec3 {
     let subject = &props[target];
@@ -212,6 +276,41 @@ fn acceleration_on(
         // comparison, the same ordering `clamp_dt` relies on.
         if !separation.is_finite() || separation <= 0.0 {
             continue;
+        }
+
+        // A black hole's pull, relativistically, when the scene asks for it. The body is a test
+        // particle, so the subject's own mass does not enter.
+        if model == GravityModel::Schwarzschild && source.absorbs && !subject.absorbs {
+            let from_hole = (-offset * METRES_PER_UNIT).to_array();
+            let relative_velocity =
+                ((subject.velocity_units_s - source.velocity_units_s) * METRES_PER_UNIT).to_array();
+
+            if let Some(pull) =
+                schwarzschild_acceleration(source.mass_kg as f64, from_hole, relative_velocity)
+            {
+                acceleration += DVec3::from_array(pull) / METRES_PER_UNIT;
+                continue;
+            }
+        }
+
+        // A spinning black hole's pull, in Kerr–Schild axes (spin along world +Y).
+        if let GravityModel::Kerr { spin } = model {
+            if source.absorbs && !subject.absorbs {
+                let from_hole = world_to_kerr_schild(-offset * METRES_PER_UNIT);
+                let relative_velocity = world_to_kerr_schild(
+                    (subject.velocity_units_s - source.velocity_units_s) * METRES_PER_UNIT,
+                );
+
+                if let Some(pull) = kerr_schild_acceleration(
+                    source.mass_kg as f64,
+                    spin,
+                    from_hole,
+                    relative_velocity,
+                ) {
+                    acceleration += kerr_schild_to_world(pull) / METRES_PER_UNIT;
+                    continue;
+                }
+            }
         }
 
         // Into SI for the gravitation, and Plummer softening on the way: evaluate
@@ -273,6 +372,23 @@ fn acceleration_on(
 /// Fine at the current scale; an integrator running thousands of props would
 /// want a scratch buffer carried across frames.
 pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f32) {
+    integrate_gravity_with(props, step, softening_units, GravityModel::Newtonian);
+}
+
+/// [`integrate_gravity`] under a chosen [`GravityModel`]. What [`Scene::step`] calls, with the
+/// scene's own model.
+///
+/// Under the relativistic models ([`GravityModel::Schwarzschild`], [`GravityModel::Kerr`]) the
+/// acceleration depends on velocity as well as position, and the step is Heun's method, second order
+/// (see `heun_step`). Under [`GravityModel::Newtonian`] it is the symplectic step described above.
+///
+/// [`Scene::step`]: crate::core::scene::Scene::step
+pub fn integrate_gravity_with(
+    props: &mut [Prop],
+    step: TimeStep,
+    softening_units: f32,
+    model: GravityModel,
+) {
     debug_assert!(
         step.is_valid(),
         "integrate_gravity: TimeStep must be finite and non-negative, got {:?}",
@@ -292,8 +408,14 @@ pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f3
     // Validity checked once per prop, not once per pair: see `acceleration_on`.
     let valid: Vec<bool> = props.iter().map(Prop::is_valid).collect();
     let accelerations: Vec<DVec3> = (0..props.len())
-        .map(|index| acceleration_on(props, index, softening_units, |i| valid[i]))
+        .map(|index| acceleration_on(props, index, softening_units, model, |i| valid[i]))
         .collect();
+
+    // Relativistic scenes take a second-order step instead: see `heun_step`.
+    if model != GravityModel::Newtonian {
+        heun_step(props, &accelerations, dt, softening_units, model);
+        return;
+    }
 
     // Pass 2: advance each movable prop.
     for (prop, acceleration) in props.iter_mut().zip(accelerations) {
@@ -326,6 +448,49 @@ pub fn integrate_gravity(props: &mut [Prop], step: TimeStep, softening_units: f3
         );
 
         prop.body.translate(delta);
+        prop.velocity_units_s = new_velocity;
+    }
+}
+
+/// One step of Heun's method (explicit trapezoidal rule): predict the end of the step with the
+/// start-of-step acceleration, evaluate the acceleration again there, and advance with the average.
+///
+/// Used for the relativistic models only. A black hole's pull under them depends on velocity, and
+/// the first-order symplectic step evaluates it at the start-of-step velocity, which near the hole
+/// pumps energy into an orbit: measured, a body released just inside a spinning hole's ISCO,
+/// nudged to fall in, instead drifted outward to six times its starting radius. Heun's method is
+/// second order, so that error falls by the step size, and the same body plunges as it should. It
+/// costs a second force evaluation per step. Newtonian scenes keep the symplectic step, bit for bit.
+fn heun_step(
+    props: &mut [Prop],
+    first: &[DVec3],
+    dt: f64,
+    softening_units: f32,
+    model: GravityModel,
+) {
+    // The predicted end of the step: every movable prop moved by v + a dt.
+    let mut predicted: Vec<Prop> = props.to_vec();
+    for (prop, acceleration) in predicted.iter_mut().zip(first) {
+        if prop.immovable {
+            continue;
+        }
+        let velocity = prop.velocity_units_s + *acceleration * dt;
+        prop.body.translate(prop.velocity_units_s * dt);
+        prop.velocity_units_s = velocity;
+    }
+
+    let valid: Vec<bool> = predicted.iter().map(Prop::is_valid).collect();
+    let second: Vec<DVec3> = (0..predicted.len())
+        .map(|index| acceleration_on(&predicted, index, softening_units, model, |i| valid[i]))
+        .collect();
+
+    for ((prop, a1), a2) in props.iter_mut().zip(first).zip(&second) {
+        if prop.immovable {
+            continue;
+        }
+        let velocity = prop.velocity_units_s;
+        let new_velocity = velocity + 0.5 * (*a1 + *a2) * dt;
+        prop.body.translate(0.5 * (velocity + new_velocity) * dt);
         prop.velocity_units_s = new_velocity;
     }
 }

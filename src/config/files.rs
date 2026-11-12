@@ -17,7 +17,7 @@ use crate::bindings::{key_name, parse_key, Action, KeyMap};
 
 use crate::core::scene::Color;
 use crate::input::camera::CameraSettings;
-use crate::performance::{AntiAliasing, PerformanceSettings};
+use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::constants::{CRAFT_COLOR, CRAFT_RADIUS_M, LAUNCH_ALTITUDE_M};
@@ -340,6 +340,12 @@ pub struct PerformanceFile {
     pub floor_eclipse: bool,
     /// Whether frames wait for the display's refresh.
     pub vsync: bool,
+    /// Whether the black hole is ray-marched on the GPU; off draws its plain body.
+    pub black_hole: bool,
+    /// `low`, `medium`, or `high`: how finely the black hole's light is followed.
+    pub black_hole_quality: String,
+    /// Whether the black hole's sky has stars.
+    pub black_hole_stars: bool,
 }
 
 impl Default for PerformanceFile {
@@ -355,6 +361,9 @@ impl PerformanceFile {
             anti_aliasing: settings.anti_aliasing.name().to_string(),
             floor_eclipse: settings.floor_eclipse,
             vsync: settings.vsync,
+            black_hole: settings.black_hole,
+            black_hole_quality: settings.black_hole_quality.name().to_string(),
+            black_hole_stars: settings.black_hole_stars,
         }
     }
 }
@@ -369,10 +378,20 @@ impl PerformanceFile {
                 self.anti_aliasing
             )
         })?;
+        let black_hole_quality =
+            BlackHoleQuality::parse(&self.black_hole_quality).ok_or_else(|| {
+                format!(
+                    "`black_hole_quality` must be low, medium, or high, got {:?}",
+                    self.black_hole_quality
+                )
+            })?;
         Ok(PerformanceSettings {
             anti_aliasing,
             floor_eclipse: self.floor_eclipse,
             vsync: self.vsync,
+            black_hole: self.black_hole,
+            black_hole_quality,
+            black_hole_stars: self.black_hole_stars,
             bench: None,
         })
     }

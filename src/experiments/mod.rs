@@ -17,9 +17,10 @@
 //! | [`objects`] | The interstellar objects the `B` key can place: dwarfs, a neutron star, black holes. |
 //! | [`jovian`] | `experiment_4`: Jupiter and the Galilean moons — the first exactly-real scene. |
 //! | [`scale_check`] | `experiment_5`: a static size-comparison row. A ruler, not a simulation. |
+//! | [`black_hole`] | `experiment_6`: Sgr A*, spinning, with an accretion disc. |
 //! | [`constants`] | The layer's tunables: ring geometry, speed window, camera poses, fallback seed. |
 //!
-//! # The five experiments
+//! # The experiments
 //!
 //! - **`experiment_1` — two-body free fall.** Two Earth masses `30` units apart,
 //!   released from rest: they fall together, bounce elastically, and oscillate. The
@@ -33,6 +34,10 @@
 //!   coplanar orbits from their real J2000 positions. Deterministic, and the one
 //!   experiment whose bodies are drawn at a scale that is knowingly exaggerated — see
 //!   [`solar_system`] for exactly which numbers are real and which are not.
+//! - **`experiment_4` — the Jovian system**, **`experiment_5` — the scale check**: see
+//!   [`jovian`] and [`scale_check`].
+//! - **`experiment_6` — the black hole.** Sgr A*, spinning, with an accretion disc dragged round it
+//!   and glowing with the heat of its friction, under the exact Kerr equation of motion. See [`black_hole`].
 //!
 //! # Determinism, and why the seed is recorded
 //!
@@ -62,6 +67,7 @@
 //! the overlay would build one directly and never touch the parser — which is why the
 //! parse returns data rather than doing anything.
 
+pub mod black_hole;
 pub mod catalog;
 pub mod constants;
 pub mod jovian;

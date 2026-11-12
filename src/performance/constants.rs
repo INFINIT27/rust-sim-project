@@ -3,7 +3,7 @@
 //! Per `.claude/steering/constants.md` this is the layer's only constants module. Each default's
 //! doc says what was measured to choose it.
 
-use crate::performance::settings::AntiAliasing;
+use crate::performance::settings::{AntiAliasing, BlackHoleQuality};
 
 /// Anti-aliasing the app ships with: `4×` MSAA.
 ///
@@ -122,3 +122,63 @@ pub const DEFAULT_BENCH_WARMUP_SECONDS: f64 = 3.0;
 ///
 /// **If you change it.** Shorter runs make p95 and p99 noisy before the mean moves.
 pub const DEFAULT_BENCH_SECONDS: f64 = 10.0;
+
+/// Whether the black hole is ray-marched on the GPU by default: yes.
+///
+/// **Why this value.** It is the only way the hole and its disc are drawn: every pixel's light
+/// followed along its exact Kerr path. Off is the fallback for a GPU that cannot run the shader, or
+/// one too slow for it: the hole is then drawn as its plain body, a black ball, with no disc.
+///
+/// **Used by.** [`crate::render::black_hole_view`], via
+/// [`crate::performance::settings::PerformanceSettings::black_hole`].
+///
+/// **If you change it.** `experiment_6` shows a black ball and nothing else.
+pub const DEFAULT_BLACK_HOLE: bool = true;
+
+/// How finely the black hole's light is followed by default: [`BlackHoleQuality::Medium`].
+///
+/// **Why this value.** Medium steps `3%` of the distance from the hole
+/// ([`crate::render::constants::KERR_RAY_STEP_FRACTION`]), where the shader's twin agrees with the
+/// `f64` tracer to under a percent. Every accuracy test still passes at Low's `6%`.
+///
+/// **Used by.** [`crate::performance::settings::PerformanceSettings::default`].
+///
+/// **If you change it.** Low roughly halves the shader's cost, High doubles it.
+pub const DEFAULT_BLACK_HOLE_QUALITY: BlackHoleQuality = BlackHoleQuality::Medium;
+
+/// Whether the black hole's sky has stars by default: yes.
+///
+/// **Why this value.** A star field shows the lens bending everywhere, not only on the disc: stars
+/// crowd towards the shadow's edge and appear twice, either side of it.
+///
+/// **Used by.** [`crate::render::black_hole_view`].
+///
+/// **If you change it.** The sky round the hole is the scene's background colour.
+pub const DEFAULT_BLACK_HOLE_STARS: bool = true;
+
+/// Environment variable toggling the ray-marched black hole: `on` or `off`.
+///
+/// **Why this value.** See [`ANTI_ALIASING_VAR`] for the prefix.
+///
+/// **Used by.** [`crate::performance::settings::PerformanceSettings::from_lookup`].
+///
+/// **If you change it.** Update the README, as for [`ANTI_ALIASING_VAR`].
+pub const BLACK_HOLE_VAR: &str = "RGA_BLACK_HOLE";
+
+/// Environment variable choosing the black hole's quality: `low`, `medium`, or `high`.
+///
+/// **Why this value.** See [`ANTI_ALIASING_VAR`] for the prefix.
+///
+/// **Used by.** [`crate::performance::settings::PerformanceSettings::from_lookup`].
+///
+/// **If you change it.** Update the README, as for [`ANTI_ALIASING_VAR`].
+pub const BLACK_HOLE_QUALITY_VAR: &str = "RGA_BLACK_HOLE_QUALITY";
+
+/// Environment variable toggling the black hole's stars: `on` or `off`.
+///
+/// **Why this value.** See [`ANTI_ALIASING_VAR`] for the prefix.
+///
+/// **Used by.** [`crate::performance::settings::PerformanceSettings::from_lookup`].
+///
+/// **If you change it.** Update the README, as for [`ANTI_ALIASING_VAR`].
+pub const BLACK_HOLE_STARS_VAR: &str = "RGA_BLACK_HOLE_STARS";

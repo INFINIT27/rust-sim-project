@@ -300,6 +300,7 @@ pub fn jovian_system() -> Experiment {
             framed_radius_units: JOVIAN_FRAMED_RADIUS_UNITS,
             trail_length_units: Some(JOVIAN_TRAIL_LENGTH_UNITS),
             launches: true,
+            general_lighting: true,
         },
         names,
     }

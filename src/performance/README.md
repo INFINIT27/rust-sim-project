@@ -28,6 +28,9 @@ so two configurations can be compared without a rebuild. The API is documented i
 | `RGA_AA` | `msaa4` `msaa2` `smaa` `fxaa` `off` | `msaa4` | Edge quality against GPU bandwidth. |
 | `RGA_FLOOR_ECLIPSE` | `on` `off` | `on` | A faint penumbra on the floor against a third of experiment_3's frame. |
 | `RGA_VSYNC` | `on` `off` | `on` | Power against uncapped frame rate. Forced off while benchmarking. |
+| `RGA_BLACK_HOLE` | `on` `off` | `on` | The ray-marched black hole (`experiment_6`) against a plain black ball, for a GPU that cannot run it. |
+| `RGA_BLACK_HOLE_QUALITY` | `low` `medium` `high` | `medium` | The ray-marcher's step: Low steps `6%` of the distance from the hole (about `160` fps at `1080p` from `experiment_6`'s opening view), Medium `3%` (`85`), High `1.5%` (`40`). |
+| `RGA_BLACK_HOLE_STARS` | `on` `off` | `on` | The lensed star field round the black hole. |
 | `RGA_BENCH` | `on` `off` | `off` | Runs the benchmark instead of an interactive session. |
 | `RGA_BENCH_WARMUP` / `RGA_BENCH_SECONDS` | seconds | `3` / `10` | Benchmark timing. |
 

@@ -29,6 +29,7 @@
 //! five names alone would be a list of five names.
 
 use bevy::app::{App, Plugin, Update};
+use bevy::ecs::schedule::IntoSystemConfigs;
 use bevy::ecs::system::Res;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
@@ -166,7 +167,10 @@ impl Plugin for PlacementPanelPlugin {
         }
 
         app.init_resource::<PlacementState>();
-        app.add_systems(Update, placement_panel_system);
+        app.add_systems(
+            Update,
+            placement_panel_system.run_if(crate::ui::hud::hud_shown),
+        );
     }
 }
 

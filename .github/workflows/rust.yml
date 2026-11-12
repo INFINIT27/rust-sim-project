@@ -1,0 +1,56 @@
+# Sanity checks on every push to `main` and every pull request into it: formatting, lints, the
+# build, and the whole test suite (unit, integration, and doc tests). A failure marks the commit
+# with a red cross on GitHub and emails the author; nothing is deployed or changed.
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# A newer push to the same branch or pull request cancels the run still going for the older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # No debug info in CI: it is only for debuggers, and Bevy's makes the build several GB larger and
+  # slower.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # Bevy links against the system's audio (ALSA), input (udev), and windowing (Wayland,
+    # xkbcommon) libraries, which a fresh Ubuntu runner lacks.
+    - name: Install Bevy's system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    # Keeps compiled dependencies between runs, so only this crate is rebuilt after the first.
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Formatting
+      run: cargo fmt --check
+
+    - name: Lints
+      run: cargo clippy --all-targets --locked -- -D warnings
+
+    - name: Build
+      run: cargo build --locked
+
+    - name: Tests
+      run: cargo test --locked
