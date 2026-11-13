@@ -92,7 +92,7 @@ fn fly_crewed(from: &str, to: &str) -> (Flight, f64) {
     );
     let travel = report.travel_time_s.unwrap();
     assert!(
-        (travel - planned).abs() <= 0.05 * planned,
+        (travel - planned).abs() <= slack * planned,
         "{from} → {to}: flew {:.1} d against {:.1} d planned",
         travel / 86_400.0,
         planned / 86_400.0
@@ -288,7 +288,7 @@ fn crewed_transfers_land_across_the_solar_system() {
         ("Mercury", "Jupiter"),
         ("Earth", "Neptune"),
     ] {
-        fly_crewed(from, to);
+        fly_crewed(from, to, 0.05);
     }
 }
 
