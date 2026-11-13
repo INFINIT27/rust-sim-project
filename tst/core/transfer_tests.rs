@@ -67,6 +67,7 @@ fn fly_plan(
             let fix = plan_correction(
                 &scene,
                 voyage.craft,
+                origin,
                 target,
                 voyage.arrival_at_s - now,
                 voyage.next_flyby(now).as_ref(),
