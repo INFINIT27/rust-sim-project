@@ -51,6 +51,7 @@ fn fly(
                 &scene,
                 &flight.craft,
                 flight.voyage.craft,
+                origin,
                 target,
                 flight.voyage.arrival_at_s - now,
                 flight.next_flyby(now).as_ref(),
@@ -70,8 +71,9 @@ fn fly(
 }
 
 /// Plan and fly the crewed transfer between two named bodies, and check it landed softly at no
-/// more than its 3 g, within a few percent of the planned time.
-fn fly_crewed(from: &str, to: &str) -> Flight {
+/// more than its 3 g, within a few percent of the planned time. Returns the flight and the planned
+/// time of flight, in seconds.
+fn fly_crewed(from: &str, to: &str) -> (Flight, f64) {
     let craft = Spacecraft::crewed_transfer();
     let (scene, origin, target, plan) = plan(&craft, from, to);
     let planned = plan.transfer.flight_seconds;
@@ -95,7 +97,7 @@ fn fly_crewed(from: &str, to: &str) -> Flight {
         travel / 86_400.0,
         planned / 86_400.0
     );
-    flight
+    (flight, planned)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -251,7 +253,7 @@ fn the_crewed_transfer_to_mars_is_planned_onto_a_coasting_arc() {
 
 #[test]
 fn the_crewed_transfer_lands_on_the_moon_in_days_at_no_more_than_3_g() {
-    let flight = fly_crewed("Earth", "Moon");
+    let (flight, _) = fly_crewed("Earth", "Moon");
     let report = flight.report();
     let days = report.travel_time_s.unwrap() / 86_400.0;
     assert!((2.0..8.0).contains(&days), "{days} d");
@@ -260,8 +262,19 @@ fn the_crewed_transfer_lands_on_the_moon_in_days_at_no_more_than_3_g() {
 }
 
 #[test]
-fn the_crewed_transfer_lands_back_on_earth_from_the_moon() {
-    fly_crewed("Moon", "Earth");
+fn the_crewed_transfer_lands_back_on_earth_from_the_moon_on_time() {
+    // Within 1%, not just the 5% every crewed flight gets: flown uncorrected, this one lands
+    // within 0.1% of the plan, so anything more is the corrections adding error. They once did:
+    // their prediction left the origin out, folded the Moon into Earth, and burned 436 and then
+    // 818 m/s against a pull that was not there, landing 5% late (and failing on Linux CI).
+    let (flight, planned) = fly_crewed("Moon", "Earth");
+    let travel = flight.report().travel_time_s.unwrap();
+    assert!(
+        (travel - planned).abs() <= 0.01 * planned,
+        "flew {:.3} d against {:.3} d planned",
+        travel / 86_400.0,
+        planned / 86_400.0
+    );
 }
 
 /// The crewed transfer to the far planets, flown live. About three minutes in release.
@@ -392,10 +405,10 @@ fn every_pair_in_the_solar_system_can_be_flown_at_full_thrust() {
 fn a_transfer_correction_with_no_time_left_is_declined_not_a_crash() {
     // A fast frame can step past the arrival time while a correction is due, which hands the
     // planner a negative time to arrival. It used to panic in the prediction it builds.
-    let (mut scene, _earth, moon) = pair("Earth", "Moon");
+    let (mut scene, earth, moon) = pair("Earth", "Moon");
     let craft = scene.add(Spacecraft::crewed_transfer().prop());
     for remaining in [-10.0, 0.0] {
-        assert!(plan_transfer_correction(&scene, craft, moon, remaining).is_none());
+        assert!(plan_transfer_correction(&scene, craft, earth, moon, remaining).is_none());
     }
 }
 

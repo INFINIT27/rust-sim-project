@@ -69,6 +69,19 @@ prediction of the scene made with the same integrator the live scene uses.
   through a pass tighter than any measured so far could still be a discretisation artefact. A
   cheap guard would re-fly the chosen route at half the step and refuse it if the outcome moves
   by more than the aim tolerance.
+- **A flight to a planet with a moon aims at the system's barycentre until it lands.** The
+  plan and the corrections keep the origin's and the target's siblings, but fold the target's
+  own moons into it. So Mars → Earth aims at the Earth–Moon barycentre, `4,700 km` off Earth's
+  centre, and never sees the Moon it may pass. The landing law, which takes over twenty radii
+  out and steers at the true centre, absorbs this so far (Mars → Earth lands within `5%`). A
+  route that passes close to the target's moon would not be predicted.
+
+### Resolved: the Moon → Earth flight landing 5% late
+
+Corrections built their prediction with no origin, so the Moon was folded into Earth for a craft
+that had just left it. They burned `436` and `818 m/s` against the missing pull and pushed the
+arrival `5%` later. The plan itself was right: flown uncorrected, the flight lands within `0.1%`
+of it. `plan_correction` and `plan_transfer_correction` now take the flight's origin.
 
 ### Resolved: the "chaotic" Europa → Ganymede → Callisto voyage
 
