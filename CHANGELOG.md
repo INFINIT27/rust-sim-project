@@ -26,9 +26,21 @@ one exists. The convention is specified in
   flight to `1%`.
 - **CI's lint step failed on Rust 1.100.** Its clippy flags `needless_range_loop` on
   `boosting_into_the_rest_frame_leaves_only_the_rest_energy`, which indexed `space[axis]` in a
-  range loop; it now iterates the components. CI installs the latest stable, so a lint that
-  passes on an older local toolchain can fail there: check with `cargo +stable` after
-  `rustup update` before pushing.
+  range loop; it now iterates the components. CI had installed the latest stable while the local
+  toolchain was `1.99`, so the lint failed only on GitHub. The pinned toolchain below stops that.
+
+### Added
+
+- **The Rust version is pinned** in `rust-toolchain.toml` (`1.100.0`, with rustfmt and clippy).
+  Local `cargo` and CI both use it, and CI's install step now reads it (`rustup toolchain
+  install`) in place of `dtolnay/rust-toolchain@stable`. So a new clippy's lints arrive only when
+  the pin is bumped, in a change of its own, and not in an unrelated push.
+- **The README lists the CI checks to run before every push** ("Before every push: the CI
+  checks"): the five commands in CI's order (fmt, clippy with `-D warnings`, the build, the tests,
+  the doc tests), plus a one-line Windows PowerShell form that stops at the first failure. The doc
+  tests run on their own with `--test-threads=4`, because compiling all of them at once fails
+  spuriously on Windows. They are plain commands, not a script, so nothing extra runs in the
+  shell.
 
 ## 2026-11-11
 
