@@ -86,10 +86,36 @@ cargo test
 
 These run headlessly, so you need no window or GPU.
 
-GitHub runs the same checks on every push to `main` and every pull request into it
-([`.github/workflows/rust.yml`](.github/workflows/rust.yml)): `cargo fmt --check`,
-`cargo clippy --all-targets -- -D warnings` (any lint fails it), the build, and `cargo test`.
-To check a commit before pushing, run those four yourself.
+### Before every push: the CI checks
+
+GitHub runs these checks on every push to `main` and every pull request into it
+([`.github/workflows/rust.yml`](.github/workflows/rust.yml)). Run the same commands locally, in
+this order, and push only if all five pass:
+
+```bash
+cargo fmt --check                                    # formatting (fix with `cargo fmt`)
+cargo clippy --all-targets --locked -- -D warnings   # lints: any warning fails
+cargo build --locked                                 # the build
+cargo test --locked --all-targets                    # unit and integration tests
+cargo test --locked --doc -- --test-threads=4        # doc tests
+```
+
+CI runs the doc tests inside a single `cargo test`. Here they run on their own with four threads,
+because compiling all of them at once fails spuriously on Windows. `--locked` fails if
+`Cargo.lock` would change, as it does in CI.
+
+In Windows PowerShell 5.1, which has no `&&`, the same as one line that stops at the first failure:
+
+```powershell
+cargo fmt --check; if ($?) { cargo clippy --all-targets --locked -- -D warnings }; if ($?) { cargo build --locked }; if ($?) { cargo test --locked --all-targets }; if ($?) { cargo test --locked --doc -- --test-threads=4 }
+```
+
+CI and your machine both use the Rust version pinned in [`rust-toolchain.toml`](rust-toolchain.toml),
+which `cargo` installs on first use, so a lint that fails on GitHub also fails locally.
+`rustc --version` shows which version is in use. Bump the pin on purpose, in a change of its own.
+What these commands cannot catch is a difference between platforms (the maths library's last bits
+differ between Windows and Linux). For that, CI on the pull request is the final check before
+merging.
 
 ## Where the details are
 

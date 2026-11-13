@@ -20,7 +20,9 @@ cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps
 ```
 
-All five must be clean before a change is finished. Some long tests are `#[ignore]`d. Run them
+All five must be clean before a change is finished. Before pushing, also run the CI checks listed in
+[the README](README.md#before-every-push-the-ci-checks): the same commands CI runs, on the Rust
+version pinned in `rust-toolchain.toml`. Some long tests are `#[ignore]`d. Run them
 with `cargo test --release -- --ignored` when you touch what they cover; each one's `ignore`
 reason says what that is.
 

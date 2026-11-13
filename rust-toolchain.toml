@@ -1,0 +1,10 @@
+# The Rust version this repo builds and lints with, the same here and in CI. cargo and rustup read
+# this file and install the version if it is missing, so local checks match GitHub's exactly.
+#
+# Bump it on purpose, in its own change: a new clippy can bring new lints, and a bump that fails
+# them should be fixed there, not show up in an unrelated push. `rust-version` in Cargo.toml is the
+# oldest Rust the crate supports, which is a different thing.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -35,10 +35,13 @@ jobs:
         sudo apt-get install -y --no-install-recommends \
           pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
+    # The version pinned in rust-toolchain.toml, with its rustfmt and clippy, so CI lints with the
+    # same clippy as the local checks listed in the README's Tests section. The runner ships rustup.
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
+      run: |
+        rustup toolchain install
+        rustc --version
+        cargo clippy --version
 
     # Keeps compiled dependencies between runs, so only this crate is rebuilt after the first.
     - uses: Swatinem/rust-cache@v2
