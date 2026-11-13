@@ -626,23 +626,30 @@ fn plan_transfer(
     Err(NoFlight::NoArc)
 }
 
-/// The correction burn for `craft` in flight as `craft_id` in `scene`, by its propulsion: a coasting
-/// craft's trim from [`crate::core::transfer::plan_correction`] (aiming at `via` if a flyby is ahead),
-/// a transfer's from [`plan_transfer_correction`]. `None` for a direct flight, which needs none.
+/// The correction burn for `craft` in flight as `craft_id` in `scene`, from `origin` to `target`,
+/// by its propulsion: a coasting craft's trim from [`crate::core::transfer::plan_correction`]
+/// (aiming at `via` if a flyby is ahead), a transfer's from [`plan_transfer_correction`]. `None`
+/// for a direct flight, which needs none.
 pub fn plan_correction_for(
     scene: &Scene,
     craft: &Spacecraft,
     craft_id: BodyId,
+    origin: BodyId,
     target: BodyId,
     expected_arrival_s: f64,
     via: Option<&crate::core::transfer::Flyby>,
 ) -> Option<TransferPlan> {
     match craft.propulsion {
-        Propulsion::Coasting { .. } => {
-            crate::core::transfer::plan_correction(scene, craft_id, target, expected_arrival_s, via)
-        }
+        Propulsion::Coasting { .. } => crate::core::transfer::plan_correction(
+            scene,
+            craft_id,
+            origin,
+            target,
+            expected_arrival_s,
+            via,
+        ),
         Propulsion::Transfer { .. } => {
-            plan_transfer_correction(scene, craft_id, target, expected_arrival_s)
+            plan_transfer_correction(scene, craft_id, origin, target, expected_arrival_s)
         }
         Propulsion::Direct { .. } => None,
     }
@@ -658,9 +665,16 @@ pub fn plan_correction_for(
 /// [`crate::core::transfer::plan_correction`]: that one is built for trims of a few m/s, while a
 /// transfer arrives at its first correction with the drift its finite departure burn left, which
 /// on the long arc to Jupiter needs more than its steps reach.
+///
+/// The prediction keeps the same bodies the flight was planned with, `origin`'s moon system
+/// included (see [`Forecast::new`]). Without it a craft just leaving the Moon for Earth was
+/// corrected against a scene with the Moon folded into Earth: every correction "fixed" the Moon's
+/// pull, `436` and then `818 m/s`, and the flight landed `5%` late; with it the same flight needs
+/// one `23 m/s` trim and lands on time.
 pub fn plan_transfer_correction(
     scene: &Scene,
     craft: BodyId,
+    origin: BodyId,
     target: BodyId,
     expected_arrival_s: f64,
 ) -> Option<TransferPlan> {
@@ -671,7 +685,7 @@ pub fn plan_transfer_correction(
     );
     let late = expected_arrival_s * (1.0 + ORBIT_SOLVE_WINDOW_FRACTION);
     let progress = PlanProgress::default();
-    let forecast = Forecast::new(scene, Some(craft), target, None, late, &progress)?;
+    let forecast = Forecast::new(scene, Some(craft), target, Some(origin), late, &progress)?;
     let window = (
         expected_arrival_s * (1.0 - ORBIT_SOLVE_WINDOW_FRACTION),
         late.min(forecast.horizon_s()),

@@ -358,9 +358,14 @@ pub fn coasting_reach(
 /// more than [`TRANSFER_CORRECTION_MAX_MISS_RADII`] of the destination's radius. In every case the
 /// craft should simply carry on, since a burn onto a path that misses only adds error for the
 /// next correction to remove.
+///
+/// The prediction keeps the same bodies the flight was planned with, `origin`'s moon system
+/// included (moons are folded as for the plan itself), so a correction soon after leaving a moon
+/// still feels it.
 pub fn plan_correction(
     scene: &Scene,
     craft: BodyId,
+    origin: BodyId,
     target: BodyId,
     expected_arrival_s: f64,
     via: Option<&Flyby>,
@@ -370,7 +375,14 @@ pub fn plan_correction(
     let v0 = to_metres(craft_prop.velocity_units_s);
     let horizon = (1.5 * expected_arrival_s).max(TRANSFER_MIN_HORIZON_S);
     let never_cancelled = PlanProgress::default();
-    let ephemeris = Ephemeris::build(scene, Some(craft), target, None, horizon, &never_cancelled)?;
+    let ephemeris = Ephemeris::build(
+        scene,
+        Some(craft),
+        target,
+        Some(origin),
+        horizon,
+        &never_cancelled,
+    )?;
     let window = (0.5 * expected_arrival_s, horizon);
 
     let launch = |dv: &[f64; 3]| Some((r0, v0 + DVec3::new(dv[0], dv[1], dv[2])));

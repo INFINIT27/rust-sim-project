@@ -170,11 +170,8 @@ fn boosting_into_the_rest_frame_leaves_only_the_rest_energy() {
     let at_rest = p.boost(v).expect("subluminal");
 
     assert!((at_rest.time / (4.0 * C) - 1.0).abs() < 1.0e-13);
-    for axis in 0..3 {
-        assert!(
-            at_rest.space[axis].abs() < 1.0e-13 * size(&p),
-            "axis {axis}"
-        );
+    for (axis, component) in at_rest.space.iter().enumerate() {
+        assert!(component.abs() < 1.0e-13 * size(&p), "axis {axis}");
     }
 }
 

@@ -7,6 +7,29 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-12
+
+### Fixed
+
+- **Correction burns no longer forget the moon a flight left from.** `plan_transfer_correction`
+  and `plan_correction` (and so `plan_correction_for`, which now takes the flight's `origin`)
+  built their prediction with no origin, so `fold_distant_moons` folded the origin's moon system
+  away. A crewed flight from the Moon to Earth was corrected against a scene with the Moon merged
+  into Earth at their barycentre, about `4,700 km` off Earth's centre: the corrections burned
+  `436`, then `818 m/s` against a pull that was not there, and the flight landed `4.9%` late.
+  That failed `the_crewed_transfer_lands_back_on_earth_from_the_moon` on Linux CI, whose maths
+  library pushed it past the `5%` limit. Now the corrections keep the same bodies as the plan: one
+  `23 m/s` trim, and the flight lands within `0.1%` of the plan. A first fix that widened the limit
+  to `10%` and blamed the planner is undone. The planner was right all along: flown with no
+  corrections, the flight lands within `0.1%` of the plan. The earlier "finer frames" measurements
+  never changed the live step, which sets its own substeps. The test (now `…_on_time`) holds this
+  flight to `1%`.
+- **CI's lint step failed on Rust 1.100.** Its clippy flags `needless_range_loop` on
+  `boosting_into_the_rest_frame_leaves_only_the_rest_energy`, which indexed `space[axis]` in a
+  range loop; it now iterates the components. CI installs the latest stable, so a lint that
+  passes on an older local toolchain can fail there: check with `cargo +stable` after
+  `rustup update` before pushing.
+
 ## 2026-11-11
 
 ### Added
@@ -106,16 +129,6 @@ one exists. The convention is specified in
   `DISC_BEAMING_EXPONENT`, `DISC_LINE_WIDTH_PX`). The simulation stays, and the GPU ray-marcher
   draws it. The ray-marcher's twin is tested against its own `f64` tracer, so the lens map was not
   needed as an oracle.
-
-### Fixed
-
-- **`the_crewed_transfer_lands_back_on_earth_from_the_moon` failed on Linux CI.** It allowed the
-  flight 5% over its planned time, and the Moon → Earth flight runs about 5.5% over: flown in finer
-  frames the gap grows (4.9%, 5.2%, 5.6% at 1,200, 4,800 and 19,200 frames), so the planner is
-  optimistic about it rather than the stepping being coarse. Windows passed by a hair at 4.9%;
-  Linux, whose maths library differs in the last bits, landed a frame or two later and failed. This
-  flight now gets 10% (`fly_crewed` takes the slack); the others keep 5%. The optimism itself is
-  left as a known issue.
 
 ## 2026-11-10
 
