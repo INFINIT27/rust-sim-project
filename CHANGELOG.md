@@ -7,6 +7,20 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-13
+
+### Docs
+
+- **`CONTRIBUTING.md` lists the git commands from a change to a merged pull request**: branch
+  from an up-to-date `main`, stage and review, commit, push the branch, merge the PR once its CI
+  passes, and delete the branch. It also covers amending, undoing and dropping a commit. It states
+  the rule that changes reach `main` only through a pull request with a passing CI run, after a
+  direct push to `main` failed CI's lint step.
+- **The CI checks moved from the README to `CONTRIBUTING.md`** ("Before every push: the CI
+  checks"), next to the dev loop and the git steps that use them, since they are a contributor's
+  reference rather than part of running the app. The README's Tests section now links there, and
+  so does the workflow's comment.
+
 ## 2026-11-12
 
 ### Fixed
