@@ -20,14 +20,44 @@ cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps
 ```
 
-All five must be clean before a change is finished. Before pushing, also run the CI checks listed in
-[the README](README.md#before-every-push-the-ci-checks): the same commands CI runs, on the Rust
-version pinned in `rust-toolchain.toml`. Some long tests are `#[ignore]`d. Run them
+All five must be clean before a change is finished. Before pushing, also run
+[the CI checks](#before-every-push-the-ci-checks) below. Some long tests are `#[ignore]`d. Run them
 with `cargo test --release -- --ignored` when you touch what they cover; each one's `ignore`
 reason says what that is.
 
 A change to `assets/shaders/eclipse.wgsl` is not verified by the tests alone. See
 [`assets/README.md`](assets/README.md).
+
+## Before every push: the CI checks
+
+GitHub runs these checks on every push to `main` and every pull request into it
+([`.github/workflows/rust.yml`](.github/workflows/rust.yml)). Run the same commands locally, in
+this order, and push only if all five pass:
+
+```bash
+cargo fmt --check                                    # formatting (fix with `cargo fmt`)
+cargo clippy --all-targets --locked -- -D warnings   # lints: any warning fails
+cargo build --locked                                 # the build
+cargo test --locked --all-targets                    # unit and integration tests
+cargo test --locked --doc -- --test-threads=4        # doc tests
+```
+
+CI runs the doc tests inside a single `cargo test`. Here they run on their own with four threads,
+because compiling all of them at once fails spuriously on Windows. `--locked` fails if
+`Cargo.lock` would change, as it does in CI.
+
+In Windows PowerShell 5.1, which has no `&&`, the same as one line that stops at the first failure:
+
+```powershell
+cargo fmt --check; if ($?) { cargo clippy --all-targets --locked -- -D warnings }; if ($?) { cargo build --locked }; if ($?) { cargo test --locked --all-targets }; if ($?) { cargo test --locked --doc -- --test-threads=4 }
+```
+
+CI and your machine both use the Rust version pinned in [`rust-toolchain.toml`](rust-toolchain.toml),
+which `cargo` installs on first use, so a lint that fails on GitHub also fails locally.
+`rustc --version` shows which version is in use. Bump the pin on purpose, in a change of its own.
+What these commands cannot catch is a difference between platforms (the maths library's last bits
+differ between Windows and Linux). For that, CI on the pull request is the final check before
+merging.
 
 ## The rules, in brief
 
@@ -55,3 +85,52 @@ And from [`src/README.md`](src/README.md) and [`tst/README.md`](tst/README.md):
 
 One logical change per commit, with its `CHANGELOG.md` entry and any affected `README.md` updates
 included. Never commit `target/`.
+
+### From a change to a merged pull request
+
+Work on a branch, never on `main`. Changes reach `main` only through a pull request whose CI run
+has passed.
+
+```bash
+# 1. Start from an up-to-date main, on a new branch
+git switch main
+git pull
+git switch -c my-change              # pick a short name for the change
+
+# 2. Make the change, then run the CI checks above until all five pass
+
+# 3. Review and stage what goes into the commit
+git status                           # what changed
+git diff                             # the changes themselves
+git add path/to/file CHANGELOG.md    # stage files by name (`git add -A` stages everything)
+git diff --staged                    # exactly what will be committed
+
+# 4. Commit, with a conventional prefix: feat, fix, docs, refactor, test, chore
+git commit -m "fix(transfer): keep the origin's moons in the correction forecast"
+
+# 5. Push the branch (`-u` only the first time; later, plain `git push`)
+git push -u origin my-change
+```
+
+Then open a pull request into `main` on GitHub (the push prints a link to do so), wait for its CI
+run to pass, and merge it there.
+
+```bash
+# 6. After the merge: back to main, and delete the finished branch
+git switch main
+git pull
+git branch -d my-change              # local; -d refuses if the branch is not merged
+git push origin --delete my-change   # remote, unless GitHub already deleted it
+```
+
+### Fixing a commit
+
+```bash
+git commit --amend                   # fold the staged changes into the last commit
+git reset --soft HEAD~1              # undo the last commit, keep its changes staged
+git reset --hard HEAD~1              # drop the last commit and its changes: cannot be undone
+git push --force-with-lease          # after amending or resetting a commit already pushed
+```
+
+Rewrite only commits on your own branch. Once a commit is on `main`, undo it with a new commit
+(`git revert <commit>`) instead, and never force-push `main`.

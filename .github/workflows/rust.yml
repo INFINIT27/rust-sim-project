@@ -36,7 +36,7 @@ jobs:
           pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
     # The version pinned in rust-toolchain.toml, with its rustfmt and clippy, so CI lints with the
-    # same clippy as the local checks listed in the README's Tests section. The runner ships rustup.
+    # same clippy as the local checks listed in CONTRIBUTING.md. The runner ships rustup.
     - name: Install Rust
       run: |
         rustup toolchain install
