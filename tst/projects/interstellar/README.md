@@ -1,12 +1,12 @@
-# `tst/experiments/` — tests for the experiment catalog
+# `tst/projects/interstellar/` — tests for the interstellar experiments
 
-> **Purpose:** Tests for [`src/experiments/`](../../src/experiments/README.md): catalog
+> **Purpose:** Tests for [`src/projects/interstellar/`](../../../src/projects/interstellar/README.md): catalog
 > hygiene, scenes checked against published astronomy, argument parsing, and the random
 > generator.
 > **Edit here to:** add or fix a test of an experiment, its data, or the command line.
-> **Not here:** the scenes and their data, in `src/experiments/`.
+> **Not here:** the scenes and their data, in `src/projects/interstellar/`.
 
-Mirrors `src/experiments/`, one file per source file. All six are `#[path]`-included
+Mirrors `src/projects/interstellar/`, one file per source file. All six are `#[path]`-included
 unit-test modules compiled *inside* their subject, so they use `crate::…` paths and can
 reach private helpers.
 
@@ -67,7 +67,7 @@ reach private helpers.
   question for `experiment_5`; "would you trust a measurement taken with it" is the right one.
 - **Randomness is tested for what it promises.** Determinism, range, and a ten-bucket
   spread — not statistical quality, which a hand-rolled generator does not claim. See
-  `src/experiments/random.rs` on when to reach for `rand` instead.
+  `src/projects/interstellar/random.rs` on when to reach for `rand` instead.
 
 ## Note on `random_tests.rs`'s imports
 

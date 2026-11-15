@@ -7,7 +7,7 @@
 > (clock rates, redshift, Mercury's precession, light bending).
 > **Edit here to:** add or fix a relativistic formula, or the speed of light.
 > **Not here:** Newtonian formulas and `G` are in [`physics_utils/`](../README.md). The black-hole
-> experiment that uses `gravity.rs` is [`experiments/black_hole.rs`](../../experiments/README.md).
+> experiment that uses `gravity.rs` is [`projects/interstellar/black_hole.rs`](../../projects/interstellar/README.md).
 
 Everything in special relativity follows from two postulates: the laws of physics are the same in
 every inertial frame, and `c` is the same in every inertial frame. The files here build up from

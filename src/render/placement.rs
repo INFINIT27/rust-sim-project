@@ -36,8 +36,8 @@ use bevy::math::Vec3;
 use bevy::transform::components::Transform;
 
 use crate::core::scene::Scene;
-use crate::experiments::catalog::BodyNames;
 use crate::input::placement::PlacementState;
+use crate::projects::interstellar::catalog::BodyNames;
 use crate::render::constants::{PLACEMENT_DISTANCE_UNITS, PLACEMENT_RADII_CLEARANCE};
 
 /// Where an object of drawn radius `radius_units` should be placed, given a camera at

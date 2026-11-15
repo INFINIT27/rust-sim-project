@@ -6,7 +6,7 @@
 > in the menu (`Esc` > Settings or Configuration) and press Save there.
 > **Not here:** the code that reads these files is [`src/config/`](../src/config/README.md). The
 > built-in values they mirror are in each layer's `constants.rs`. Per-experiment settings (scene,
-> starting camera, time scale) are in [`src/experiments/`](../src/experiments/README.md).
+> starting camera, time scale) are in [`src/projects/interstellar/`](../src/projects/interstellar/README.md).
 
 Every file, and every key in it, is optional: delete one and the built-in value is used. The
 shipped files hold exactly the built-in values, so they are a list of what can be changed.

@@ -1510,7 +1510,7 @@ fn luminosity_defaults_to_dark_and_is_validated() {
 
 /// The solar system, where gravity actually moves things within a step.
 fn solar_system_scene() -> Scene {
-    crate::experiments::solar_system::solar_system().scene
+    crate::projects::interstellar::solar_system::solar_system().scene
 }
 
 #[test]

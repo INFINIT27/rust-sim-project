@@ -1,7 +1,7 @@
-//! Unit tests for the [`crate::experiments::objects`] module and the
-//! [`STELLAR_OBJECTS`](crate::experiments::constants::STELLAR_OBJECTS) table.
+//! Unit tests for the [`crate::projects::interstellar::objects`] module and the
+//! [`STELLAR_OBJECTS`](crate::projects::interstellar::constants::STELLAR_OBJECTS) table.
 //!
-//! Compiled as a private `#[cfg(test)] mod tests` inside `src/experiments/objects.rs` via
+//! Compiled as a private `#[cfg(test)] mod tests` inside `src/projects/interstellar/objects.rs` via
 //! `#[path]`, not as a standalone integration test.
 //!
 //! # What these tests are for
@@ -19,7 +19,7 @@
 
 use super::*;
 use crate::core::scene::DVec3;
-use crate::experiments::constants::STELLAR_OBJECTS;
+use crate::projects::interstellar::constants::STELLAR_OBJECTS;
 
 const G: f64 = 6.674e-11;
 const C: f64 = 2.997_924_58e8;
@@ -158,7 +158,8 @@ fn a_white_dwarf_is_a_suns_mass_in_an_earths_volume() {
 
     assert!((dwarf.solar_masses() - 1.0).abs() < 0.05);
     assert!(
-        (dwarf.radius_m / crate::experiments::constants::EARTH_RADIUS_M - 0.92).abs() < 0.05,
+        (dwarf.radius_m / crate::projects::interstellar::constants::EARTH_RADIUS_M - 0.92).abs()
+            < 0.05,
         "a white dwarf should be within a few percent of an Earth radius"
     );
 }
@@ -257,8 +258,8 @@ fn the_supermassive_black_hole_is_the_one_object_visible_without_help() {
     );
     assert!(
         hole.radius_units()
-            > crate::experiments::solar_system::radius_units(
-                crate::experiments::constants::SOLAR_SYSTEM_SUN_RADIUS_M
+            > crate::projects::interstellar::solar_system::radius_units(
+                crate::projects::interstellar::constants::SOLAR_SYSTEM_SUN_RADIUS_M
             ),
         "and it dwarfs the Sun, which is the comparison worth making"
     );

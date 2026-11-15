@@ -1,7 +1,7 @@
-//! Unit tests for the [`crate::experiments::selection`] module.
+//! Unit tests for the [`crate::projects::interstellar::selection`] module.
 //!
 //! Compiled as a private `#[cfg(test)] mod tests` inside
-//! `src/experiments/selection.rs` via `#[path]`, not as a standalone integration test.
+//! `src/projects/interstellar/selection.rs` via `#[path]`, not as a standalone integration test.
 //!
 //! The parse is the app's entire command-line surface, and it is the one part a user
 //! interacts with before anything renders — so these cover the accepted forms, the

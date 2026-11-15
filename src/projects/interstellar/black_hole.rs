@@ -50,7 +50,7 @@
 //!
 //! # Capture, and why it differs from the `B` key
 //!
-//! The `B`-key Sgr A* ([`STELLAR_OBJECTS`](crate::experiments::constants::STELLAR_OBJECTS)) captures
+//! The `B`-key Sgr A* ([`STELLAR_OBJECTS`](crate::projects::interstellar::constants::STELLAR_OBJECTS)) captures
 //! at the **tidal disruption radius** of a Sun-like star, `113` units, because that is where a star
 //! dies. This experiment captures at the **horizon**: the experiment is about the black hole itself,
 //! and the horizon is the radius that belongs to the hole rather than to what falls in. The drawn
@@ -64,19 +64,19 @@ use crate::core::integrator::kerr_schild_to_world;
 #[cfg(test)]
 use crate::core::scene::BodyId;
 use crate::core::scene::{Aabb, Body, Color, DVec3, GravityModel, Pose, Prop, Scene};
-use crate::experiments::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
-use crate::experiments::constants::{
-    ASTRONOMICAL_UNIT_M, BLACK_HOLE_BOUNDS_EXTENT_UNITS, BLACK_HOLE_CAMERA_OFFSET_UNITS,
-    BLACK_HOLE_FRAMED_RADIUS_UNITS, BLACK_HOLE_SOFTENING_UNITS, BLACK_HOLE_TIME_SCALE,
-    BLACK_HOLE_TRAIL_LENGTH_UNITS, DEFAULT_RANDOM_SEED, SGR_A_STAR_COLOR, SGR_A_STAR_MASS_KG,
-    SGR_A_STAR_SPIN, SOLAR_MASS_KG, SOLAR_RADIUS_M, S_STARS, S_STAR_DISTANCE_PC, S_STAR_EPOCH_YR,
-};
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
 use crate::physics_utils::relativity::gravity::{
     innermost_stable_circular_orbit_radius, photon_sphere_radius, schwarzschild_radius,
 };
 use crate::physics_utils::relativity::kerr::{horizon_radius, KerrBlackHole};
+use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
+use crate::projects::interstellar::constants::{
+    ASTRONOMICAL_UNIT_M, BLACK_HOLE_BOUNDS_EXTENT_UNITS, BLACK_HOLE_CAMERA_OFFSET_UNITS,
+    BLACK_HOLE_FRAMED_RADIUS_UNITS, BLACK_HOLE_SOFTENING_UNITS, BLACK_HOLE_TIME_SCALE,
+    BLACK_HOLE_TRAIL_LENGTH_UNITS, DEFAULT_RANDOM_SEED, SGR_A_STAR_COLOR, SGR_A_STAR_MASS_KG,
+    SGR_A_STAR_SPIN, SOLAR_MASS_KG, SOLAR_RADIUS_M, S_STARS, S_STAR_DISTANCE_PC, S_STAR_EPOCH_YR,
+};
 use crate::time::constants::SECONDS_PER_JULIAN_YEAR;
 
 /// The name `experiment_6`'s black hole is shown under.
@@ -390,5 +390,5 @@ pub fn black_hole() -> Experiment {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/black_hole_tests.rs"]
+#[path = "../../../tst/projects/interstellar/black_hole_tests.rs"]
 mod tests;

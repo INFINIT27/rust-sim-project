@@ -14,10 +14,10 @@ use bevy::ecs::system::{Local, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::core::scene::BodyId;
-use crate::experiments::catalog::BodyNames;
 use crate::input::popup::PopupState;
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
+use crate::projects::interstellar::catalog::BodyNames;
 use crate::render::mission::{Mission, MissionPhase};
 use crate::spacecraft::FlightReport;
 use crate::ui::constants::{

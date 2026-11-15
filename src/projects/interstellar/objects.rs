@@ -1,7 +1,7 @@
 //! Interstellar objects you can place into a running experiment: dwarfs, a neutron star,
 //! and black holes.
 //!
-//! [`crate::experiments::constants::STELLAR_OBJECTS`] is the catalog and
+//! [`crate::projects::interstellar::constants::STELLAR_OBJECTS`] is the catalog and
 //! [`StellarObject::to_prop`] turns a row into something the simulation can hold. Placing
 //! one is the `B` key — see [`crate::input::placement`] for the picker and
 //! [`crate::render::placement`] for the spawn.
@@ -60,7 +60,7 @@ pub use bevy::math::{Quat, Vec3};
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::scene::{Body, Color, DVec3, Pose, Prop};
-use crate::experiments::constants::{SOLAR_SYSTEM_SUN_MASS_KG, STELLAR_OBJECTS};
+use crate::projects::interstellar::constants::{SOLAR_SYSTEM_SUN_MASS_KG, STELLAR_OBJECTS};
 
 /// One placeable object: what it weighs, how big it really is, how big it is drawn, and
 /// whether it swallows what it touches.
@@ -250,5 +250,5 @@ pub fn stellar_object(name: &str) -> Option<&'static StellarObject> {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/objects_tests.rs"]
+#[path = "../../../tst/projects/interstellar/objects_tests.rs"]
 mod tests;

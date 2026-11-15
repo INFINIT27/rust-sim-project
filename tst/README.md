@@ -24,7 +24,7 @@ conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 | `time/` | Unit + property tests for `src/time/` — the `TimeStep` guarantee and both clocks. |
 | `performance/` | Unit tests for `src/performance/` — switch parsing, the benchmark summary, and the ignored floor-eclipse measurement. |
 | `config/` | Unit tests for `src/config/`: the shipped files equal the defaults, optional files and keys, and errors naming the file and key. |
-| `experiments/` | Unit + property tests for `src/experiments/` — catalog hygiene, the three-body premise, argument parsing, the generator. |
+| `projects/` | Unit + property tests for `src/projects/`, one subdirectory per project. `interstellar/` tests catalog hygiene, the three-body premise, argument parsing, and the generator. |
 | `spacecraft/` | Unit tests for `src/spacecraft/`: the built-in craft and fleet, the Lambert solver, the steering laws, the flight report, and whole flights flown live, from the crewed transfer to the Moon to full-thrust Mercury to Jupiter. Two opt-in sweeps. |
 
 ## The two kinds of test file here, and why it matters

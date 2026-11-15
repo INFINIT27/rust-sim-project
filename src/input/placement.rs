@@ -37,9 +37,9 @@ use bevy::ecs::system::{Res, ResMut, Resource};
 use bevy::input::{keyboard::KeyCode, ButtonInput};
 
 use crate::bindings::{keymap_or_default, Action, KeyMap};
-use crate::experiments::constants::STELLAR_OBJECTS;
-use crate::experiments::objects::StellarObject;
 use crate::input::menu::MenuState;
+use crate::projects::interstellar::constants::STELLAR_OBJECTS;
+use crate::projects::interstellar::objects::StellarObject;
 
 /// Whether the placement picker is open, which object is selected, and whether a placement
 /// has been asked for.
@@ -106,7 +106,7 @@ impl PlacementState {
     }
 
     /// Index of the selected row, always in range for
-    /// [`crate::experiments::constants::STELLAR_OBJECTS`].
+    /// [`crate::projects::interstellar::constants::STELLAR_OBJECTS`].
     #[inline]
     pub fn selected_index(&self) -> usize {
         // Defensive: `selected` is only ever moved by the two methods below, both of which

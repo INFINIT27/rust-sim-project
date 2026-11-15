@@ -60,7 +60,7 @@ fn the_camera_speed_is_usable_for_this_scene() {
     // The bound is the body's diameter, derived from the constant rather than assumed, so
     // shrinking the bodies tightens it automatically.
     let smallest_body_diameter =
-        2.0 * crate::experiments::constants::THREE_BODY_VISUAL_RADIUS_UNITS;
+        2.0 * crate::projects::interstellar::constants::THREE_BODY_VISUAL_RADIUS_UNITS;
     let boosted_frame_units = CAMERA_MOVE_SPEED_UNITS_S * CAMERA_BOOST_MULTIPLIER / 60.0;
     assert!(
         boosted_frame_units < smallest_body_diameter,

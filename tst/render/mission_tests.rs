@@ -2,8 +2,8 @@
 //! to a rocket flying in the scene is driven through a real `App`.
 
 use super::*;
-use crate::experiments::catalog::{two_body, Experiment};
-use crate::experiments::solar_system::solar_system;
+use crate::projects::interstellar::catalog::{two_body, Experiment};
+use crate::projects::interstellar::solar_system::solar_system;
 use crate::render::plugin::step_scene_system;
 use bevy::app::App;
 use bevy::MinimalPlugins;

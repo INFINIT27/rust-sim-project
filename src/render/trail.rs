@@ -74,8 +74,8 @@ use bevy::reflect::Reflect;
 use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::core::scene::moon_primary;
 use crate::core::scene::{BodyId, Color, Scene};
-use crate::experiments::catalog::ExperimentSpec;
 use crate::input::menu::MenuState;
+use crate::projects::interstellar::catalog::ExperimentSpec;
 use crate::render::constants::{
     TRAIL_HEAD_ALPHA, TRAIL_LENGTH_UNITS, TRAIL_LINE_WIDTH_PX, TRAIL_MAX_SAMPLES,
     TRAIL_MAX_TURN_RADIANS, TRAIL_MIN_SAMPLE_SPACING_UNITS, TRAIL_MIN_SPACING_FRACTION,

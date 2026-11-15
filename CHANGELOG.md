@@ -7,6 +7,22 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-14
+
+### Changed
+
+- **The experiments moved under `projects/`, into an `interstellar` bucket.**
+  `src/experiments/` is now `src/projects/interstellar/`, and its tests moved from
+  `tst/experiments/` to `tst/projects/interstellar/`. The repository will hold other kinds of
+  simulation, and each kind gets its own directory under `projects/`. Every experiment so far
+  (two-body, three-body ring, solar system, Jovian moons, scale check, black hole) is gravity at
+  astronomical scale, so they all go in `interstellar`. The module path is now
+  `crate::projects::interstellar::…`. The crate-root re-exports are unchanged, so no outside caller
+  breaks. The experiment names, command-line arguments and behaviour are unchanged too. The new
+  `src/projects/` and `tst/projects/` each have a `README.md` that says how to add a project. The
+  catalog and the argument parsing stay in `interstellar/` for now. They move up to `projects/`
+  when a second project brings its own experiments.
+
 ## 2026-11-13
 
 ### Docs

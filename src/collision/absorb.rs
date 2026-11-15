@@ -61,7 +61,7 @@
 //!
 //! Not gravitational-wave emission, not an accretion disc, not tidal disruption — a star is
 //! swallowed whole and instantly the moment its hull touches. Not relativity of any kind:
-//! see [`crate::experiments::objects`] for where Newtonian gravity stops being defensible
+//! see [`crate::projects::interstellar::objects`] for where Newtonian gravity stops being defensible
 //! around these objects.
 
 use crate::collision::contact::contact_between_props;

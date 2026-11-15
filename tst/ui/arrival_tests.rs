@@ -34,7 +34,7 @@ fn masses_switch_to_tonnes_with_separators() {
 
 /// Earth and Mars, and the solar system's names.
 fn earth_and_mars() -> (BodyId, BodyId, BodyNames) {
-    let experiment = crate::experiments::solar_system::solar_system();
+    let experiment = crate::projects::interstellar::solar_system::solar_system();
     let id = |name: &str| {
         experiment
             .names

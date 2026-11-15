@@ -1,6 +1,6 @@
-//! Unit tests for the [`crate::experiments::black_hole`] module.
+//! Unit tests for the [`crate::projects::interstellar::black_hole`] module.
 //!
-//! Compiled as a private `#[cfg(test)] mod tests` inside `src/experiments/black_hole.rs` via
+//! Compiled as a private `#[cfg(test)] mod tests` inside `src/projects/interstellar/black_hole.rs` via
 //! `#[path]`, not as a standalone integration test.
 //!
 //! # What these tests are for
@@ -17,12 +17,12 @@
 use super::*;
 use crate::core::integrator::kerr_schild_to_world;
 use crate::core::scene::Color;
-use crate::experiments::catalog::ExperimentId;
-use crate::experiments::constants::{BLACK_HOLE_TIME_SCALE, STELLAR_OBJECTS};
-use crate::experiments::objects::stellar_object;
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
 use crate::physics_utils::relativity::kerr::{circular_orbit, equatorial_point, isco_radius};
+use crate::projects::interstellar::catalog::ExperimentId;
+use crate::projects::interstellar::constants::{BLACK_HOLE_TIME_SCALE, STELLAR_OBJECTS};
+use crate::projects::interstellar::objects::stellar_object;
 use crate::time::constants::MAX_REAL_STEP_SECONDS;
 use crate::time::simulation::SimulationClock;
 

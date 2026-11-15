@@ -11,7 +11,7 @@
 //!
 //! # Why this is not in a layer
 //!
-//! `--help` ([`crate::experiments::selection::help_text`]) prints the bindings before any window
+//! `--help` ([`crate::projects::interstellar::selection::help_text`]) prints the bindings before any window
 //! exists, the menu ([`crate::ui::menu`]) draws them, and `input/` and `render/` act on them. Those
 //! layers may not import one another, so the bindings sit at the crate root next to
 //! [`crate::constants`], on the same rule that module states: a thing read by more than one layer

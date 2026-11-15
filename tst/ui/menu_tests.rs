@@ -15,7 +15,7 @@
 //! panel fits its width. `cargo run --release` is the only thing that answers those.
 
 use super::*;
-use crate::experiments::catalog::ExperimentId;
+use crate::projects::interstellar::catalog::ExperimentId;
 use crate::render::trail::TrailConfig;
 use crate::time::simulation::SimulationClock;
 

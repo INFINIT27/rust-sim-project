@@ -16,7 +16,8 @@
 //!   [`core`], it is Bevy-free; unlike [`core`], it works in `f64`.
 //! - [`time`] — the two clocks and the [`TimeStep`] every physics entry point
 //!   takes. No Bevy import at all, not even `bevy::math`.
-//! - [`experiments`] — the catalog of simulations, each one's settings, and the
+//! - [`projects`] — the simulations, one module per kind; [`projects::interstellar`] holds
+//!   every experiment so far, the catalog of simulations, each one's settings, and the
 //!   command-line selection that picks one. Bevy-free like [`core`].
 //! - [`spacecraft`] — what a craft is (the [`Fleet`] `G` cycles), how it plans a flight
 //!   between two bodies, how it flies it, and what it cost. Above [`core`], and like it
@@ -40,10 +41,10 @@ pub mod collision;
 pub mod config;
 pub mod constants;
 pub mod core;
-pub mod experiments;
 pub mod input;
 pub mod performance;
 pub mod physics_utils;
+pub mod projects;
 pub mod render;
 pub mod spacecraft;
 pub mod time;
@@ -60,25 +61,27 @@ pub use crate::time::simulation::{clamp_real_step, SimulationClock, TimeStep};
 
 // Experiments: the catalog, the per-experiment settings, the selection that picks
 // one, and the seeded generator that randomises initial conditions.
-pub use crate::experiments::catalog::{
+pub use crate::projects::interstellar::catalog::{
     catalog_lines, ring_circular_speed_units_s, three_body_ring, two_body, BodyNames, Experiment,
     ExperimentId, ExperimentSpec,
 };
-pub use crate::experiments::random::Rng;
+pub use crate::projects::interstellar::random::Rng;
 
 // The interstellar objects the `B` key can place, and the catalog they come from.
-pub use crate::experiments::objects::{stellar_object, StellarObject};
+pub use crate::projects::interstellar::objects::{stellar_object, StellarObject};
 
 // `experiment_5`: the static size-comparison row.
-pub use crate::experiments::scale_check::{scale_check, scale_check_layout, scale_rows, ScaleRow};
+pub use crate::projects::interstellar::scale_check::{
+    scale_check, scale_check_layout, scale_rows, ScaleRow,
+};
 // `experiment_6`: Sgr A* above the ground plane.
-pub use crate::experiments::black_hole::{
+pub use crate::projects::interstellar::black_hole::{
     black_hole, black_hole_centre_units, black_hole_radii, s_star_state, spinning_horizon_units,
     BlackHoleRadii, SStar, SGR_A_STAR_NAME,
 };
 
 // `experiment_4`: Jupiter and the Galilean moons.
-pub use crate::experiments::constants::{
+pub use crate::projects::interstellar::constants::{
     BLACK_HOLE_BOUNDS_EXTENT_UNITS, BLACK_HOLE_CAMERA_OFFSET_UNITS, BLACK_HOLE_FRAMED_RADIUS_UNITS,
     BLACK_HOLE_SOFTENING_UNITS, BLACK_HOLE_TIME_SCALE, BLACK_HOLE_TRAIL_LENGTH_UNITS,
     DEFAULT_RANDOM_SEED, EARTH_MOONS, EARTH_RADIUS_M, JOVIAN_BOUNDS_MARGIN_UNITS,
@@ -95,12 +98,14 @@ pub use crate::experiments::constants::{
     THREE_BODY_RING_RADIUS_UNITS, THREE_BODY_TIME_SCALE, THREE_BODY_VISUAL_RADIUS_UNITS,
     TWO_BODY_CAMERA_POSITION_UNITS, TWO_BODY_FRAMED_RADIUS_UNITS,
 };
-pub use crate::experiments::jovian::{
+pub use crate::projects::interstellar::jovian::{
     jovian_drawn_radius_units, jovian_orbit_period_seconds, jovian_orbit_speed_units_s,
     jovian_primary, jovian_system,
 };
-pub use crate::experiments::selection::{help_text, parse_args, Command, ParseError, Selection};
-pub use crate::experiments::solar_system::{
+pub use crate::projects::interstellar::selection::{
+    help_text, parse_args, Command, ParseError, Selection,
+};
+pub use crate::projects::interstellar::solar_system::{
     circular_orbit_period_seconds, circular_orbit_speed_units_s, radius_units, solar_system,
     MoonSystem, Planet,
 };
@@ -258,7 +263,7 @@ pub use crate::render::grid::{
 };
 
 // The `render` layer's own constants: lighting, mesh proxies, and the grid. Camera
-// framing is per experiment now, in `experiments::constants`.
+// framing is per experiment now, in `projects::interstellar::constants`.
 pub use crate::render::constants::{
     BACKGROUND_COLOR, CAMERA_FAR_UNITS, CAMERA_NEAR_UNITS, ECLIPSE_SHADER_PATH,
     GRID_AXIS_THICKNESS_UNITS, GRID_AXIS_X_COLOR, GRID_AXIS_Z_COLOR, GRID_COARSE_SPACING_UNITS,

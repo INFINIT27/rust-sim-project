@@ -1,6 +1,6 @@
-//! Unit tests for the [`crate::experiments::solar_system`] module.
+//! Unit tests for the [`crate::projects::interstellar::solar_system`] module.
 //!
-//! Compiled as a private `#[cfg(test)] mod tests` inside `src/experiments/solar_system.rs`
+//! Compiled as a private `#[cfg(test)] mod tests` inside `src/projects/interstellar/solar_system.rs`
 //! via `#[path]`, not as a standalone integration test.
 //!
 //! # What these tests are for
@@ -19,11 +19,11 @@
 //! meaningful if the lie is on the record.
 
 use super::*;
-use crate::experiments::constants::{
+use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
+use crate::projects::interstellar::constants::{
     EARTH_MOONS, EARTH_RADIUS_M, JOVIAN_MOONS, MOON_SYSTEMS, SOLAR_SYSTEM_SOFTENING_UNITS,
     SOLAR_SYSTEM_SUN_RADIUS_M, SOLAR_SYSTEM_TRAIL_LENGTH_UNITS,
 };
-use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::time::constants::SECONDS_PER_DAY;
 
 /// Index of the Sun in the built scene: after the floor, before the planets.
@@ -247,8 +247,8 @@ fn the_sun_no_longer_reaches_any_planets_orbit() {
     );
 
     // And what the old exaggeration would have made it, for the record.
-    let old_scale =
-        (crate::experiments::constants::SOLAR_SYSTEM_SUN_RADIUS_M / EARTH_RADIUS_M) as f32;
+    let old_scale = (crate::projects::interstellar::constants::SOLAR_SYSTEM_SUN_RADIUS_M
+        / EARTH_RADIUS_M) as f32;
     assert!(
         old_scale > mercury_perihelion,
         "the 157x Sun ({old_scale} units) really did contain Mercury's orbit"
@@ -587,7 +587,7 @@ fn every_moon_orbits_its_primary_and_not_the_sun() {
 /// Earth and Jupiter systems are held to *identical* assertions — a copy per system is how the two
 /// stop being the same test.
 fn check_moon(
-    moon: &crate::experiments::solar_system::Planet,
+    moon: &crate::projects::interstellar::solar_system::Planet,
     prop: &Prop,
     primary: &Prop,
     primary_mass_kg: f64,
@@ -613,10 +613,11 @@ fn check_moon(
             moon.name
         );
 
-        let expected_speed = crate::experiments::solar_system::circular_orbit_speed_units_s(
-            moon.semi_major_axis_m,
-            primary_mass_kg as f32,
-        );
+        let expected_speed =
+            crate::projects::interstellar::solar_system::circular_orbit_speed_units_s(
+                moon.semi_major_axis_m,
+                primary_mass_kg as f32,
+            );
         assert!(
             (relative.length() / expected_speed - 1.0).abs() < 1.0e-2,
             "{} moves at {} about Jupiter, expected {expected_speed}",
@@ -706,7 +707,7 @@ fn earths_moon_matches_published_figures() {
 
     // The derived orbit, against the published 27.32 days and 1.022 km/s. Circular where the real
     // one is eccentric, so the tolerance is a percent rather than a part in a thousand.
-    let period = crate::experiments::solar_system::circular_orbit_period_seconds(
+    let period = crate::projects::interstellar::solar_system::circular_orbit_period_seconds(
         moon.semi_major_axis_m,
         SOLAR_SYSTEM_PLANETS[2].mass_kg as f32,
     );
@@ -716,7 +717,7 @@ fn earths_moon_matches_published_figures() {
         period / 86_400.0
     );
 
-    let speed = crate::experiments::solar_system::circular_orbit_speed_units_s(
+    let speed = crate::projects::interstellar::solar_system::circular_orbit_speed_units_s(
         moon.semi_major_axis_m,
         SOLAR_SYSTEM_PLANETS[2].mass_kg as f32,
     ) * crate::constants::METRES_PER_UNIT;

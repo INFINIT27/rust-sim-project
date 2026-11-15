@@ -70,7 +70,7 @@ merging.
 And from [`src/README.md`](src/README.md) and [`tst/README.md`](tst/README.md):
 
 - **Layer boundaries.** `time/` imports no Bevy. `core/`, `collision/`, `physics_utils/` and
-  `experiments/` may use `bevy::math` and nothing else from Bevy. `ui/` is the only module that
+  `projects/` may use `bevy::math` and nothing else from Bevy. `ui/` is the only module that
   imports `bevy_egui`.
 - **Re-exports.** Every public item is re-exported from `src/lib.rs`. Inside the crate, refer to
   items by their real path, not through the re-export.

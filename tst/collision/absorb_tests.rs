@@ -455,13 +455,13 @@ fn total_momentum_units(scene: &Scene) -> [f64; 3] {
 /// No floor — an immovable prop is not part of a momentum budget, and leaving it out makes the
 /// assertion about the physics rather than about the bookkeeping.
 fn hole_sun_and_neutron_star() -> Scene {
-    use crate::experiments::constants::{SOLAR_SYSTEM_SUN_MASS_KG, STELLAR_OBJECTS};
+    use crate::projects::interstellar::constants::{SOLAR_SYSTEM_SUN_MASS_KG, STELLAR_OBJECTS};
 
     let mut scene = Scene::empty(crate::core::scene::Aabb {
         min: Vec3::splat(-500.0),
         max: Vec3::splat(500.0),
     });
-    scene.softening_units = crate::experiments::constants::SOLAR_SYSTEM_SOFTENING_UNITS;
+    scene.softening_units = crate::projects::interstellar::constants::SOLAR_SYSTEM_SOFTENING_UNITS;
 
     let hole = STELLAR_OBJECTS
         .iter()
@@ -484,10 +484,10 @@ fn hole_sun_and_neutron_star() -> Scene {
                 position: DVec3::ZERO,
                 rotation: Quat::IDENTITY,
             },
-            radius: crate::experiments::solar_system::radius_units(
-                crate::experiments::constants::SOLAR_SYSTEM_SUN_RADIUS_M,
+            radius: crate::projects::interstellar::solar_system::radius_units(
+                crate::projects::interstellar::constants::SOLAR_SYSTEM_SUN_RADIUS_M,
             ),
-            color: crate::experiments::constants::SOLAR_SYSTEM_SUN_COLOR,
+            color: crate::projects::interstellar::constants::SOLAR_SYSTEM_SUN_COLOR,
         },
         DVec3::new(0.0, 0.0, 1.0e-5),
         SOLAR_SYSTEM_SUN_MASS_KG,

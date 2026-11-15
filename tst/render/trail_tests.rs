@@ -13,7 +13,7 @@
 
 use super::*;
 use crate::core::scene::DVec3;
-use crate::experiments::catalog::two_body;
+use crate::projects::interstellar::catalog::two_body;
 use crate::render::constants::TRAIL_LINE_WIDTH_PX;
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
@@ -451,9 +451,11 @@ fn prop_id_with_mass(scene: &Scene, mass_kg: f64) -> BodyId {
 
 #[test]
 fn the_solar_systems_moons_are_matched_to_their_planets_and_nothing_else_is() {
-    use crate::experiments::constants::{EARTH_MOONS, JOVIAN_MOONS, SOLAR_SYSTEM_PLANETS};
+    use crate::projects::interstellar::constants::{
+        EARTH_MOONS, JOVIAN_MOONS, SOLAR_SYSTEM_PLANETS,
+    };
 
-    let scene = crate::experiments::solar_system::solar_system().scene;
+    let scene = crate::projects::interstellar::solar_system::solar_system().scene;
     let earth = prop_id_with_mass(&scene, SOLAR_SYSTEM_PLANETS[2].mass_kg);
     let jupiter = prop_id_with_mass(&scene, SOLAR_SYSTEM_PLANETS[4].mass_kg);
 
@@ -473,7 +475,7 @@ fn the_solar_systems_moons_are_matched_to_their_planets_and_nothing_else_is() {
 fn comparable_bodies_are_never_treated_as_moons() {
     for scene in [
         two_body().scene,
-        crate::experiments::catalog::three_body_ring(7).scene,
+        crate::projects::interstellar::catalog::three_body_ring(7).scene,
     ] {
         for (id, _) in scene.iter() {
             assert_eq!(moon_primary(&scene, id), None, "{id:?} must not be a moon");
@@ -498,12 +500,14 @@ fn distance_to_polyline(point: Vec3, path: &TrailPath) -> f32 {
 
 #[test]
 fn a_moons_trail_follows_the_absolute_path_the_integrator_computed() {
-    use crate::experiments::constants::{EARTH_MOONS, JOVIAN_MOONS, SOLAR_SYSTEM_PLANETS};
+    use crate::projects::interstellar::constants::{
+        EARTH_MOONS, JOVIAN_MOONS, SOLAR_SYSTEM_PLANETS,
+    };
     use crate::time::simulation::SimulationClock;
 
-    let crate::experiments::catalog::Experiment {
+    let crate::projects::interstellar::catalog::Experiment {
         mut scene, spec, ..
-    } = crate::experiments::solar_system::solar_system();
+    } = crate::projects::interstellar::solar_system::solar_system();
     let mut config = TrailConfig::default();
     config.length_units = spec.trail_length_units.unwrap();
     config.min_spacing_units = config.length_units / TRAIL_TARGET_SEGMENTS as f32;
@@ -818,7 +822,7 @@ fn no_experiment_at_all_also_keeps_the_shipped_trail() {
 #[test]
 fn an_experiment_can_ask_for_a_longer_trail() {
     // The solar system does: 10 units is a hundredth of one Earth orbit.
-    let spec = crate::experiments::solar_system::solar_system().spec;
+    let spec = crate::projects::interstellar::solar_system::solar_system().spec;
     let requested = spec
         .trail_length_units
         .expect("the solar system asks for its own trail length");
@@ -838,7 +842,7 @@ fn a_longer_trail_does_not_cost_more_samples() {
     // The failure this prevents: keeping the 0.05-unit spacing for a 400-unit trail would
     // ask for 8000 samples, hit the 512 cap, and draw a trail a twentieth of its stated
     // length — which looks like the length not working rather than the spacing.
-    let spec = crate::experiments::solar_system::solar_system().spec;
+    let spec = crate::projects::interstellar::solar_system::solar_system().spec;
     let app = app_with_trails(Some(spec));
     let config = *app.world().resource::<TrailConfig>();
 

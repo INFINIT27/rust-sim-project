@@ -55,13 +55,13 @@ use bevy::reflect::Reflect;
 use crate::constants::METRES_PER_UNIT;
 use crate::core::integrator::kerr_schild_to_world;
 use crate::core::scene::Scene;
-use crate::experiments::random::Rng;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
 use crate::physics_utils::relativity::gravity::schwarzschild_radius;
 use crate::physics_utils::relativity::kerr::{
     horizon_radius, kerr_schild_acceleration, kerr_schild_light_velocity, kerr_schild_radius,
     KerrBlackHole,
 };
+use crate::projects::interstellar::random::Rng;
 use crate::render::constants::{
     LIGHT_STREAM_COLOR, LIGHT_STREAM_EMISSION_INTERVAL_S, LIGHT_STREAM_ESCAPE_RS,
     LIGHT_STREAM_LINE_WIDTH_PX, LIGHT_STREAM_MAX_AGE_S, LIGHT_STREAM_MAX_IMPACT_RS,

@@ -10,8 +10,8 @@
 
 use super::*;
 use crate::core::scene::GravityModel;
-use crate::experiments::black_hole::{black_hole, black_hole_centre_units};
-use crate::experiments::constants::{SGR_A_STAR_MASS_KG, SGR_A_STAR_SPIN};
+use crate::projects::interstellar::black_hole::{black_hole, black_hole_centre_units};
+use crate::projects::interstellar::constants::{SGR_A_STAR_MASS_KG, SGR_A_STAR_SPIN};
 
 const MASS: f64 = SGR_A_STAR_MASS_KG;
 const SPIN: f64 = SGR_A_STAR_SPIN;

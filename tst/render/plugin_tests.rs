@@ -14,7 +14,7 @@
 use super::*;
 use crate::constants::TWO_BODY_TIME_SCALE;
 use crate::core::scene::{BodyId, DVec3};
-use crate::experiments::catalog::{ExperimentId, ExperimentSpec};
+use crate::projects::interstellar::catalog::{ExperimentId, ExperimentSpec};
 use crate::render::eclipse::BodyMaterial;
 use bevy::app::App;
 use proptest::prelude::*;
@@ -565,7 +565,7 @@ fn the_startup_camera_can_see_the_whole_solar_system() {
     use bevy::MinimalPlugins;
 
     use crate::core::constants::DEMO_FLOOR_HALF_SIZE_UNITS;
-    use crate::experiments::selection::Selection;
+    use crate::projects::interstellar::selection::Selection;
     use crate::render::constants::CAMERA_FAR_UNITS;
 
     let mut app = App::new();
@@ -606,9 +606,9 @@ fn the_camera_lock_can_bring_io_close_enough_to_fill_the_view() {
     use bevy::MinimalPlugins;
 
     use crate::constants::METRES_PER_UNIT;
-    use crate::experiments::constants::JOVIAN_MOONS;
-    use crate::experiments::selection::Selection;
     use crate::input::camera::orbit_distance_bounds;
+    use crate::projects::interstellar::constants::JOVIAN_MOONS;
+    use crate::projects::interstellar::selection::Selection;
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -653,7 +653,7 @@ fn the_camera_lock_can_bring_io_close_enough_to_fill_the_view() {
 fn the_plugin_spawns_every_catalog_experiment() {
     use bevy::MinimalPlugins;
 
-    use crate::experiments::selection::Selection;
+    use crate::projects::interstellar::selection::Selection;
 
     for id in ExperimentId::ALL {
         let mut app = App::new();
@@ -871,7 +871,7 @@ fn a_star_lights_its_own_scene_and_a_starless_one_falls_back() {
     use bevy::pbr::{DirectionalLight, PointLight};
     use bevy::MinimalPlugins;
 
-    use crate::experiments::selection::Selection;
+    use crate::projects::interstellar::selection::Selection;
     use crate::render::constants::STAR_LUMENS_PER_SOLAR_LUMINOSITY;
 
     let lights = |id: ExperimentId| -> (usize, usize, f32) {
@@ -926,7 +926,7 @@ fn a_star_lights_its_own_scene_and_a_starless_one_falls_back() {
     let (points, directional, _) = lights(ExperimentId::BlackHole);
     assert_eq!(
         (points, directional),
-        (crate::experiments::constants::S_STARS.len(), 0),
+        (crate::projects::interstellar::constants::S_STARS.len(), 0),
         "the black hole is lit by nothing but its S-stars"
     );
 }
@@ -937,7 +937,7 @@ fn the_black_hole_has_no_ambient_light() {
     use bevy::pbr::AmbientLight;
     use bevy::MinimalPlugins;
 
-    use crate::experiments::selection::Selection;
+    use crate::projects::interstellar::selection::Selection;
 
     let ambient = |id: ExperimentId| -> Option<f32> {
         let mut app = App::new();
@@ -983,7 +983,7 @@ fn a_stars_light_is_a_child_entity_with_no_mesh_of_its_own() {
     use bevy::render::mesh::Mesh;
     use bevy::MinimalPlugins;
 
-    use crate::experiments::selection::Selection;
+    use crate::projects::interstellar::selection::Selection;
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -1047,7 +1047,7 @@ fn removing_a_star_removes_its_light() {
     use bevy::pbr::PointLight;
     use bevy::MinimalPlugins;
 
-    use crate::experiments::selection::Selection;
+    use crate::projects::interstellar::selection::Selection;
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -1097,7 +1097,7 @@ fn the_startup_camera_frames_the_two_body_pair() {
     use crate::constants::{
         TWO_BODY_HEIGHT_UNITS, TWO_BODY_SEPARATION_UNITS, TWO_BODY_VISUAL_RADIUS_UNITS,
     };
-    use crate::experiments::catalog::two_body;
+    use crate::projects::interstellar::catalog::two_body;
 
     // Bevy's default perspective projection is a 45-degree *vertical* field of view.
     let half_fov = 45.0_f32.to_radians() / 2.0;
@@ -1124,8 +1124,8 @@ fn the_startup_camera_frames_the_two_body_pair() {
 fn the_floor_eclipse_switch_silences_only_the_floor() {
     use bevy::MinimalPlugins;
 
-    use crate::experiments::selection::Selection;
     use crate::performance::PerformanceSettings;
+    use crate::projects::interstellar::selection::Selection;
 
     let star_radius_by_kind = |settings: Option<PerformanceSettings>| {
         let mut app = App::new();
