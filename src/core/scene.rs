@@ -348,14 +348,14 @@ pub struct Prop {
     /// takes the other prop's mass and momentum, and the other prop leaves the scene.
     ///
     /// Set only by black holes (see
-    /// [`StellarObject`](crate::experiments::objects::StellarObject)). An elastic bounce
+    /// [`StellarObject`](crate::projects::interstellar::objects::StellarObject)). An elastic bounce
     /// off an event horizon is not an approximation of what happens, it is the opposite
     /// of it, which is why this is a contact *response* rather than a tuning value —
     /// [`crate::collision::absorb`] implements it and
     /// [`crate::collision::resolve`] never sees the pair.
     ///
     /// A field on `Prop` rather than a property of the object catalog because the
-    /// `collision` layer has to act on it and may not read `experiments`. Two absorbers
+    /// `collision` layer has to act on it and may not read `projects`. Two absorbers
     /// in contact merge into the more massive one; see `absorb_contacts`.
     pub absorbs: bool,
     /// The radius at which this prop **physically** interacts, in world units, when that
@@ -383,7 +383,7 @@ pub struct Prop {
     /// For a planet or a moon it is the real surface. For a black hole it is deliberately
     /// **not** the event horizon: matter is destroyed at the tidal-disruption radius, which
     /// for a solar-type star falling into a stellar-mass hole is tens of thousands of times
-    /// the horizon. See [`crate::experiments::objects`].
+    /// the horizon. See [`crate::projects::interstellar::objects`].
     ///
     /// Must be finite and strictly positive when `Some`; a non-positive value would produce
     /// a degenerate hull, so [`is_valid`](Self::is_valid) rejects it.

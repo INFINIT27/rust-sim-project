@@ -44,14 +44,14 @@ pub use bevy::math::{Quat, Vec3};
 
 use crate::constants::{TWO_BODY_HEIGHT_UNITS, TWO_BODY_TIME_SCALE};
 use crate::core::scene::{Body, BodyId, Color, Pose, Prop, Scene};
-use crate::experiments::constants::{
+use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
+use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, THREE_BODY_CAMERA_POSITION_UNITS, THREE_BODY_FRAMED_RADIUS_UNITS,
     THREE_BODY_HEIGHT_UNITS, THREE_BODY_MASS_KG, THREE_BODY_MAX_SPEED_FACTOR,
     THREE_BODY_MIN_SPEED_FACTOR, THREE_BODY_RING_RADIUS_UNITS, THREE_BODY_TIME_SCALE,
     THREE_BODY_VISUAL_RADIUS_UNITS, TWO_BODY_CAMERA_POSITION_UNITS, TWO_BODY_FRAMED_RADIUS_UNITS,
 };
-use crate::experiments::random::Rng;
-use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
+use crate::projects::interstellar::random::Rng;
 
 /// Which experiment to run.
 ///
@@ -530,5 +530,5 @@ pub fn catalog_lines() -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/catalog_tests.rs"]
+#[path = "../../../tst/projects/interstellar/catalog_tests.rs"]
 mod tests;

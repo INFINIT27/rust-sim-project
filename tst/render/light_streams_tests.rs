@@ -11,9 +11,9 @@
 
 use super::*;
 use crate::core::scene::GravityModel;
-use crate::experiments::black_hole::{black_hole, black_hole_centre_units};
-use crate::experiments::constants::SGR_A_STAR_MASS_KG;
 use crate::physics_utils::relativity::kerr::kerr_schild_norm;
+use crate::projects::interstellar::black_hole::{black_hole, black_hole_centre_units};
+use crate::projects::interstellar::constants::SGR_A_STAR_MASS_KG;
 
 const MASS: f64 = SGR_A_STAR_MASS_KG;
 

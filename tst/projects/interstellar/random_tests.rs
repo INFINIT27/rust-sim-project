@@ -1,7 +1,7 @@
-//! Unit and property tests for the [`crate::experiments::random`] module.
+//! Unit and property tests for the [`crate::projects::interstellar::random`] module.
 //!
 //! Compiled as a private `#[cfg(test)] mod tests` inside
-//! `src/experiments/random.rs` via `#[path]`, not as a standalone integration test.
+//! `src/projects/interstellar/random.rs` via `#[path]`, not as a standalone integration test.
 //!
 //! These test the three things the generator actually promises — determinism, range,
 //! and a coarse spread — and deliberately not randomness in any formal sense. A
@@ -17,7 +17,7 @@ use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
 /// Where proptest writes the seeds of failures it has seen. See `tst/README.md`.
-const REGRESSION_SEEDS: &str = "tst/experiments/proptest-regressions/random_tests.txt";
+const REGRESSION_SEEDS: &str = "tst/projects/interstellar/proptest-regressions/random_tests.txt";
 
 #[test]
 fn the_same_seed_gives_the_same_sequence() {

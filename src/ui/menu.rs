@@ -46,11 +46,11 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::bindings::{binding_rows, BindingGroup, KeyMap};
 use crate::constants::METRES_PER_UNIT;
-use crate::experiments::catalog::ExperimentSpec;
 use crate::input::camera::CameraSettings;
 use crate::input::menu::{ConfigTab, MenuPage, MenuState, SettingsTab};
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
+use crate::projects::interstellar::catalog::ExperimentSpec;
 use crate::render::mission::Mission;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::{Fleet, Propulsion};

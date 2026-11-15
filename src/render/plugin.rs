@@ -61,10 +61,10 @@ use bevy::time::Time;
 use bevy::transform::components::Transform;
 
 use crate::core::scene::{Body, BodyId, Color, Prop, Scene};
-use crate::experiments::catalog::{BodyNames, Experiment, ExperimentSpec};
-use crate::experiments::selection::Selection;
 use crate::input::camera::{CameraLock, CameraSettings, CameraTarget};
 use crate::performance::PerformanceSettings;
+use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentSpec};
+use crate::projects::interstellar::selection::Selection;
 use crate::render::bridge::{sync_scene_to_ecs_system, transform_from};
 use crate::render::constants::{
     BACKGROUND_COLOR, CAMERA_FAR_UNITS, CAMERA_NEAR_UNITS, LIGHT_POSITION_UNITS,
@@ -118,7 +118,7 @@ impl Resource for ObserverClock {}
 
 /// The running experiment's settings, so the startup camera and the overlay can read
 /// *which* experiment this is rather than assume. See
-/// [`crate::experiments`].
+/// [`crate::projects::interstellar`].
 impl Resource for ExperimentSpec {}
 
 /// The running experiment's body names, for the rocket's status and anything else that labels a

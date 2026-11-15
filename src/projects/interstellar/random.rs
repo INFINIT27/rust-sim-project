@@ -127,5 +127,5 @@ impl Rng {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/random_tests.rs"]
+#[path = "../../../tst/projects/interstellar/random_tests.rs"]
 mod tests;

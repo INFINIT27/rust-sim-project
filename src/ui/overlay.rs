@@ -53,8 +53,8 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::scene::Scene;
-use crate::experiments::catalog::{BodyNames, ExperimentSpec};
 use crate::input::camera::{CameraLock, CameraSpeed, FreeFlyController};
+use crate::projects::interstellar::catalog::{BodyNames, ExperimentSpec};
 use crate::render::mission::Mission;
 use crate::time::constants::{
     SECONDS_PER_DAY, SECONDS_PER_HOUR, SECONDS_PER_JULIAN_YEAR, SECONDS_PER_MINUTE,

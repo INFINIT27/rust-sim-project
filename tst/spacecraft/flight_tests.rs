@@ -8,7 +8,7 @@ use crate::spacecraft::constants::{CORRECTION_FIRST_FRACTION, CORRECTION_MIN_REM
 use crate::spacecraft::plan_flight;
 
 fn launched(craft: Spacecraft) -> (Scene, Flight) {
-    let experiment = crate::experiments::solar_system::solar_system();
+    let experiment = crate::projects::interstellar::solar_system::solar_system();
     let id = |name: &str| {
         experiment
             .names

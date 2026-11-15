@@ -8,7 +8,7 @@
 //! split as the overlay, crosshair, compass, and menu — see `tst/ui/README.md`.
 
 use super::*;
-use crate::experiments::constants::STELLAR_OBJECTS;
+use crate::projects::interstellar::constants::STELLAR_OBJECTS;
 
 fn open_at(index: usize) -> PlacementState {
     let mut placer = PlacementState::default();

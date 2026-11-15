@@ -1,6 +1,6 @@
-//! Unit tests for the [`crate::experiments::jovian`] module.
+//! Unit tests for the [`crate::projects::interstellar::jovian`] module.
 //!
-//! Compiled as a private `#[cfg(test)] mod tests` inside `src/experiments/jovian.rs` via
+//! Compiled as a private `#[cfg(test)] mod tests` inside `src/projects/interstellar/jovian.rs` via
 //! `#[path]`, not as a standalone integration test.
 //!
 //! # What these tests are for
@@ -27,7 +27,7 @@
 use super::*;
 use crate::core::constants::GRAVITY_SOFTENING_UNITS;
 use crate::core::scene::Prop;
-use crate::experiments::constants::SOLAR_SYSTEM_PLANETS;
+use crate::projects::interstellar::constants::SOLAR_SYSTEM_PLANETS;
 use crate::time::constants::SECONDS_PER_DAY;
 
 /// Index of Jupiter in the built scene: first, and there is no floor before it.
@@ -237,7 +237,7 @@ fn the_solar_systems_drawn_jupiter_would_have_swallowed_every_moon() {
     // the first step.
     let jupiter = jovian_primary();
     let drawn_in_solar_system = (jupiter.radius_m / METRES_PER_UNIT) as f32
-        / (crate::experiments::constants::EARTH_RADIUS_M / METRES_PER_UNIT) as f32;
+        / (crate::projects::interstellar::constants::EARTH_RADIUS_M / METRES_PER_UNIT) as f32;
     let io_orbit = (JOVIAN_MOONS[0].semi_major_axis_m / METRES_PER_UNIT) as f32;
     let callisto_orbit = (JOVIAN_MOONS[3].semi_major_axis_m / METRES_PER_UNIT) as f32;
 

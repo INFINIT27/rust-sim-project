@@ -55,13 +55,13 @@ use bevy::math::Vec3;
 use crate::constants::METRES_PER_UNIT;
 use crate::core::integrator::kerr_schild_to_world;
 use crate::core::scene::Scene;
-use crate::experiments::random::Rng;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
 use crate::physics_utils::relativity::kerr::{
     circular_orbit, disc_flux, equatorial_coordinates, equatorial_point, ergosphere_radius,
     horizon_radius, isco_radius, kerr_schild_acceleration, kerr_schild_norm, kerr_schild_radius,
     KerrBlackHole,
 };
+use crate::projects::interstellar::random::Rng;
 use crate::render::constants::{
     DISC_EDDINGTON_FRACTION, DISC_INFLOW_ORBITS_PER_EFOLD, DISC_OUTER_RADIUS_RG, DISC_PARTICLES,
     DISC_PLUNGE_SAMPLE_INTERVAL_S, DISC_PLUNGE_SPEED_FACTOR, DISC_PLUNGE_STEP_FRACTION,

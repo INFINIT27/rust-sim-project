@@ -1,6 +1,6 @@
-//! Unit tests for the [`crate::experiments::scale_check`] module.
+//! Unit tests for the [`crate::projects::interstellar::scale_check`] module.
 //!
-//! Compiled as a private `#[cfg(test)] mod tests` inside `src/experiments/scale_check.rs` via
+//! Compiled as a private `#[cfg(test)] mod tests` inside `src/projects/interstellar/scale_check.rs` via
 //! `#[path]`, not as a standalone integration test.
 //!
 //! # What these tests are for
@@ -16,7 +16,7 @@
 
 use super::*;
 use crate::core::scene::{DVec3, Prop};
-use crate::experiments::constants::{
+use crate::projects::interstellar::constants::{
     SCALE_CHECK_CAMERA_OFFSET_UNITS, SCALE_CHECK_FRAMED_RADIUS_UNITS, SCALE_CHECK_GAP_UNITS,
     SOLAR_SYSTEM_PLANETS, SOLAR_SYSTEM_SUN_RADIUS_M,
 };

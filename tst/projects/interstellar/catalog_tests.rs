@@ -1,7 +1,7 @@
-//! Unit and property tests for the [`crate::experiments::catalog`] module.
+//! Unit and property tests for the [`crate::projects::interstellar::catalog`] module.
 //!
 //! Compiled as a private `#[cfg(test)] mod tests` inside
-//! `src/experiments/catalog.rs` via `#[path]`, not as a standalone integration test.
+//! `src/projects/interstellar/catalog.rs` via `#[path]`, not as a standalone integration test.
 //!
 //! Two kinds of check here, and the second is the interesting one:
 //!
@@ -16,12 +16,12 @@
 
 use super::*;
 use crate::collision::contact::contact_between_props;
-use crate::experiments::constants::THREE_BODY_HEIGHT_UNITS;
+use crate::projects::interstellar::constants::THREE_BODY_HEIGHT_UNITS;
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
 /// Where proptest writes the seeds of failures it has seen. See `tst/README.md`.
-const REGRESSION_SEEDS: &str = "tst/experiments/proptest-regressions/catalog_tests.txt";
+const REGRESSION_SEEDS: &str = "tst/projects/interstellar/proptest-regressions/catalog_tests.txt";
 
 // -----------------------------------------------------------------------
 // Catalog hygiene: properties every experiment must have.

@@ -82,13 +82,13 @@ pub use bevy::math::{Quat, Vec3};
 
 use crate::constants::METRES_PER_UNIT;
 use crate::core::scene::{Aabb, Body, DVec3, Pose, Prop, Scene};
-use crate::experiments::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
-use crate::experiments::constants::{
+use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
+use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, JOVIAN_BOUNDS_MARGIN_UNITS, JOVIAN_CAMERA_POSITION_UNITS,
     JOVIAN_DISPLAY_EXAGGERATION, JOVIAN_FRAMED_RADIUS_UNITS, JOVIAN_MOONS, JOVIAN_SOFTENING_UNITS,
     JOVIAN_TIME_SCALE, JOVIAN_TRAIL_LENGTH_UNITS, SOLAR_SYSTEM_PLANETS,
 };
-use crate::experiments::solar_system::{circular_orbit_period_seconds, Planet};
+use crate::projects::interstellar::solar_system::{circular_orbit_period_seconds, Planet};
 
 /// Jupiter, as the primary of this system.
 ///
@@ -148,14 +148,14 @@ fn true_radius_units(radius_m: f64) -> f32 {
 /// Circular orbital speed about Jupiter at `radius_m`, in world units per second.
 ///
 /// `v = √(G·M_J/r)`, delegated to
-/// [`circular_orbit_speed_units_s`](crate::experiments::solar_system::circular_orbit_speed_units_s)
+/// [`circular_orbit_speed_units_s`](crate::projects::interstellar::solar_system::circular_orbit_speed_units_s)
 /// with Jupiter as the central mass — the same function `experiment_3` uses for the planets, so
 /// there is one implementation of the formula in the crate rather than two.
 ///
 /// The moon's own mass is left out, as it is for the planets: Ganymede is `7.8e-5` of Jupiter,
 /// so including it would change the speed by `0.004%`.
 pub fn jovian_orbit_speed_units_s(radius_m: f64) -> f64 {
-    crate::experiments::solar_system::circular_orbit_speed_units_s(
+    crate::projects::interstellar::solar_system::circular_orbit_speed_units_s(
         radius_m,
         jovian_primary().mass_kg as f32,
     )
@@ -307,5 +307,5 @@ pub fn jovian_system() -> Experiment {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/jovian_tests.rs"]
+#[path = "../../../tst/projects/interstellar/jovian_tests.rs"]
 mod tests;

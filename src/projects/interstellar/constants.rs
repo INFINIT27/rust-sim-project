@@ -1,4 +1,4 @@
-//! Every constant the `experiments` layer reads.
+//! Every constant the `projects::interstellar` layer reads.
 //!
 //! Per `.claude/steering/constants.md` this is the layer's only constants module. The
 //! **two-body** experiment's own numbers are not here — they are
@@ -25,9 +25,9 @@
 pub use bevy::math::Vec3;
 
 use crate::core::scene::Color;
-use crate::experiments::black_hole::SStar;
-use crate::experiments::objects::StellarObject;
-use crate::experiments::solar_system::{MoonSystem, Planet};
+use crate::projects::interstellar::black_hole::SStar;
+use crate::projects::interstellar::objects::StellarObject;
+use crate::projects::interstellar::solar_system::{MoonSystem, Planet};
 
 /// Where the camera starts for the two-body experiment, in world units.
 ///
@@ -39,8 +39,8 @@ use crate::experiments::solar_system::{MoonSystem, Planet};
 /// leaving the frame, and the `y = 18` elevation shows the floor for scale rather
 /// than viewing it edge-on.
 ///
-/// **Used by.** [`crate::experiments::catalog::two_body`], which puts it in the
-/// experiment's [`ExperimentSpec`](crate::experiments::catalog::ExperimentSpec);
+/// **Used by.** [`crate::projects::interstellar::catalog::two_body`], which puts it in the
+/// experiment's [`ExperimentSpec`](crate::projects::interstellar::catalog::ExperimentSpec);
 /// `spawn_scene_entities` then reads the spec rather than a constant, which is what
 /// lets each experiment frame itself.
 ///
@@ -60,7 +60,7 @@ pub const TWO_BODY_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 18.0, 42.0);
 /// plane, so a low camera would see it edge-on as a line and the whole point of the
 /// experiment — what the three orbits do to each other — would be invisible.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`].
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`].
 ///
 /// **If you change it.** Pinned by
 /// `catalog_tests::every_experiment_frames_its_own_scene`, which checks the camera is
@@ -76,8 +76,8 @@ pub const THREE_BODY_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 26.0, 34.0);
 /// covers the whole scene; `17` adds a little margin. For this experiment the framed
 /// radius *is* the scene's extent — every body is in the opening frame.
 ///
-/// **Used by.** [`crate::experiments::catalog::two_body`], as the spec's
-/// [`framed_radius_units`](crate::experiments::catalog::ExperimentSpec::framed_radius_units),
+/// **Used by.** [`crate::projects::interstellar::catalog::two_body`], as the spec's
+/// [`framed_radius_units`](crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units),
 /// which is what `catalog_tests::every_experiment_frames_its_own_scene` checks the camera
 /// distance against.
 ///
@@ -94,7 +94,7 @@ pub const TWO_BODY_FRAMED_RADIUS_UNITS: f32 = 17.0;
 /// their outer edge. As with the two-body pair, this is the whole scene — nothing starts
 /// off screen.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`].
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`].
 ///
 /// **If you change it.** See [`TWO_BODY_FRAMED_RADIUS_UNITS`]. Note the bodies *leave*
 /// this radius as the experiment runs — an ejected body can go anywhere — so this
@@ -111,7 +111,7 @@ pub const THREE_BODY_FRAMED_RADIUS_UNITS: f32 = 13.0;
 /// `1`-unit bodies, so the three start clearly separated rather than already in
 /// contact.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`], to place all three
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`], to place all three
 /// bodies and to derive their circular-orbit speed.
 ///
 /// **If you change it.** The notional period scales as `R^{3/2}`, so
@@ -127,7 +127,7 @@ pub const THREE_BODY_RING_RADIUS_UNITS: f32 = 12.0;
 /// a while before it reaches the floor, so the floor is a boundary rather than an
 /// immediate participant. `6` units is six body radii.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`], as the `y` of every
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`], as the `y` of every
 /// body and of the camera's look-at target.
 ///
 /// **If you change it.** Below [`THREE_BODY_VISUAL_RADIUS_UNITS`] the bodies start
@@ -144,7 +144,7 @@ pub const THREE_BODY_HEIGHT_UNITS: f32 = 6.0;
 /// this is also **where they stop** — three bodies on converging orbits do collide,
 /// and this sets when.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`].
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`].
 ///
 /// **If you change it.** Contact separation is `2 ×` this. Note the interaction with
 /// [`crate::core::constants::GRAVITY_SOFTENING_UNITS`] (`1.0`): a body much smaller
@@ -160,7 +160,7 @@ pub const THREE_BODY_VISUAL_RADIUS_UNITS: f32 = 1.0;
 /// rather than reusing that constant because "the three-body bodies happen to be
 /// Earth-massed" is a choice this experiment makes, not a fact about the other one.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`], for all three
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`], for all three
 /// bodies and for the circular-orbit speed they are randomised around.
 ///
 /// **If you change it.** The circular-orbit speed scales as `√m` and the notional
@@ -183,7 +183,7 @@ pub const THREE_BODY_MASS_KG: f32 = 5.972e24;
 /// substeps — so unlike the two-body scene, this experiment genuinely exercises the
 /// substep loop.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`], as the spec's time
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`], as the spec's time
 /// scale, which `ScenePlugin` puts on the [`SimulationClock`](crate::time::simulation::SimulationClock).
 ///
 /// **If you change it.** Same tradeoff as
@@ -202,7 +202,7 @@ pub const THREE_BODY_TIME_SCALE: f32 = 2.0e7;
 /// worth running. Much below this and every run collapses immediately, which is one
 /// outcome rather than a range of them.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`], as the lower bound
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`], as the lower bound
 /// of the random speed window.
 ///
 /// **If you change it.** Together with [`THREE_BODY_MAX_SPEED_FACTOR`] this sets how
@@ -219,7 +219,7 @@ pub const THREE_BODY_MIN_SPEED_FACTOR: f32 = 0.4;
 /// than leaving for good — usually. With three bodies exchanging energy, one *can*
 /// still be ejected, and that is a legitimate outcome to observe rather than a bug.
 ///
-/// **Used by.** [`crate::experiments::catalog::three_body_ring`], as the upper bound
+/// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`], as the upper bound
 /// of the random speed window.
 ///
 /// **If you change it.** See [`THREE_BODY_MIN_SPEED_FACTOR`]. Past about `1.5` most
@@ -235,7 +235,7 @@ pub const THREE_BODY_MAX_SPEED_FACTOR: f32 = 1.3;
 /// `SOLAR_SYSTEM_EARTH_DRAWN_RADIUS_UNITS` (removed by A16), so this is what makes Earth exactly one
 /// unit across the radius and every other body's size *relative to Earth* exactly real.
 ///
-/// **Used by.** [`crate::experiments::solar_system::radius_units`], which every
+/// **Used by.** [`crate::projects::interstellar::solar_system::radius_units`], which every
 /// body in the solar-system scene is sized through.
 ///
 /// **If you change it.** Every drawn radius in `experiment_3` rescales together, so the
@@ -250,9 +250,9 @@ pub const EARTH_RADIUS_M: f64 = 6.371e6;
 /// every orbital speed in the experiment — `v = √(G·M/a)` — so a rounded-off value would
 /// show up directly as wrong orbital periods.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`], for the central
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`], for the central
 /// body's mass and for
-/// [`circular_orbit_speed_units_s`](crate::experiments::solar_system::circular_orbit_speed_units_s).
+/// [`circular_orbit_speed_units_s`](crate::projects::interstellar::solar_system::circular_orbit_speed_units_s).
 ///
 /// **If you change it.** Every planet's speed scales as `√M` and every period as
 /// `1/√M`, so the whole experiment speeds up or slows down together and
@@ -281,7 +281,7 @@ pub const SOLAR_SYSTEM_SUN_RADIUS_M: f64 = 6.957e8;
 /// proportion. The scene is lit by a *directional* light rather than by the Sun itself
 /// (see `src/render/README.md`), so this colour is doing the whole job of saying "star".
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`].
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`].
 ///
 /// **If you change it.** Cosmetic, with one caveat: [`Color`] is **linear**, not sRGB, so
 /// a value copied from a colour picker will come out brighter than it looked.
@@ -304,7 +304,7 @@ pub const SOLAR_SYSTEM_SUN_COLOR: Color = Color {
 /// system from above, the grid on the floor still reads as the plane the planets are
 /// moving in.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`], as the `y` of every
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`], as the `y` of every
 /// body and of the camera's look-at target.
 ///
 /// **If you change it.** Must stay above `SOLAR_SYSTEM_SUN_DRAWN_RADIUS_UNITS` or the
@@ -329,7 +329,7 @@ pub const SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS: f32 = 30.0;
 /// `]` doubles the scale when you want the outer system, at the cost of the inner one's
 /// accuracy.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`], as the spec's time
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`], as the spec's time
 /// scale.
 ///
 /// **If you change it.** Accuracy degrades with the *step*, and the inner planets pay
@@ -353,7 +353,7 @@ pub const SOLAR_SYSTEM_TIME_SCALE: f32 = 1.0e6;
 /// The outer planets are reached by flying: `W` with `Left Shift` covers `60` units a
 /// second, so Neptune is about a minute out.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`].
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`].
 ///
 /// **If you change it.** Pinned against `SOLAR_SYSTEM_FRAMED_RADIUS_UNITS` by
 /// `catalog_tests::every_experiment_frames_its_own_scene`. Note the camera's far clip
@@ -369,7 +369,7 @@ pub const SOLAR_SYSTEM_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 380.0, 500.0
 /// the scene's extent**: the four giants start outside the opening frame, because a view
 /// that contained them would show nothing useful about any of the nine bodies.
 ///
-/// **Used by.** [`crate::experiments::catalog::ExperimentSpec::framed_radius_units`] for
+/// **Used by.** [`crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units`] for
 /// this experiment, and through it `every_experiment_frames_its_own_scene`.
 ///
 /// **If you change it.** It must stay achievable from
@@ -388,7 +388,7 @@ pub const SOLAR_SYSTEM_FRAMED_RADIUS_UNITS: f32 = 240.0;
 /// whole orbit, so the trail reads as the *path* it is there to show. On Jupiter it is
 /// `8%` of the way round, which is still a clear arc.
 ///
-/// **Used by.** [`crate::experiments::catalog::ExperimentSpec::trail_length_units`], read
+/// **Used by.** [`crate::projects::interstellar::catalog::ExperimentSpec::trail_length_units`], read
 /// once at startup by
 /// [`crate::render::trail::apply_experiment_trail_length`], which also widens the sample
 /// spacing to match so the sample budget is not exhausted.
@@ -425,7 +425,7 @@ pub const SOLAR_SYSTEM_TRAIL_LENGTH_UNITS: f32 = 400.0;
 /// Colours are recognisable rather than photometric: Mars rust, Uranus pale cyan, Neptune
 /// deep blue. Eight bodies on eight circles are only traceable if they can be told apart.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`], which builds one prop
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`], which builds one prop
 /// per row.
 ///
 /// **If you change it.** Adding a row is enough to add a body — the builder is a loop
@@ -548,7 +548,7 @@ pub const SOLAR_SYSTEM_PLANETS: [Planet; 8] = [
 /// experiment with no seed and no entropy — a library user, or a test that wants a
 /// known scene without inventing a number.
 ///
-/// **Used by.** [`crate::experiments::selection::Selection::resolve_seed`] as the
+/// **Used by.** [`crate::projects::interstellar::selection::Selection::resolve_seed`] as the
 /// fallback when the system clock is unavailable, and by any caller of
 /// `ExperimentId::build` that does not choose a seed.
 ///
@@ -591,7 +591,7 @@ pub const DEFAULT_RANDOM_SEED: u64 = 0x5EED_1234_ABCD_0001;
 /// solar-type star is `1.5e9 m` against the `10 M☉` hole's `2.95e4 m` horizon — a factor of
 /// `50,000`. So absorption stays observable *because* it became more accurate, not in spite of it.
 ///
-/// **Used by.** [`crate::experiments::objects::stellar_object`] and the `B`-key placement
+/// **Used by.** [`crate::projects::interstellar::objects::stellar_object`] and the `B`-key placement
 /// picker: [`crate::input::placement`] selects a row, [`crate::render::placement`] turns it into a
 /// prop.
 ///
@@ -676,7 +676,7 @@ pub const STELLAR_OBJECTS: [StellarObject; 5] = [
 /// **Why these values.** Measurements — the NASA/JPL satellite fact sheet, in SI. Reusing
 /// [`Planet`] rather than declaring a `Moon` type is deliberate: a body on a circular orbit
 /// about a primary is described by exactly the same five numbers whatever it orbits, and one
-/// type means [`crate::experiments::solar_system::circular_orbit_speed_units_s`] and its period
+/// type means [`crate::projects::interstellar::solar_system::circular_orbit_speed_units_s`] and its period
 /// counterpart serve both experiments without a second copy of `√(GM/r)`.
 ///
 /// | Moon | Mass | Radius | Orbit | Period | Orbit in its own radii |
@@ -698,7 +698,7 @@ pub const STELLAR_OBJECTS: [StellarObject; 5] = [
 /// the *period ratios*, which are real, and not from the phases, which are not. Starting at a
 /// different epoch is a legitimate initial condition; claiming a false one is not.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_system`], which builds one prop per row.
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_system`], which builds one prop per row.
 ///
 /// **If you change it.** Adding a row is enough to add a moon — the builder is a loop, and the
 /// scene's bounds are derived from the outermost orbit. A moon *inside* Io's orbit needs
@@ -778,7 +778,7 @@ pub const JOVIAN_MOONS: [Planet; 4] = [
 /// visual number: since [`Prop::contact_radius_units`](crate::core::scene::Prop::contact_radius_units)
 /// carries the true radius, changing it cannot alter the physics by so much as a rounding error.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_drawn_radius_units`].
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_drawn_radius_units`].
 ///
 /// **If you change it.** Nothing physical moves. Past `6.03` the picture becomes a lie about
 /// which bodies are inside which, and `jovian_tests::nothing_visually_contains_anything` fails —
@@ -798,7 +798,7 @@ pub const JOVIAN_DISPLAY_EXAGGERATION: f32 = 4.0;
 /// is already unreachable — but a scene is edited by people, and a `0.0` would make the first
 /// hull-less prop anyone adds able to produce an infinite force.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_system`], as the scene's
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_system`], as the scene's
 /// [`softening_units`](crate::core::scene::Scene::softening_units).
 ///
 /// **If you change it.** The force error at Io's orbit is `(ε/r)²`, so `0.01` costs `0.06%` and
@@ -820,7 +820,7 @@ pub const JOVIAN_SOFTENING_UNITS: f32 = 0.001;
 /// trace a closed circle, and far under
 /// [`crate::collision::constants::MAX_SUBSTEP_DISPLACEMENT_UNITS`], so no frame is ever split.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_system`], as the spec's time scale.
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_system`], as the spec's time scale.
 ///
 /// **If you change it.** Accuracy degrades with the step and Io pays first: at `1e5` it gets
 /// `90` steps per orbit and visibly precesses. The `[` and `]` keys change it at runtime, so
@@ -836,7 +836,7 @@ pub const JOVIAN_TIME_SCALE: f32 = 1.0e4;
 /// circles rather than as a line, shallow enough that the moons are not all foreshortened into
 /// the same place.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_system`].
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_system`].
 ///
 /// **If you change it.** Pinned against [`JOVIAN_FRAMED_RADIUS_UNITS`] by
 /// `catalog_tests::every_experiment_frames_its_own_scene`. Note the whole system is `3.8` units
@@ -850,8 +850,8 @@ pub const JOVIAN_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 3.2, 4.0);
 /// Unlike `experiment_3`, this is the **whole scene** — every body is in the opening frame,
 /// which is how it should be for a system small enough to hold in one view.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_system`], as the spec's
-/// [`framed_radius_units`](crate::experiments::catalog::ExperimentSpec::framed_radius_units).
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_system`], as the spec's
+/// [`framed_radius_units`](crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units).
 ///
 /// **If you change it.** It must stay achievable from [`JOVIAN_CAMERA_POSITION_UNITS`] —
 /// `5.12 × tan(22.5°) = 2.12` units is the most that camera can frame — and it must contain at
@@ -865,7 +865,7 @@ pub const JOVIAN_FRAMED_RADIUS_UNITS: f32 = 2.0;
 /// without closing into a solid ring, which is what a trail as long as the orbit itself would
 /// look like. The crate default of `10` units is four times the whole system.
 ///
-/// **Used by.** [`crate::experiments::catalog::ExperimentSpec::trail_length_units`] for this
+/// **Used by.** [`crate::projects::interstellar::catalog::ExperimentSpec::trail_length_units`] for this
 /// experiment.
 ///
 /// **If you change it.** Sample spacing is derived from the length, so cost per body stays flat
@@ -879,7 +879,7 @@ pub const JOVIAN_TRAIL_LENGTH_UNITS: f32 = 0.5;
 /// scene's stated volume contains every body with room for the small excursions a first-order
 /// integrator introduces, without claiming a volume the experiment does not use.
 ///
-/// **Used by.** [`crate::experiments::jovian::jovian_system`], which derives
+/// **Used by.** [`crate::projects::interstellar::jovian::jovian_system`], which derives
 /// [`Scene::bounds`](crate::core::scene::Scene::bounds) from the outermost orbit plus this —
 /// derived rather than declared, so adding a moon widens the bounds automatically.
 ///
@@ -899,7 +899,7 @@ pub const JOVIAN_BOUNDS_MARGIN_UNITS: f32 = 0.5;
 /// error is `3e-10` — so the planets' trajectories are the same as they were under the old
 /// default to far beyond `f32`'s resolution.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`], as the scene's
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`], as the scene's
 /// [`softening_units`](crate::core::scene::Scene::softening_units).
 ///
 /// **If you change it.** The force error at a separation `r` is `(ε/r)²`, so this is only ever
@@ -917,7 +917,7 @@ pub const SOLAR_SYSTEM_SOFTENING_UNITS: f32 = 0.001;
 /// bodies would touch, which
 /// `catalog_tests::no_experiment_starts_with_bodies_already_touching` forbids.
 ///
-/// **Used by.** [`crate::experiments::scale_check::scale_check_layout`], between every pair.
+/// **Used by.** [`crate::projects::interstellar::scale_check::scale_check_layout`], between every pair.
 ///
 /// **If you change it.** It shifts every centre after the first and lengthens the row, so
 /// [`SCALE_CHECK_FRAMED_RADIUS_UNITS`] and the camera want checking with it — a test recomputes the
@@ -932,7 +932,7 @@ pub const SCALE_CHECK_GAP_UNITS: f32 = 0.02;
 /// fills most of the frame vertically and Earth is still `9.3` px, which is the widest ratio a single
 /// view can carry.
 ///
-/// **Used by.** [`crate::experiments::scale_check::scale_check`], added to the row's centre.
+/// **Used by.** [`crate::projects::interstellar::scale_check::scale_check`], added to the row's centre.
 ///
 /// **If you change it.** Closer and the Sun overflows the frame; further and Mercury (`3.6` px at
 /// `2.8`) drops under a pixel and vanishes, since nothing floors apparent size any more (amendment
@@ -946,7 +946,7 @@ pub const SCALE_CHECK_CAMERA_OFFSET_UNITS: Vec3 = Vec3::new(0.0, 0.0, 2.8);
 /// whole scene, which is the point of a chart.
 ///
 /// **Used by.** `scale_check`, as the spec's
-/// [`framed_radius_units`](crate::experiments::catalog::ExperimentSpec::framed_radius_units).
+/// [`framed_radius_units`](crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units).
 ///
 /// **If you change it.** Pinned against [`SCALE_CHECK_CAMERA_OFFSET_UNITS`] by
 /// `catalog_tests::every_experiment_frames_its_own_scene`, and against the row's actual length by
@@ -958,10 +958,10 @@ pub const SCALE_CHECK_FRAMED_RADIUS_UNITS: f32 = 1.05;
 /// **Why this value.** `1.0` — real time — because **nothing in this scene can move**: every body is
 /// [`immovable`](crate::core::scene::Prop::immovable), so the clock has nothing to advance and any
 /// value would look identical. Real time is the least surprising thing for the overlay to report,
-/// and [`ExperimentSpec::is_valid`](crate::experiments::catalog::ExperimentSpec::is_valid) requires
+/// and [`ExperimentSpec::is_valid`](crate::projects::interstellar::catalog::ExperimentSpec::is_valid) requires
 /// it to be finite and positive.
 ///
-/// **Used by.** [`crate::experiments::scale_check::scale_check`].
+/// **Used by.** [`crate::projects::interstellar::scale_check::scale_check`].
 ///
 /// **If you change it.** Nothing happens. That is worth stating rather than leaving a reader to
 /// wonder what a scale is doing on a static scene: the field is not optional, so it has to say
@@ -987,7 +987,7 @@ pub const SCALE_CHECK_TIME_SCALE: f32 = 1.0;
 /// numbers give; neither was chosen.
 ///
 /// **Used by.** [`MOON_SYSTEMS`], and through it
-/// [`crate::experiments::solar_system::solar_system`].
+/// [`crate::projects::interstellar::solar_system::solar_system`].
 ///
 /// **If you change it.** Its dynamical time is `3.75e5 s`, which asks `6` substeps of the shipped
 /// clock — free beside Io's `98`. Bringing it much closer than `10` Earth radii would make it, not Io,
@@ -1016,7 +1016,7 @@ pub const EARTH_MOONS: [Planet; 1] = [Planet {
 /// reattach a moon to the wrong planet. A row naming a planet that is not in the table is skipped
 /// rather than panicking, which is what makes a partial edit survivable.
 ///
-/// **Used by.** [`crate::experiments::solar_system::solar_system`], one loop over the whole table.
+/// **Used by.** [`crate::projects::interstellar::solar_system::solar_system`], one loop over the whole table.
 ///
 /// **If you change it.** Adding a row is enough to add a moon system — Saturn's would be one line here
 /// and one table beside [`JOVIAN_MOONS`]. Watch the timestep: the scene's substep count is set by its
@@ -1041,7 +1041,7 @@ pub const MOON_SYSTEMS: [MoonSystem; 2] = [
 /// `2GM/c² = 1.27e10 m`, `12.7` world units.
 ///
 /// **Used by.** The `"Sgr A*"` row of [`STELLAR_OBJECTS`] (the `B`-key placement) and
-/// [`crate::experiments::black_hole::black_hole`] (`experiment_6`), so the two holes are the same
+/// [`crate::projects::interstellar::black_hole::black_hole`] (`experiment_6`), so the two holes are the same
 /// object.
 ///
 /// **If you change it.** Both change together. Keep it under `f32::MAX` (`3.4e38`), the ceiling of
@@ -1077,7 +1077,7 @@ pub const SGR_A_STAR_COLOR: Color = Color {
 /// blocks it. From `15°` the underside is hidden; from `30°` the second image shows only `1.5%` of
 /// the disc.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`].
 ///
 /// **If you change it.** `catalog_tests::every_experiment_frames_its_own_scene` checks it is still
 /// far enough back.
@@ -1090,7 +1090,7 @@ pub const BLACK_HOLE_CAMERA_OFFSET_UNITS: Vec3 = Vec3::new(0.0, 58.5, 331.0);
 /// scene's coordinates. `135` frames all of it with a little margin.
 ///
 /// **Used by.** `black_hole`, as the spec's
-/// [`framed_radius_units`](crate::experiments::catalog::ExperimentSpec::framed_radius_units).
+/// [`framed_radius_units`](crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units).
 ///
 /// **If you change it.** Pinned against [`BLACK_HOLE_CAMERA_OFFSET_UNITS`] by `catalog_tests`.
 pub const BLACK_HOLE_FRAMED_RADIUS_UNITS: f32 = 135.0;
@@ -1101,7 +1101,7 @@ pub const BLACK_HOLE_FRAMED_RADIUS_UNITS: f32 = 135.0;
 /// `r_s/c = 42 s`, and an orbit at the ISCO takes `32.6` minutes. At `100×` that orbit takes `20`
 /// seconds to watch, and an object dropped from `100` units falls in within about a minute.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`].
 ///
 /// **If you change it.** Faster than about `1e4` and a fall from rest near the horizon happens
 /// within a frame or two.
@@ -1114,7 +1114,7 @@ pub const BLACK_HOLE_TIME_SCALE: f32 = 100.0;
 /// orbit; the render layer's default of `10` would be a short dash.
 ///
 /// **Used by.** `black_hole`, as the spec's
-/// [`trail_length_units`](crate::experiments::catalog::ExperimentSpec::trail_length_units).
+/// [`trail_length_units`](crate::projects::interstellar::catalog::ExperimentSpec::trail_length_units).
 ///
 /// **If you change it.** Visual only.
 pub const BLACK_HOLE_TRAIL_LENGTH_UNITS: f32 = 200.0;
@@ -1126,7 +1126,7 @@ pub const BLACK_HOLE_TRAIL_LENGTH_UNITS: f32 = 200.0;
 /// Sgr A*'s horizon. At `0.1` it is `99.994%` there, and nothing gets closer than the horizon
 /// without being swallowed.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`], as the scene's
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`], as the scene's
 /// [`softening_units`](crate::core::scene::Scene::softening_units).
 ///
 /// **If you change it.** Keep it well below the horizon radius.
@@ -1137,7 +1137,7 @@ pub const BLACK_HOLE_SOFTENING_UNITS: f32 = 0.1;
 /// **Why this value.** Bounds are descriptive (nothing is removed for leaving them), and `150`
 /// takes in the whole accretion disc (`127` units).
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`].
 ///
 /// **If you change it.** Nothing in the simulation reads it; `catalog_tests` requires valid bounds.
 pub const BLACK_HOLE_BOUNDS_EXTENT_UNITS: f32 = 150.0;
@@ -1150,7 +1150,7 @@ pub const BLACK_HOLE_BOUNDS_EXTENT_UNITS: f32 = 150.0;
 /// effect of spin is plain: the horizon shrinks to `1.44 r_g`, the ISCO to `2.32 r_g`, and a disc's
 /// efficiency rises from `5.7%` to `15.6%`.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`], as the scene's
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`], as the scene's
 /// `GravityModel::Kerr` spin, and so by the disc the render layer draws round it.
 ///
 /// **If you change it.** Must be in `[0, 1)`. `0` is a Schwarzschild hole (and the disc, which
@@ -1161,7 +1161,7 @@ pub const SGR_A_STAR_SPIN: f64 = 0.9;
 ///
 /// **Why this value.** It is the definition.
 ///
-/// **Used by.** [`crate::experiments::black_hole::s_star_state`]: an arcsecond at a distance of `d`
+/// **Used by.** [`crate::projects::interstellar::black_hole::s_star_state`]: an arcsecond at a distance of `d`
 /// parsecs is `d` AU, which is how the S-stars' orbits are quoted.
 ///
 /// **If you change it.** Don't.
@@ -1171,7 +1171,7 @@ pub const ASTRONOMICAL_UNIT_M: f64 = 1.495_978_707e11;
 ///
 /// **Why this value.** The S-stars' masses are quoted in solar masses.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`], for the S-stars.
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`], for the S-stars.
 ///
 /// **If you change it.** Every S-star's mass moves with it; their orbits do not, since the hole is
 /// `300,000` times heavier than any of them.
@@ -1181,7 +1181,7 @@ pub const SOLAR_MASS_KG: f64 = 1.988_47e30;
 ///
 /// **Why this value.** The S-stars' radii are quoted in solar radii.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`], for the S-stars.
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`], for the S-stars.
 ///
 /// **If you change it.** Only their drawn size changes.
 pub const SOLAR_RADIUS_M: f64 = 6.957e8;
@@ -1192,7 +1192,7 @@ pub const SOLAR_RADIUS_M: f64 = 6.957e8;
 /// `R0 = 8.32 kpc` (`8.323 ± 0.070` statistical). The orbits' angular sizes are only consistent with
 /// their periods at that distance and their mass of `4.28e6 M☉`, close to this scene's `4.3e6`.
 ///
-/// **Used by.** [`crate::experiments::black_hole::s_star_state`]: an arcsecond is `8,323` AU.
+/// **Used by.** [`crate::projects::interstellar::black_hole::s_star_state`]: an arcsecond is `8,323` AU.
 ///
 /// **If you change it.** The orbits scale with it, and their periods (from Kepler's third law for
 /// the scene's mass) as its `1.5` power; they then no longer match the observed periods.
@@ -1204,7 +1204,7 @@ pub const S_STAR_DISTANCE_PC: f64 = 8323.0;
 /// it then. S2, for one, is half a year past apocentre (2026.3) and heading back in towards its
 /// 2034 pericentre.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`].
 ///
 /// **If you change it.** Every star starts elsewhere on its orbit.
 pub const S_STAR_EPOCH_YR: f64 = 2026.86;
@@ -1249,10 +1249,10 @@ pub const S_STAR_LATE_TYPE_COLOR: Color = Color {
 /// its orbit north of the equator and part south. On their real orbits S14 comes closest, `57` AU
 /// (`8,500` units) at pericentre.
 ///
-/// `experiment_6` brings them in close ([`crate::experiments::black_hole::s_star_close_state`]):
+/// `experiment_6` brings them in close ([`crate::projects::interstellar::black_hole::s_star_close_state`]):
 /// each keeps its orbit's plane but goes round a circle of `close_orbit_rg` gravitational radii,
 /// just outside the disc (`20 r_g`) and just outside its own tidal radius
-/// ([`crate::experiments::black_hole::tidal_radius_m`]), the closest a real star can orbit without
+/// ([`crate::projects::interstellar::black_hole::tidal_radius_m`]), the closest a real star can orbit without
 /// being torn apart: `1.1`–`1.3` times it, staggered so no two share a radius. The B dwarfs' tidal
 /// radii are `41`–`44 r_g`, S55's `31`, and the giant S38's `141`, which is why it sits much
 /// further out. At `36`–`58 r_g` they move at `13`–`17%` of the speed of light, an orbit every
@@ -1268,7 +1268,7 @@ pub const S_STAR_LATE_TYPE_COLOR: Color = Color {
 ///
 /// None of that changes the orbits: each star is `300,000` or more times lighter than the hole.
 ///
-/// **Used by.** [`crate::experiments::black_hole::black_hole`].
+/// **Used by.** [`crate::projects::interstellar::black_hole::black_hole`].
 ///
 /// **If you change it.** Adding a star from the same table is one row. Stars with larger orbits
 /// (S1, S8, S29 reach `5,000`–`10,000` AU) pass beyond the camera's far plane.

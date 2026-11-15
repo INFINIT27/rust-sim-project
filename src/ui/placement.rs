@@ -33,9 +33,9 @@ use bevy::ecs::schedule::IntoSystemConfigs;
 use bevy::ecs::system::Res;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
-use crate::experiments::constants::STELLAR_OBJECTS;
 use crate::input::menu::MenuState;
 use crate::input::placement::PlacementState;
+use crate::projects::interstellar::constants::STELLAR_OBJECTS;
 use crate::ui::constants::{PLACEMENT_PANEL_MARGIN_PX, PLACEMENT_PANEL_WIDTH_PX};
 
 /// One row of the picker: the label, and whether it is the current selection.

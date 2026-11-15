@@ -55,17 +55,17 @@
 pub use bevy::math::{Quat, Vec3};
 
 use crate::core::scene::{Aabb, Body, Pose, Prop, Scene};
-use crate::experiments::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
-use crate::experiments::constants::{
+use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
+use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, SCALE_CHECK_CAMERA_OFFSET_UNITS, SCALE_CHECK_FRAMED_RADIUS_UNITS,
     SCALE_CHECK_GAP_UNITS, SCALE_CHECK_TIME_SCALE, SOLAR_SYSTEM_PLANETS, SOLAR_SYSTEM_SUN_COLOR,
     SOLAR_SYSTEM_SUN_RADIUS_M,
 };
-use crate::experiments::solar_system::radius_units;
+use crate::projects::interstellar::solar_system::radius_units;
 
 /// One entry in the row: a name, a true radius in metres, and a colour.
 ///
-/// Deliberately not [`Planet`](crate::experiments::solar_system::Planet): a row in this scene has
+/// Deliberately not [`Planet`](crate::projects::interstellar::solar_system::Planet): a row in this scene has
 /// no orbit and no mass, and reusing a type with four unused fields would imply this experiment
 /// cares about them. The Sun is a row here too, which `Planet` could not express.
 ///
@@ -229,5 +229,5 @@ pub fn scale_check() -> Experiment {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/scale_check_tests.rs"]
+#[path = "../../../tst/projects/interstellar/scale_check_tests.rs"]
 mod tests;

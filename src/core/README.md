@@ -6,7 +6,7 @@
 > integration, the units↔SI conversion, or how far ahead bodies are predicted.
 > **Not here:** contacts are in [`collision/`](../collision/README.md), burns in
 > [`spacecraft/`](../spacecraft/README.md), clocks in [`time/`](../time/README.md), named scenes in
-> [`experiments/`](../experiments/README.md), and formulas in
+> [`projects/interstellar/`](../projects/interstellar/README.md), and formulas in
 > [`physics_utils/`](../physics_utils/README.md).
 
 The pure-Rust representation of the scene: what exists, where it is, and how

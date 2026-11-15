@@ -10,7 +10,7 @@
 
 use super::*;
 use crate::core::scene::Prop;
-use crate::experiments::constants::STELLAR_OBJECTS;
+use crate::projects::interstellar::constants::STELLAR_OBJECTS;
 use bevy::app::{App, Update};
 use bevy::core_pipeline::core_3d::Camera3d;
 use bevy::MinimalPlugins;

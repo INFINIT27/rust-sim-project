@@ -5,7 +5,7 @@
 //! every inertial frame. [`gravity`] is the one module about general relativity.
 //!
 //! Mostly a library of formulas with tests. The one caller in the simulation is `experiment_6`
-//! ([`crate::experiments::black_hole`]), which sizes its black hole from [`gravity`], steps anything
+//! ([`crate::projects::interstellar::black_hole`]), which sizes its black hole from [`gravity`], steps anything
 //! placed near it, draws its accretion disc, and bends light round it with [`kerr`].
 //!
 //! # What is where

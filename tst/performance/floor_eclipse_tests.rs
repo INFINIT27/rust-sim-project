@@ -5,7 +5,7 @@
 //! `cargo test --release -- --ignored darkest_floor_eclipse --nocapture`.
 
 use crate::core::scene::Body;
-use crate::experiments::catalog::ExperimentId;
+use crate::projects::interstellar::catalog::ExperimentId;
 use crate::render::eclipse::star_visible_fraction;
 use crate::time::simulation::TimeStep;
 use bevy::math::Vec3;

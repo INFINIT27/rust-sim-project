@@ -1,4 +1,5 @@
-//! Experiments: which simulation to run, how to run it, and how to choose.
+//! The interstellar project: every experiment so far, which one to run, how to run it, and how to
+//! choose.
 //!
 //! An **experiment** is a scene plus the settings that make it watchable — the clock
 //! scale it wants and where the camera should start. Before this layer the app could

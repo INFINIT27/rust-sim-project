@@ -25,7 +25,7 @@ and where a new one would go.
 | `ui/` | The `bevy_egui` overlay, crosshair, compass, and the `Esc` menu panel. |
 | `physics_utils/` | Physical constants and closed-form formulas, in `f64`. |
 | `time/` | The two clocks and the `TimeStep` every physics entry point takes. No Bevy import at all. |
-| `experiments/` | The catalog of simulations, each one's settings, and the command-line selection that picks one. |
+| `projects/` | The simulations, one directory per kind of physics. `interstellar/` holds every experiment so far, the catalog of simulations with each one's settings, and the command-line selection that picks one. |
 | `spacecraft/` | What a craft is, the fleet `G` cycles, planning a flight (the least-energy transfer by default), flying it, and its report. Above `core`, Bevy-free but for `bevy::math`. |
 | `performance/` | The `RGA_*` switches that trade image quality for frame time (anti-aliasing, floor eclipse, vsync), the frame-time benchmark, and the measurements behind each default. |
 | `config/` | Reads `config/*.toml` at startup into the resources the other layers own: the fleet, camera tuning, crosshair, compass, arrival pop-up, trails, performance switches. Above every other layer, beside `main.rs`. |
@@ -63,7 +63,7 @@ and where a new one would go.
 - **The app's identity comes from an experiment, not from constants.** Which scene,
   which clock scale, and where the camera starts are all on the `ExperimentSpec` that
   `ScenePlugin` inserts; nothing in `render/` may go back to hard-coding them. See
-  `src/experiments/README.md`.
+  `src/projects/interstellar/README.md`.
 - **The camera and the overlay read `ObserverClock`, never the simulation clock.**
   Observer time is wall time so the experiment can be watched while paused or
   rescaled; a viewer-side system reading simulated time would freeze with it. Inside `step(dt)` the order is

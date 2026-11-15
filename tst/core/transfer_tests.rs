@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::core::scene::Color;
-use crate::experiments::solar_system::solar_system;
+use crate::projects::interstellar::solar_system::solar_system;
 
 const DEPARTURE_SPEED_M_S: f64 = 15_400.0;
 const LAUNCH_ALTITUDE_M: f64 = 200_000.0;
@@ -13,7 +13,7 @@ const FRAME_S: f64 = 1.0e6 / 60.0;
 
 /// The scene of `experiment` and the ids of the two named bodies in it.
 fn pair(
-    experiment: crate::experiments::catalog::Experiment,
+    experiment: crate::projects::interstellar::catalog::Experiment,
     origin: &str,
     target: &str,
 ) -> (Scene, BodyId, BodyId) {
@@ -184,7 +184,11 @@ fn a_hop_from_earth_lands_on_the_moon_within_hours() {
 
 #[test]
 fn a_hop_between_two_of_jupiters_moons_lands() {
-    let (scene, io, europa) = pair(crate::experiments::jovian::jovian_system(), "Io", "Europa");
+    let (scene, io, europa) = pair(
+        crate::projects::interstellar::jovian::jovian_system(),
+        "Io",
+        "Europa",
+    );
     let (scene, voyage) = fly_voyage(scene, io, europa);
     assert_landed(&scene, &voyage);
 }
@@ -256,7 +260,7 @@ fn distant_moon_systems_fold_into_their_planet_and_conserve_mass_and_momentum() 
 
 #[test]
 fn a_hop_between_moons_keeps_their_siblings() {
-    let experiment = crate::experiments::jovian::jovian_system();
+    let experiment = crate::projects::interstellar::jovian::jovian_system();
     let names = experiment.names.clone();
     let (mut scene, io, europa) = pair(experiment, "Io", "Europa");
     let before = scene.props.len();
@@ -435,7 +439,7 @@ fn bodies_orbiting_different_primaries_are_not_bounded() {
 fn a_gravity_assisted_voyage_flown_live_passes_its_planet_and_lands() {
     // Europa to Callisto through a pass of Ganymede, planned with the assist search alone and flown
     // frame by frame through the live integrator, correction burns around the flyby included.
-    let experiment = crate::experiments::jovian::jovian_system();
+    let experiment = crate::projects::interstellar::jovian::jovian_system();
     let names = experiment.names.clone();
     let (scene, europa, callisto) = pair(experiment, "Europa", "Callisto");
     let ganymede = names.0.iter().find(|(_, n)| *n == "Ganymede").unwrap().0;

@@ -42,11 +42,11 @@ use bevy::transform::components::Transform;
 
 use crate::core::scene::{BodyId, Scene};
 use crate::core::transfer::{Flyby, PlanProgress, TransferPlan};
-use crate::experiments::catalog::{BodyNames, ExperimentSpec};
 use crate::input::camera::{pick_lock_target, CameraTarget};
 use crate::input::mission::LaunchRequest;
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
+use crate::projects::interstellar::catalog::{BodyNames, ExperimentSpec};
 use crate::render::constants::{
     MISSION_MARKER_ANGULAR_RADIUS, MISSION_MIN_WATCH_S, MISSION_PLANNED_PATH_ALPHA,
 };

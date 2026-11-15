@@ -89,14 +89,14 @@ pub use bevy::math::{Quat, Vec3};
 use crate::constants::METRES_PER_UNIT;
 use crate::core::constants::DEMO_BOUNDS_MIN_UNITS;
 use crate::core::scene::{Aabb, Body, Color, DVec3, Pose, Prop, Scene};
-use crate::experiments::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
-use crate::experiments::constants::{
+use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
+use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
+use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, MOON_SYSTEMS, SOLAR_SYSTEM_CAMERA_POSITION_UNITS,
     SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS, SOLAR_SYSTEM_FRAMED_RADIUS_UNITS, SOLAR_SYSTEM_PLANETS,
     SOLAR_SYSTEM_SOFTENING_UNITS, SOLAR_SYSTEM_SUN_COLOR, SOLAR_SYSTEM_SUN_MASS_KG,
     SOLAR_SYSTEM_SUN_RADIUS_M, SOLAR_SYSTEM_TIME_SCALE, SOLAR_SYSTEM_TRAIL_LENGTH_UNITS,
 };
-use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 
 /// One planet's real measurements: what it weighs, how big it is, how far out it orbits,
 /// and where on that orbit it starts.
@@ -229,7 +229,7 @@ pub fn radius_units(radius_m: f64) -> f32 {
 ///
 /// `v = √(G·M/r)`, the textbook result, evaluated in `f64` against SI and then divided by
 /// [`METRES_PER_UNIT`] — the same units↔SI dance
-/// [`ring_circular_speed_units_s`](crate::experiments::catalog::ring_circular_speed_units_s)
+/// [`ring_circular_speed_units_s`](crate::projects::interstellar::catalog::ring_circular_speed_units_s)
 /// does, and for the same reason: `G·M_sun` is `1.33e20`, which `f32` cannot hold usefully.
 ///
 /// The orbiting body's own mass is deliberately left out. Including it — `√(G(M+m)/r)` —
@@ -319,7 +319,7 @@ fn ecliptic_position(longitude_deg: f64, radius_units: f64) -> DVec3 {
 ///
 /// Deterministic: the seed plays no part, since every initial condition is a measurement.
 /// It is recorded in the spec as [`DEFAULT_RANDOM_SEED`] so the overlay has something
-/// honest to print, the same way [`two_body`](crate::experiments::catalog::two_body) does.
+/// honest to print, the same way [`two_body`](crate::projects::interstellar::catalog::two_body) does.
 ///
 /// # What it builds
 ///
@@ -534,5 +534,5 @@ pub fn solar_system() -> Experiment {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/solar_system_tests.rs"]
+#[path = "../../../tst/projects/interstellar/solar_system_tests.rs"]
 mod tests;

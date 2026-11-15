@@ -17,7 +17,7 @@
 //! - **Lighting** — where
 //!   [`spawn_scene_entities`](crate::render::plugin::spawn_scene_entities) puts the
 //!   light. The *camera* pose is per experiment and arrives via
-//!   [`crate::experiments::catalog::ExperimentSpec`].
+//!   [`crate::projects::interstellar::catalog::ExperimentSpec`].
 //! - **Mesh proxies** — [`LINE_VISUAL_THICKNESS_UNITS`], the one place a rendered
 //!   shape differs from the model.
 //! - **Motion trails** — the `TRAIL_*` values behind [`crate::render::trail`]. Length is in
@@ -46,7 +46,7 @@ use crate::core::scene::Color;
 
 // The startup camera pose used to live here, as a single constant. Framing is *per
 // experiment* — a three-body ring 12 units across wants a different viewpoint than a
-// two-body pair 30 units apart — so it moved to `experiments::constants` and reaches
+// two-body pair 30 units apart — so it moved to `projects::interstellar::constants` and reaches
 // `spawn_scene_entities` through the `ExperimentSpec` resource (amendment A4).
 
 /// Where the directional light is placed, in world units.
@@ -211,7 +211,7 @@ pub const GRID_MAJOR_COLOR: Color = Color {
 ///
 /// **If you change it.** Keep it distinguishable from
 /// [`GRID_AXIS_Z_COLOR`] and from the body colours in
-/// [`crate::core::constants`] and [`crate::experiments::constants`].
+/// [`crate::core::constants`] and [`crate::projects::interstellar::constants`].
 pub const GRID_AXIS_X_COLOR: Color = Color {
     r: 0.62,
     g: 0.30,
@@ -337,7 +337,7 @@ pub const TRAIL_MAX_SAMPLES: usize = 512;
 /// to be rather than the thing that decides the answer.
 ///
 /// **Used by.** `apply_experiment_trail_length`, when
-/// [`ExperimentSpec::trail_length_units`](crate::experiments::catalog::ExperimentSpec::trail_length_units)
+/// [`ExperimentSpec::trail_length_units`](crate::projects::interstellar::catalog::ExperimentSpec::trail_length_units)
 /// is `Some`. An experiment that does not ask keeps `TRAIL_MIN_SAMPLE_SPACING_UNITS`
 /// exactly, so the shipped two- and three-body trails are unchanged by this.
 ///
@@ -670,7 +670,7 @@ pub const MISSION_MIN_WATCH_S: f64 = 20.0;
 /// **Why this value.** Far enough out that a ray starts nearly straight (the bend accumulated beyond
 /// `12 r_s` is a few degrees at most), and close enough that the whole sphere fits the experiment's
 /// opening view: `152` units for Sgr A*, framed by
-/// `experiments::constants::BLACK_HOLE_FRAMED_RADIUS_UNITS`, kept in step by hand.
+/// `projects::interstellar::constants::BLACK_HOLE_FRAMED_RADIUS_UNITS`, kept in step by hand.
 ///
 /// **Used by.** [`crate::render::light_streams::LightStreams::emit`].
 ///

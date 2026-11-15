@@ -1,12 +1,12 @@
-# `src/experiments/` — which simulation to run
+# `src/projects/interstellar/` — the interstellar experiments
 
 > **Purpose:** The catalog of runnable simulations (two-body, three-body ring, solar system,
 > Jovian moons, size ruler, black hole), each one's clock scale and starting camera, the command-line
 > parsing, and the objects the `B` key places.
 > **Edit here to:** add or change an experiment, change planet or moon data, starting camera
 > poses, CLI arguments or `--help`, the random seed, or the `B`-key objects.
-> **Not here:** how the world steps is in [`core/`](../core/README.md), how a scene is drawn in
-> [`render/`](../render/README.md), and the spacecraft in [`spacecraft/`](../spacecraft/README.md).
+> **Not here:** how the world steps is in [`core/`](../../core/README.md), how a scene is drawn in
+> [`render/`](../../render/README.md), and the spacecraft in [`spacecraft/`](../../spacecraft/README.md).
 
 An **experiment** is a scene plus the settings that make it watchable: the clock scale
 it wants and where the camera should start. Before this layer the app could run exactly
@@ -107,7 +107,7 @@ off the screen:
 | Timestep | Frame-rate dependent; `MAX_SUBSTEPS` caps very close encounters |
 | Absent | The asteroid belt, Pluto, the other ~285 moons, tides, rotation, radiation pressure |
 
-The full statement is the milestone entry in [`CHANGELOG.md`](../../CHANGELOG.md).
+The full statement is the milestone entry in [`CHANGELOG.md`](../../../CHANGELOG.md).
 
 **So it opens on almost nothing.** From the `610`-unit opening framing:
 
@@ -430,35 +430,35 @@ already-touching bodies, and that it survives 400 frames of being run.
 
 ## Where the tests are
 
-- `tst/experiments/black_hole_tests.rs` — 16 unit tests: the published mass, the spinning horizon
+- `tst/projects/interstellar/black_hole_tests.rs` — 16 unit tests: the published mass, the spinning horizon
   written out and compared, the hole alone at the origin capturing at its horizon, the view framing
   the disc from above, and through the real integrator: the hole staying put, an orbit at
   `1.2×` the prograde ISCO holding where a non-spinning hole swallows it, an orbit inside the ISCO
   plunging, and a dropped rock never reaching `c`.
-- `tst/experiments/scale_check_tests.rs` — 13 unit tests in three groups, matching what an
+- `tst/projects/interstellar/scale_check_tests.rs` — 13 unit tests in three groups, matching what an
   instrument has to get right: that it measures the real quantity, that it is readable, and that it
   cannot move.
-- `tst/experiments/jovian_tests.rs` — 27 unit tests. The published masses, radii, orbits, and
+- `tst/projects/interstellar/jovian_tests.rs` — 27 unit tests. The published masses, radii, orbits, and
   periods; the Laplace resonance derived rather than asserted; every prop colliding at its true
   radius with a uniformly `4×` drawn one; **and two tests that pin why the crate had to change** —
   that the old softening leaves under `20%` of Newton at Io's orbit, and that the old drawn radius
   would swallow every moon. Plus Io through the real integrator for one full period, and all four
   holding their circles for ten.
-- `tst/experiments/solar_system_tests.rs` — 29 unit tests, most of them checking the scene
+- `tst/projects/interstellar/solar_system_tests.rs` — 29 unit tests, most of them checking the scene
   against **published astronomy** rather than against its own constants: orbital speeds in
   km/s, periods in days, size ratios to Earth. Plus the two exaggerations pinned as
   exaggerations, the barycentric momentum cancelling to zero, and
   `earth_completes_one_orbit_in_one_year_and_comes_back` — the real integrator, at the
   shipped clock scale, for one simulated year.
-- `tst/experiments/catalog_tests.rs` — 2 properties, 19 unit tests. Catalog hygiene over
+- `tst/projects/interstellar/catalog_tests.rs` — 2 properties, 19 unit tests. Catalog hygiene over
   `ALL` (reachability, no token collisions, validity, framing, nothing pre-touching), the
   three-body premise checked geometrically (on the circle, evenly spaced, exactly
   tangential, speeds in window, seeds reproducible and varying), the circular-speed
   derivation recomputed independently, and `every_experiment_runs_without_going_invalid`
   — 400 frames at the app's worst-case step, per experiment.
-- `tst/experiments/selection_tests.rs` — 15 unit tests over every accepted form and every
+- `tst/projects/interstellar/selection_tests.rs` — 15 unit tests over every accepted form and every
   error variant.
-- `tst/experiments/random_tests.rs` — 2 properties, 9 unit tests: determinism, range, a
+- `tst/projects/interstellar/random_tests.rs` — 2 properties, 9 unit tests: determinism, range, a
   coarse spread, and the zero seed.
 
 ## Adding a file here

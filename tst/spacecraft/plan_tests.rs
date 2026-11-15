@@ -2,8 +2,8 @@
 //! integration test: planning each kind of flight, and flying it through the live scene.
 
 use super::*;
-use crate::experiments::solar_system::solar_system;
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
+use crate::projects::interstellar::solar_system::solar_system;
 use crate::spacecraft::{Flight, Phase, Spacecraft};
 use crate::time::simulation::TimeStep;
 

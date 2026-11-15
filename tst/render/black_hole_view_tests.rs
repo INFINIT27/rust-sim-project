@@ -134,12 +134,12 @@ fn the_sphere_always_holds_the_camera() {
 
 #[test]
 fn the_hole_body_is_the_black_hole_only_in_a_scene_with_a_disc() {
-    let scene = crate::experiments::black_hole::black_hole().scene;
+    let scene = crate::projects::interstellar::black_hole::black_hole().scene;
     let (id, prop) = scene.iter().next().unwrap();
     assert!(prop.absorbs);
     assert_eq!(hole_body(&scene), Some(id));
     assert_eq!(
-        hole_body(&crate::experiments::catalog::two_body().scene),
+        hole_body(&crate::projects::interstellar::catalog::two_body().scene),
         None
     );
 }

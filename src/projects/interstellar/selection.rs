@@ -37,8 +37,8 @@
 //! returns data rather than mutating anything.
 
 use crate::bindings::binding_help_text;
-use crate::experiments::catalog::{catalog_lines, ExperimentId};
-use crate::experiments::constants::DEFAULT_RANDOM_SEED;
+use crate::projects::interstellar::catalog::{catalog_lines, ExperimentId};
+use crate::projects::interstellar::constants::DEFAULT_RANDOM_SEED;
 
 /// What the caller asked for: an experiment, and optionally a seed for it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -311,5 +311,5 @@ pub fn help_text() -> String {
 }
 
 #[cfg(test)]
-#[path = "../../tst/experiments/selection_tests.rs"]
+#[path = "../../../tst/projects/interstellar/selection_tests.rs"]
 mod tests;

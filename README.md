@@ -102,7 +102,8 @@ concerns live instead (**Not here**).
 | [`src/core/transfer/`](src/core/transfer/README.md) | The coasting-path search between two bodies, gravity assists, the prediction the spacecraft use |
 | [`src/collision/`](src/collision/README.md) | Hulls, contact detection, elastic bounces, black-hole absorption |
 | [`src/time/`](src/time/README.md) | The simulation and observer clocks, `TimeStep`, time scaling |
-| [`src/experiments/`](src/experiments/README.md) | The experiments, planet and moon data, starting cameras, command-line arguments |
+| [`src/projects/`](src/projects/README.md) | The simulations, one directory per kind of physics; adding a new kind |
+| [`src/projects/interstellar/`](src/projects/interstellar/README.md) | Every experiment so far: the catalog, planet and moon data, starting cameras, command-line arguments, the `B`-key objects |
 | [`src/spacecraft/`](src/spacecraft/README.md) | The craft, flight planning, steering and landing, the flight report |
 | [`src/render/`](src/render/README.md) | The Scene→ECS mirror, the frame pipeline, lighting, eclipse shadows, the grid, trails, missions |
 | [`src/input/`](src/input/README.md) | The camera, what each key does, input modes |

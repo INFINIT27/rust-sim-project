@@ -1,9 +1,9 @@
 //! `physics-sandbox` binary entry point.
 //!
-//! Parses the command line into an [`experiments::Command`](physics_sandbox::Command) —
+//! Parses the command line into an [`projects::interstellar::Command`](physics_sandbox::Command) —
 //! run an experiment, list the catalog, or print usage — and for a run, hands the
 //! chosen [`Selection`](physics_sandbox::Selection) to `ScenePlugin`. The parse itself
-//! lives in `experiments::selection` so it is testable without launching a window;
+//! lives in `projects::interstellar::selection` so it is testable without launching a window;
 //! this file only decides what to do with the result.
 //!
 //! Wires a Bevy [`App`] with `DefaultPlugins` (configured with a **borderless
