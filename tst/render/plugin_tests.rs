@@ -916,6 +916,7 @@ fn a_star_lights_its_own_scene_and_a_starless_one_falls_back() {
         ExperimentId::ThreeBodyRing,
         ExperimentId::Jovian,
         ExperimentId::ScaleCheck,
+        ExperimentId::EarthMoon,
     ] {
         let (points, directional, _) = lights(id);
         assert_eq!(points, 0, "{id:?} has no star");

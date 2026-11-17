@@ -6,7 +6,7 @@
 //!
 //! | Project | What it holds |
 //! | --- | --- |
-//! | [`interstellar`] | Gravity at astronomical scale: two- and three-body runs, the solar system, Jupiter's moons, the size ruler, and Sgr A*. It also holds the experiment catalog and the command-line parsing that picks one. |
+//! | [`interstellar`] | Gravity at astronomical scale: two- and three-body runs, the solar system, Jupiter's moons, the size ruler, Sgr A*, and the Earth and Moon. It also holds the experiment catalog and the command-line parsing that picks one. |
 //!
 //! # Import restrictions
 //!

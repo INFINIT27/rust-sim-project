@@ -13,7 +13,7 @@
 | Entry | Job |
 | --- | --- |
 | `mod.rs` | Declares each project, and the import restrictions they share. |
-| [`interstellar/`](interstellar/README.md) | Gravity at astronomical scale: the two-body and three-body runs, the solar system, Jupiter's moons, the size ruler, and Sgr A*. Also the experiment catalog and the command-line parsing that picks one. |
+| [`interstellar/`](interstellar/README.md) | Gravity at astronomical scale: the two-body and three-body runs, the solar system, Jupiter's moons, the size ruler, Sgr A*, and the Earth and Moon. Also the experiment catalog and the command-line parsing that picks one. |
 
 This directory has no constants of its own. Each project keeps its constants in its own
 `constants.rs`.

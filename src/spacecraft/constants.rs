@@ -105,6 +105,188 @@ pub const CREWED_CRAFT_MASS_KG: f64 = 15_000.0;
 pub const CREW_MAX_ACCELERATION_G: f64 = 3.0;
 
 // ---------------------------------------------------------------------------------------------
+// The staged rocket: a Saturn V with a lunar-module descent stage
+// ---------------------------------------------------------------------------------------------
+//
+// The figures below are the Apollo-era ones as the public summaries round them (the Saturn V and
+// Apollo Lunar Module articles on Wikipedia, which follow NASA's flight manuals and press kits).
+// They were entered from memory of those summaries and not checked against a source when this was
+// written, and the real values vary by a percent or two from flight to flight: check them before
+// relying on one. With them the rocket equation gives, stage by stage:
+//
+// | Stage | Lights at | Burns out at | Exhaust speed | Δv |
+// | --- | --- | --- | --- | --- |
+// | S-IC | `2,921.6 t` | `761.6 t` | `2,981 m/s` | `4.01 km/s` |
+// | S-II | `631.6 t` | `175.5 t` | `4,129 m/s` | `5.29 km/s` |
+// | S-IVB | `135.4 t` | `25.9 t` | `4,129 m/s` | `6.82 km/s` |
+// | LM descent stage | `12.43 t` | `4.18 t` | `3,050 m/s` | `3.32 km/s` |
+//
+// `19.44 km/s` in all, pinned by `rocket_tests`. Flown from Earth to the Moon in `experiment_7`
+// the trip takes `18.5 km/s`: a `15.2 km/s` departure burn, then corrections and the landing.
+// It lands with about `1.4 t` of propellant left (`plan_tests`).
+//
+// Two things differ from Apollo, both because this craft flies straight up from rest and lands
+// directly, with nothing left in lunar orbit:
+//
+// - The real Saturn V carried `45 t` past the third stage, the command and service modules as
+//   well as the lunar module. Here the lunar module rides alone, so the S-IVB gives more.
+// - The payload is the ascent stage **empty** (`2,150 kg`), not fuelled (`4,700 kg`). The flight
+//   ends at the landing, so the ascent engine is never lit and its propellant would be dead
+//   weight. With it aboard the stack carries `18.2 km/s`, runs dry on the way down, and hits the
+//   Moon at `370 m/s`.
+
+/// One F-1 engine's thrust in vacuum, in newtons.
+///
+/// **Why this value.** `7,770 kN`. The F-1 is the engine of the Saturn V's first stage, burning
+/// kerosene and liquid oxygen; five of them lifted every Apollo mission. Its sea-level thrust is
+/// `6,770 kN`. The vacuum figure is used because the scene has no atmosphere and the craft starts
+/// `200 km` up.
+///
+/// **Used by.** [`crate::spacecraft::Engine::f1_cluster`].
+///
+/// **If you change it.** The first stage's acceleration scales with it: five give `1.35 g` on the
+/// full stack. Below Earth's `0.94 g` at the launch altitude the rocket cannot lift off.
+pub const F1_VACUUM_THRUST_N: f64 = 7.77e6;
+
+/// The F-1's specific impulse in vacuum, in seconds.
+///
+/// **Why this value.** `304 s`, an exhaust speed of `2,981 m/s`. At sea level it is `263 s`.
+///
+/// **Used by.** [`crate::spacecraft::Engine::f1_cluster`].
+///
+/// **If you change it.** The first stage's speed change scales with it, by the rocket equation.
+pub const F1_VACUUM_SPECIFIC_IMPULSE_S: f64 = 304.0;
+
+/// One J-2 engine's thrust, in newtons.
+///
+/// **Why this value.** `1,033 kN` in vacuum. The J-2 burns liquid hydrogen and liquid oxygen; five
+/// power the Saturn V's second stage and one its third.
+///
+/// **Used by.** [`crate::spacecraft::Engine::j2_cluster`] and [`crate::spacecraft::Engine::j2`].
+///
+/// **If you change it.** The second stage lights at `0.83 g` and the third at `0.78 g`, both under
+/// Earth's surface gravity, so they lose much of their burn to gravity on a straight climb. More
+/// thrust loses less.
+pub const J2_THRUST_N: f64 = 1.033e6;
+
+/// The J-2's specific impulse, in seconds.
+///
+/// **Why this value.** `421 s` in vacuum, an exhaust speed of `4,129 m/s`: hydrogen and oxygen
+/// give the fastest exhaust of any propellants flown at this scale.
+///
+/// **Used by.** [`crate::spacecraft::Engine::j2_cluster`] and [`crate::spacecraft::Engine::j2`].
+///
+/// **If you change it.** The second and third stages' speed change scales with it.
+pub const J2_SPECIFIC_IMPULSE_S: f64 = 421.0;
+
+/// The Saturn V first stage (S-IC) with its tanks empty, in kilograms.
+///
+/// **Why this value.** `130 t`.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** A lighter stage gives the same propellant more speed change.
+pub const SATURN_S_IC_DRY_MASS_KG: f64 = 130_000.0;
+
+/// The Saturn V first stage's propellant, in kilograms.
+///
+/// **Why this value.** `2,160 t` of kerosene and liquid oxygen, three quarters of the whole
+/// rocket.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** More propellant gives more speed change but a heavier, slower lift-off.
+pub const SATURN_S_IC_PROPELLANT_KG: f64 = 2_160_000.0;
+
+/// The Saturn V second stage (S-II) with its tanks empty, in kilograms.
+///
+/// **Why this value.** `40.1 t`.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** As for [`SATURN_S_IC_DRY_MASS_KG`].
+pub const SATURN_S_II_DRY_MASS_KG: f64 = 40_100.0;
+
+/// The Saturn V second stage's propellant, in kilograms.
+///
+/// **Why this value.** `456.1 t` of liquid hydrogen and liquid oxygen.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** As for [`SATURN_S_IC_PROPELLANT_KG`].
+pub const SATURN_S_II_PROPELLANT_KG: f64 = 456_100.0;
+
+/// The Saturn V third stage (S-IVB) with its tanks empty, in kilograms.
+///
+/// **Why this value.** `13.5 t`.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** As for [`SATURN_S_IC_DRY_MASS_KG`].
+pub const SATURN_S_IVB_DRY_MASS_KG: f64 = 13_500.0;
+
+/// The Saturn V third stage's propellant, in kilograms.
+///
+/// **Why this value.** `109.5 t` of liquid hydrogen and liquid oxygen.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** As for [`SATURN_S_IC_PROPELLANT_KG`].
+pub const SATURN_S_IVB_PROPELLANT_KG: f64 = 109_500.0;
+
+/// The Apollo lunar module's descent stage with its tanks empty, in kilograms.
+///
+/// **Why this value.** `2,034 kg`.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`], as the fourth stage.
+///
+/// **If you change it.** As for [`SATURN_S_IC_DRY_MASS_KG`]. It is the last stage, so it is never
+/// dropped: it lands with the payload.
+pub const LUNAR_MODULE_DESCENT_DRY_MASS_KG: f64 = 2_034.0;
+
+/// The Apollo lunar module's descent propellant, in kilograms.
+///
+/// **Why this value.** `8,248 kg` of Aerozine 50 and nitrogen tetroxide.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`].
+///
+/// **If you change it.** It is what the landing is flown on: `3.32 km/s` of speed change.
+pub const LUNAR_MODULE_DESCENT_PROPELLANT_KG: f64 = 8_248.0;
+
+/// The thrust of the Apollo lunar module's descent engine, in newtons.
+///
+/// **Why this value.** `45.04 kN` at full throttle. It gives the descent stage and its payload
+/// `3.6 m/s²` with full tanks, against the Moon's `1.62 m/s²` at the surface.
+///
+/// **Used by.** [`crate::spacecraft::Engine::lunar_module_descent`].
+///
+/// **If you change it.** Under the target's surface gravity the craft cannot land softly, and the
+/// planner says so.
+pub const LUNAR_MODULE_DESCENT_THRUST_N: f64 = 45_040.0;
+
+/// The specific impulse of the Apollo lunar module's descent engine, in seconds.
+///
+/// **Why this value.** `311 s`, an exhaust speed of `3,050 m/s`.
+///
+/// **Used by.** [`crate::spacecraft::Engine::lunar_module_descent`].
+///
+/// **If you change it.** The landing stage's speed change scales with it.
+pub const LUNAR_MODULE_DESCENT_SPECIFIC_IMPULSE_S: f64 = 311.0;
+
+/// The Apollo lunar module's ascent stage with its tanks empty, in kilograms: the staged rocket's
+/// payload.
+///
+/// **Why this value.** `2,150 kg`, the crew cabin. Fuelled it weighs `4,700 kg`, but the flight
+/// ends at the landing, so its engine is never lit and its propellant is left behind. See the
+/// section's opening comment for what carrying it would cost.
+///
+/// **Used by.** [`crate::spacecraft::Spacecraft::saturn_v_lander`], as the craft's `mass_kg`.
+///
+/// **If you change it.** Every stage carries it, so every stage's speed change falls as it grows,
+/// the last stage's most.
+pub const LUNAR_MODULE_ASCENT_STAGE_DRY_MASS_KG: f64 = 2_150.0;
+
+// ---------------------------------------------------------------------------------------------
 // The coasting probe
 // ---------------------------------------------------------------------------------------------
 
@@ -419,3 +601,21 @@ pub const CORRECTION_MIN_REMAINING_S: f64 = 6.0 * 3_600.0;
 /// **If you change it.** Smaller lets an off-target arrival slip past. Larger starts steering where
 /// the corrections still do the job more cheaply.
 pub const LANDING_START_RADII: f64 = 20.0;
+
+/// How much speed change a rocket's landing looks ahead over, as a multiple of the speed it would
+/// hit the target's surface at unbraked.
+///
+/// **Why this value.** Two. A rocket's landing is planned on the weakest acceleration it will have
+/// while it brakes (see [`crate::spacecraft::Rocket::weakest_acceleration_m_s2`]), which means
+/// knowing which stages it will light before it is down. Braking takes the impact speed plus what
+/// gravity adds during the burn; at the lunar module's `3 m/s²` against the Moon's `1.62 m/s²`
+/// that is somewhat under twice the impact speed. Without the look-ahead, a rocket that began
+/// braking on the last of its third stage planned for `3 g`, emptied that stage part-way down, and
+/// hit the Moon at `2.2 km/s` with most of its lander's propellant unburned.
+///
+/// **Used by.** [`crate::spacecraft::flight`], for a staged rocket only.
+///
+/// **If you change it.** Lower risks planning on a stage that empties before touchdown. Higher
+/// plans on a weaker stage than the landing will reach, so it brakes earlier and more gently than
+/// it needs to and loses more to gravity.
+pub const LANDING_LOOKAHEAD_FACTOR: f64 = 2.0;

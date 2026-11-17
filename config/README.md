@@ -17,7 +17,7 @@ make it stick).
 
 | File | Settings |
 | --- | --- |
-| `spacecraft.toml` | The fleet `G` cycles through: each craft's name, mass, size, colour, launch altitude, and propulsion (least-energy transfer, direct, or coasting) with its engine and g limit. |
+| `spacecraft.toml` | The fleet `G` cycles through: each craft's name, mass, size, colour, launch altitude, and propulsion (least-energy transfer, direct, coasting, or a staged rocket that carries its propellant) with its engine and g limit, or its stages. |
 | `camera.toml` | Movement speed, the boost and precision multipliers, look sensitivity. |
 | `ui.toml` | `[crosshair]` size and colour, `[compass]` size and placement, `[arrival]` pop-up width. |
 | `trails.toml` | Whether trails show at launch, their length, sample spacing and count, and fade. |

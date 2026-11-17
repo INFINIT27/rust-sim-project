@@ -199,18 +199,34 @@ impl Mission {
                     voyage.corrections,
                     voyage.correction_delta_v_m_s
                 ),
-                phase => format!(
-                    "rocket {}: {}, {progress}, Δv {:.2} km/s so far, peak {:.1} km/s ({:.2}% of c)",
-                    flight_route(flight),
-                    if doing == "planning a correction" {
-                        doing
-                    } else {
-                        phase.label()
-                    },
-                    report.delta_v_m_s / 1_000.0,
-                    report.max_speed_m_s / 1_000.0,
-                    100.0 * report.max_speed_m_s / SPEED_OF_LIGHT_M_S
-                ),
+                phase => {
+                    // A rocket that carries its propellant also says what it has left: the
+                    // stage burning, its mass, and the speed change still in its tanks.
+                    let tanks = flight.rocket().map_or_else(String::new, |rocket| {
+                        let (number, of) = rocket.stage_number();
+                        format!(
+                            "; stage {number}/{of} ({}), {:.1} t, propellant {:.1} t, Δv left \
+                             {:.2} km/s",
+                            rocket.stage().map_or("", |stage| stage.name.as_str()),
+                            rocket.mass_kg() / 1_000.0,
+                            rocket.propellant_left_kg() / 1_000.0,
+                            rocket.delta_v_left_m_s() / 1_000.0
+                        )
+                    });
+                    format!(
+                        "rocket {}: {}, {progress}, Δv {:.2} km/s so far, peak {:.1} km/s \
+                         ({:.2}% of c){tanks}",
+                        flight_route(flight),
+                        if doing == "planning a correction" && phase != Phase::Dry {
+                            doing
+                        } else {
+                            phase.label()
+                        },
+                        report.delta_v_m_s / 1_000.0,
+                        report.max_speed_m_s / 1_000.0,
+                        100.0 * report.max_speed_m_s / SPEED_OF_LIGHT_M_S
+                    )
+                }
             }
         };
         let selected = &self.fleet.selected().name;
@@ -250,22 +266,34 @@ impl Mission {
             MissionPhase::Landed {
                 flight,
                 landed_after_s,
-            } => match flight.report().touchdown_speed_m_s {
-                Some(touchdown) if flight.craft.engine().is_some() => format!(
-                    "rocket {}: landed after {} at {:.0} m/s, Δv {:.2} km/s",
-                    flight_route(flight),
-                    days(*landed_after_s),
-                    touchdown,
-                    flight.report().delta_v_m_s / 1_000.0
-                ),
-                _ => format!(
-                    "rocket {}: landed after {}, {} burns ({:.1} m/s)",
-                    flight_route(flight),
-                    days(*landed_after_s),
-                    flight.voyage.corrections,
-                    flight.voyage.correction_delta_v_m_s
-                ),
-            },
+            } => {
+                match flight.report().touchdown_speed_m_s {
+                    Some(touchdown) if flight.craft.engine().is_some() => format!(
+                        "rocket {}: {} after {} at {:.0} m/s, Δv {:.2} km/s{}",
+                        flight_route(flight),
+                        // A rocket that ran dry did not land: it fell the rest of the way.
+                        if flight.report().ran_dry {
+                            "out of propellant, hit the surface"
+                        } else {
+                            "landed"
+                        },
+                        days(*landed_after_s),
+                        touchdown,
+                        flight.report().delta_v_m_s / 1_000.0,
+                        flight.report().propellant_left_kg.map_or_else(
+                            String::new,
+                            |left| format!(", {:.2} t of propellant left", left / 1_000.0)
+                        )
+                    ),
+                    _ => format!(
+                        "rocket {}: landed after {}, {} burns ({:.1} m/s)",
+                        flight_route(flight),
+                        days(*landed_after_s),
+                        flight.voyage.corrections,
+                        flight.voyage.correction_delta_v_m_s
+                    ),
+                }
+            }
             MissionPhase::NoPath {
                 origin,
                 target,

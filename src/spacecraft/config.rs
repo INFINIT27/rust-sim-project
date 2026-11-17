@@ -1,6 +1,10 @@
 //! What a spacecraft is: its mass, size, engine, limits, and how it flies. Plain data, so a
 //! settings menu can build or edit one without touching any flight code.
 //!
+//! Most craft here are idealised: a fixed mass and an engine that never runs out. A
+//! [`Propulsion::Staged`] craft is the realistic one: a payload under [`Stage`]s that carry their
+//! propellant, flown as a [`Rocket`].
+//!
 //! [`Fleet`] is the roster `G` cycles through. Its [`Default`] is the built-in set, assembled from
 //! [`crate::spacecraft::constants`]; anything else (a menu, a saved file) can build its own.
 
@@ -9,9 +13,15 @@ use crate::core::scene::{Body, Color, DVec3, Pose, Prop, Quat};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::spacecraft::constants::{
     AEROJET_260_EXHAUST_SPEED_M_S, AEROJET_260_THRUST_N, CRAFT_COLOR, CRAFT_RADIUS_M,
-    CREWED_CRAFT_MASS_KG, CREW_MAX_ACCELERATION_G, LAUNCH_ALTITUDE_M, PROBE_MASS_KG,
-    PROBE_MAX_DEPARTURE_SPEED_M_S,
+    CREWED_CRAFT_MASS_KG, CREW_MAX_ACCELERATION_G, F1_VACUUM_SPECIFIC_IMPULSE_S,
+    F1_VACUUM_THRUST_N, J2_SPECIFIC_IMPULSE_S, J2_THRUST_N, LAUNCH_ALTITUDE_M,
+    LUNAR_MODULE_ASCENT_STAGE_DRY_MASS_KG, LUNAR_MODULE_DESCENT_DRY_MASS_KG,
+    LUNAR_MODULE_DESCENT_PROPELLANT_KG, LUNAR_MODULE_DESCENT_SPECIFIC_IMPULSE_S,
+    LUNAR_MODULE_DESCENT_THRUST_N, PROBE_MASS_KG, PROBE_MAX_DEPARTURE_SPEED_M_S,
+    SATURN_S_IC_DRY_MASS_KG, SATURN_S_IC_PROPELLANT_KG, SATURN_S_II_DRY_MASS_KG,
+    SATURN_S_II_PROPELLANT_KG, SATURN_S_IVB_DRY_MASS_KG, SATURN_S_IVB_PROPELLANT_KG,
 };
+use crate::spacecraft::rocket::Rocket;
 
 /// A rocket engine: how hard it pushes and how fast it throws its propellant out.
 #[derive(Clone, Debug, PartialEq)]
@@ -23,6 +33,33 @@ pub struct Engine {
     /// The speed its exhaust leaves at, in m/s: specific impulse times standard gravity. What turns
     /// a burn into propellant and energy in the [`FlightReport`](crate::spacecraft::FlightReport).
     pub exhaust_speed_m_s: f64,
+}
+
+/// One stage of a rocket that carries its propellant: a structure, a tank, and an engine. See
+/// [`crate::spacecraft::rocket`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Stage {
+    /// A name for the status line and the menu.
+    pub name: String,
+    /// The stage with its tank empty, in kilograms. Dropped with the stage.
+    pub dry_mass_kg: f64,
+    /// The propellant the stage starts with, in kilograms.
+    pub propellant_kg: f64,
+    /// The stage's engine, or all its engines taken as one.
+    pub engine: Engine,
+}
+
+impl Stage {
+    /// Whether every number is one a flight can use: a positive dry mass, thrust and exhaust
+    /// speed, and a propellant load of zero or more, all finite.
+    pub fn is_valid(&self) -> bool {
+        let positive = |x: f64| x.is_finite() && x > 0.0;
+        positive(self.dry_mass_kg)
+            && self.propellant_kg.is_finite()
+            && self.propellant_kg >= 0.0
+            && positive(self.engine.thrust_n)
+            && positive(self.engine.exhaust_speed_m_s)
+    }
 }
 
 /// How a craft gets from one body to another.
@@ -46,6 +83,16 @@ pub enum Propulsion {
         /// The most the engine is throttled to, in m/s²; at most its thrust over the mass.
         max_acceleration_m_s2: f64,
     },
+    /// A rocket that carries its propellant, flying the same least-energy transfer as
+    /// [`Propulsion::Transfer`]. The craft's `mass_kg` is the payload on top of `stages`, which
+    /// burn in order from the first; each is dropped when its tank is empty. Its mass falls as it
+    /// burns, by the rocket equation, and when the last tank is empty it glides. See
+    /// [`crate::spacecraft::rocket`].
+    Staged {
+        stages: Vec<Stage>,
+        /// The most the engines are throttled to, in m/s².
+        max_acceleration_m_s2: f64,
+    },
 }
 
 /// A spacecraft, complete: everything needed to plan and fly it.
@@ -53,7 +100,9 @@ pub enum Propulsion {
 pub struct Spacecraft {
     /// A name for the status line and the arrival report.
     pub name: String,
-    /// Its mass, in kilograms. Fixed: burning propellant is reported but not subtracted.
+    /// Its mass, in kilograms. For the idealised craft it is fixed: burning propellant is reported
+    /// but not subtracted. For a [`Propulsion::Staged`] rocket it is the payload alone, and the
+    /// stages and their propellant come on top (see [`Spacecraft::launch_mass_kg`]).
     pub mass_kg: f64,
     /// Its radius, in metres.
     pub radius_m: f64,
@@ -113,19 +162,94 @@ impl Spacecraft {
         }
     }
 
-    /// The engine, for a powered craft.
+    /// A Saturn V with a lunar-module descent stage as its fourth stage and the ascent stage as
+    /// its payload: the classic chemical rocket, carrying every kilogram it burns. Held to
+    /// [`CREW_MAX_ACCELERATION_G`]. See the `SATURN_*` and `LUNAR_MODULE_*` constants for the
+    /// figures and what they add up to.
+    pub fn saturn_v_lander() -> Self {
+        let stage = |name: &str, dry_mass_kg, propellant_kg, engine: Engine| Stage {
+            name: name.to_string(),
+            dry_mass_kg,
+            propellant_kg,
+            engine,
+        };
+        Spacecraft {
+            name: "Saturn V lander (staged)".to_string(),
+            mass_kg: LUNAR_MODULE_ASCENT_STAGE_DRY_MASS_KG,
+            radius_m: CRAFT_RADIUS_M,
+            color: CRAFT_COLOR,
+            launch_altitude_m: LAUNCH_ALTITUDE_M,
+            propulsion: Propulsion::Staged {
+                stages: vec![
+                    stage(
+                        "S-IC",
+                        SATURN_S_IC_DRY_MASS_KG,
+                        SATURN_S_IC_PROPELLANT_KG,
+                        Engine::f1_cluster(),
+                    ),
+                    stage(
+                        "S-II",
+                        SATURN_S_II_DRY_MASS_KG,
+                        SATURN_S_II_PROPELLANT_KG,
+                        Engine::j2_cluster(),
+                    ),
+                    stage(
+                        "S-IVB",
+                        SATURN_S_IVB_DRY_MASS_KG,
+                        SATURN_S_IVB_PROPELLANT_KG,
+                        Engine::j2(),
+                    ),
+                    stage(
+                        "LM descent stage",
+                        LUNAR_MODULE_DESCENT_DRY_MASS_KG,
+                        LUNAR_MODULE_DESCENT_PROPELLANT_KG,
+                        Engine::lunar_module_descent(),
+                    ),
+                ],
+                max_acceleration_m_s2: CREW_MAX_ACCELERATION_G * STANDARD_GRAVITY_M_S2,
+            },
+        }
+    }
+
+    /// The engine, for a powered craft. For a staged rocket, the first stage's.
     pub fn engine(&self) -> Option<&Engine> {
         match &self.propulsion {
             Propulsion::Coasting { .. } => None,
             Propulsion::Direct { engine, .. } | Propulsion::Transfer { engine, .. } => Some(engine),
+            Propulsion::Staged { stages, .. } => stages.first().map(|stage| &stage.engine),
         }
     }
 
+    /// The rocket, with full tanks, for a craft that carries its propellant. `None` for the
+    /// idealised craft and the coasting one.
+    pub fn rocket(&self) -> Option<Rocket> {
+        match &self.propulsion {
+            Propulsion::Staged {
+                stages,
+                max_acceleration_m_s2,
+            } => Some(Rocket::new(
+                self.mass_kg,
+                stages.clone(),
+                *max_acceleration_m_s2,
+            )),
+            _ => None,
+        }
+    }
+
+    /// The craft's mass as it launches, in kilograms: its `mass_kg`, plus every stage and its
+    /// propellant for a staged rocket.
+    pub fn launch_mass_kg(&self) -> f64 {
+        self.rocket()
+            .map_or(self.mass_kg, |rocket| rocket.mass_kg())
+    }
+
     /// The most acceleration the craft's engine gives it, in m/s²: its throttle limit, or its
-    /// thrust over its mass if that is less. `None` for a coasting craft.
+    /// thrust over its mass if that is less. For a staged rocket this is the value at launch, with
+    /// full tanks; it rises as the rocket burns. `None` for a coasting craft.
     pub fn acceleration_m_s2(&self) -> Option<f64> {
         match &self.propulsion {
             Propulsion::Coasting { .. } => None,
+            Propulsion::Staged { .. } => self.rocket().map(|rocket| rocket.acceleration_m_s2()),
             Propulsion::Direct {
                 engine,
                 max_acceleration_m_s2,
@@ -157,6 +281,16 @@ impl Spacecraft {
                     && positive(engine.exhaust_speed_m_s)
                     && positive(*max_acceleration_m_s2)
             }
+            // At least one stage, and at least some propellant to burn.
+            Propulsion::Staged {
+                stages,
+                max_acceleration_m_s2,
+            } => {
+                !stages.is_empty()
+                    && stages.iter().all(Stage::is_valid)
+                    && stages.iter().any(|stage| stage.propellant_kg > 0.0)
+                    && positive(*max_acceleration_m_s2)
+            }
         };
         positive(self.mass_kg)
             && positive(self.radius_m)
@@ -177,7 +311,7 @@ impl Spacecraft {
                 color: self.color,
             },
             DVec3::ZERO,
-            self.mass_kg as f32,
+            self.launch_mass_kg() as f32,
         )
     }
 }
@@ -189,6 +323,42 @@ impl Engine {
             name: "Aerojet 260".to_string(),
             thrust_n: AEROJET_260_THRUST_N,
             exhaust_speed_m_s: AEROJET_260_EXHAUST_SPEED_M_S,
+        }
+    }
+
+    /// The five F-1 engines of the Saturn V's first stage, as one engine, in vacuum.
+    pub fn f1_cluster() -> Self {
+        Engine {
+            name: "5 × F-1".to_string(),
+            thrust_n: 5.0 * F1_VACUUM_THRUST_N,
+            exhaust_speed_m_s: F1_VACUUM_SPECIFIC_IMPULSE_S * STANDARD_GRAVITY_M_S2,
+        }
+    }
+
+    /// The five J-2 engines of the Saturn V's second stage, as one engine.
+    pub fn j2_cluster() -> Self {
+        Engine {
+            name: "5 × J-2".to_string(),
+            thrust_n: 5.0 * J2_THRUST_N,
+            exhaust_speed_m_s: J2_SPECIFIC_IMPULSE_S * STANDARD_GRAVITY_M_S2,
+        }
+    }
+
+    /// The single J-2 of the Saturn V's third stage.
+    pub fn j2() -> Self {
+        Engine {
+            name: "J-2".to_string(),
+            thrust_n: J2_THRUST_N,
+            exhaust_speed_m_s: J2_SPECIFIC_IMPULSE_S * STANDARD_GRAVITY_M_S2,
+        }
+    }
+
+    /// The Apollo lunar module's descent engine.
+    pub fn lunar_module_descent() -> Self {
+        Engine {
+            name: "LM descent engine".to_string(),
+            thrust_n: LUNAR_MODULE_DESCENT_THRUST_N,
+            exhaust_speed_m_s: LUNAR_MODULE_DESCENT_SPECIFIC_IMPULSE_S * STANDARD_GRAVITY_M_S2,
         }
     }
 }
@@ -247,13 +417,14 @@ impl Fleet {
 
 impl Default for Fleet {
     /// The built-in set: the crewed least-energy transfer (selected), the full-thrust direct
-    /// flight, and the coasting probe.
+    /// flight, the coasting probe, and the staged Saturn V lander that carries its propellant.
     fn default() -> Self {
         Fleet {
             craft: vec![
                 Spacecraft::crewed_transfer(),
                 Spacecraft::full_thrust_direct(),
                 Spacecraft::coasting_probe(),
+                Spacecraft::saturn_v_lander(),
             ],
             selected: 0,
         }

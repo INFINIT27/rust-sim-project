@@ -72,6 +72,8 @@ pub enum ExperimentId {
     ScaleCheck,
     /// Sgr A*, the Milky Way's central black hole, spinning, with an accretion disc.
     BlackHole,
+    /// The Earth and the Moon alone, orbiting their barycentre at true size and distance.
+    EarthMoon,
 }
 
 impl Default for ExperimentId {
@@ -87,16 +89,17 @@ impl ExperimentId {
     ///
     /// The order is the order a `--list` prints and a picker would show, so it is
     /// stable and matches the slugs: `experiment_1` first.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::TwoBody,
         Self::ThreeBodyRing,
         Self::SolarSystem,
         Self::Jovian,
         Self::ScaleCheck,
         Self::BlackHole,
+        Self::EarthMoon,
     ];
 
-    /// The canonical slug: `"experiment_1"` through `"experiment_6"`.
+    /// The canonical slug: `"experiment_1"` through `"experiment_7"`.
     ///
     /// Numbered rather than named because that is how they are referred to in
     /// conversation and on the command line. [`name`](Self::name) is the human label
@@ -110,6 +113,7 @@ impl ExperimentId {
             Self::Jovian => "experiment_4",
             Self::ScaleCheck => "experiment_5",
             Self::BlackHole => "experiment_6",
+            Self::EarthMoon => "experiment_7",
         }
     }
 
@@ -123,6 +127,7 @@ impl ExperimentId {
             Self::Jovian => "Jovian system",
             Self::ScaleCheck => "Scale check",
             Self::BlackHole => "Black hole",
+            Self::EarthMoon => "Earth and Moon",
         }
     }
 
@@ -154,6 +159,10 @@ impl ExperimentId {
                 "Sgr A*, the Milky Way's central black hole, spinning at a = 0.9, with a glowing \
                  accretion disc dragged round it, glowing with the heat of its friction."
             }
+            Self::EarthMoon => {
+                "The Earth and the Moon alone at true size and distance, both orbiting \
+                 their barycentre once every 27.3 days."
+            }
         }
     }
 
@@ -170,6 +179,7 @@ impl ExperimentId {
             Self::Jovian => &["4", "jovian", "jupiter", "moons", "galilean"],
             Self::ScaleCheck => &["5", "scale", "scale-check", "sizes", "ruler"],
             Self::BlackHole => &["6", "black-hole", "black_hole", "blackhole", "sgr-a"],
+            Self::EarthMoon => &["7", "earth-moon", "earth_moon", "earth", "moon", "luna"],
         }
     }
 
@@ -193,6 +203,7 @@ impl ExperimentId {
             Self::Jovian => super::jovian::jovian_system(),
             Self::ScaleCheck => super::scale_check::scale_check(),
             Self::BlackHole => super::black_hole::black_hole(),
+            Self::EarthMoon => super::earth_moon::earth_moon_system(),
         }
     }
 

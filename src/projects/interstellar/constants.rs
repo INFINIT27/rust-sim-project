@@ -20,6 +20,8 @@
 //! - **The Jovian system** — `experiment_4`: the Galilean moons.
 //! - **The scale check** — `experiment_5`: the static size-comparison row.
 //! - **The black hole** — `experiment_6`: Sgr A*, spinning, with its disc, and the S-stars round it.
+//! - **The Earth and the Moon** — `experiment_7`: the clock, camera, trail, bounds and softening.
+//!   The two bodies' data is [`SOLAR_SYSTEM_PLANETS`]'s Earth row and [`EARTH_MOONS`].
 //! - **Randomness** — the fallback seed.
 
 pub use bevy::math::Vec3;
@@ -887,6 +889,89 @@ pub const JOVIAN_TRAIL_LENGTH_UNITS: f32 = 0.5;
 /// statement about what the scene is *for*, and `jovian_tests` checks every body starts inside.
 pub const JOVIAN_BOUNDS_MARGIN_UNITS: f32 = 0.5;
 
+/// Simulated seconds per real second for the Earth–Moon system (`experiment_7`).
+///
+/// **Why this value.** The orbit takes `27.28` days, which is `2.357e6` seconds. At `1e5` that is
+/// `23.6` seconds of watching per orbit: slow enough to follow the Moon round, fast enough that a
+/// whole month does not need patience. At 60 fps a frame advances `1667` simulated seconds, so an
+/// orbit is about `1400` integration steps, more than Io gets in `experiment_4`.
+///
+/// **Used by.** [`crate::projects::interstellar::earth_moon::earth_moon_system`], as the spec's
+/// time scale.
+///
+/// **If you change it.** `1e6` gives an orbit every `2.4` seconds and about `140` steps per orbit,
+/// where the circle starts to drift visibly. `earth_moon_tests` checks an orbit is between `10` and
+/// `60` seconds of watching. The `[` and `]` keys change the scale at runtime.
+pub const EARTH_MOON_TIME_SCALE: f32 = 1.0e5;
+
+/// Where the camera starts for the Earth–Moon system, in world units.
+///
+/// **Why this value.** The Moon's circle about the barycentre has a radius of `0.3797` units, so
+/// the opening view has to hold a radius of about `0.45`, which needs a distance of
+/// `0.45 / tan(22.5°) ≈ 1.086`. `(0, 0.72, 0.9)` is `1.153` units from the origin and frames
+/// `0.477` units. The elevation is `39°` above the orbital plane, the same as `experiment_4`: steep
+/// enough that the orbit reads as a circle and not a line. From there the Earth is about `22` px
+/// across and the Moon about `6`, by the same measure as `experiment_5`'s table.
+///
+/// **Used by.** [`crate::projects::interstellar::earth_moon::earth_moon_system`].
+///
+/// **If you change it.** Pinned against [`EARTH_MOON_FRAMED_RADIUS_UNITS`] by
+/// `catalog_tests::every_experiment_frames_its_own_scene`.
+pub const EARTH_MOON_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 0.72, 0.9);
+
+/// Radius about the barycentre that the Earth–Moon system's opening view contains, in world units.
+///
+/// **Why this value.** The Moon's circle is `0.3797` units and `0.45` frames it with margin. This is
+/// the whole scene: both bodies are in the opening frame for the whole orbit.
+///
+/// **Used by.** [`crate::projects::interstellar::earth_moon::earth_moon_system`], as the spec's
+/// [`framed_radius_units`](crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units).
+///
+/// **If you change it.** It must stay achievable from [`EARTH_MOON_CAMERA_POSITION_UNITS`], which
+/// can frame at most `1.153 × tan(22.5°) = 0.477` units, and it must stay larger than the Moon's
+/// circle. Both are checked.
+pub const EARTH_MOON_FRAMED_RADIUS_UNITS: f32 = 0.45;
+
+/// Trail length for the Earth–Moon system, in world units.
+///
+/// **Why this value.** The Moon's path is `2.39` units round, and `0.6` is a quarter of it: an arc
+/// long enough to show the curve and the direction of travel without closing into a ring. The crate
+/// default of `10` units is four times the whole orbit. The Earth's own path is `0.029` units round
+/// and lies inside the Earth, so its trail is hidden whatever this is.
+///
+/// **Used by.** [`crate::projects::interstellar::catalog::ExperimentSpec::trail_length_units`] for
+/// this experiment.
+///
+/// **If you change it.** Past `2.39` units the Moon's trail meets its own tail and stops showing
+/// which way the Moon is going.
+pub const EARTH_MOON_TRAIL_LENGTH_UNITS: f32 = 0.6;
+
+/// How far beyond the Moon's circle the Earth–Moon system's bounds reach, in world units.
+///
+/// **Why this value.** `0.1` units past the Moon's `0.3797` gives bounds of `±0.48`: every body
+/// with room for the small excursions a first-order integrator introduces.
+///
+/// **Used by.** [`crate::projects::interstellar::earth_moon::earth_moon_system`], which derives
+/// [`Scene::bounds`](crate::core::scene::Scene::bounds) from the Moon's distance plus this.
+///
+/// **If you change it.** Bounds are advisory: nothing stops a prop leaving them.
+/// `earth_moon_tests` checks both bodies start inside.
+pub const EARTH_MOON_BOUNDS_MARGIN_UNITS: f32 = 0.1;
+
+/// Plummer softening length for the Earth–Moon system, in world units.
+///
+/// **Why this value.** `0.001` units is `1000 km`, the value `experiment_3` and `experiment_4` use.
+/// It is under the Moon's `1737 km` radius and `1/384` of the separation, so it leaves `99.9993%`
+/// of Newton's force. The crate default of `1.0` unit is `2.6×` the whole separation and would
+/// leave `13%`. It is not zero for the reason given on [`JOVIAN_SOFTENING_UNITS`].
+///
+/// **Used by.** [`crate::projects::interstellar::earth_moon::earth_moon_system`], as the scene's
+/// [`softening_units`](crate::core::scene::Scene::softening_units).
+///
+/// **If you change it.** The force error is `(ε/r)²`, so `0.01` costs `0.07%` and `0.1` costs
+/// `6.3%`, which would visibly open the orbit out.
+pub const EARTH_MOON_SOFTENING_UNITS: f32 = 0.001;
+
 /// Plummer softening length for the solar system, in world units.
 ///
 /// **Why this value.** `0.001` units is `1000 km` — smaller than every body in the scene except
@@ -987,7 +1072,9 @@ pub const SCALE_CHECK_TIME_SCALE: f32 = 1.0;
 /// numbers give; neither was chosen.
 ///
 /// **Used by.** [`MOON_SYSTEMS`], and through it
-/// [`crate::projects::interstellar::solar_system::solar_system`].
+/// [`crate::projects::interstellar::solar_system::solar_system`]; and
+/// [`crate::projects::interstellar::earth_moon::earth_moon_system`] (`experiment_7`), which reads the
+/// mass, radius, distance, colour and starting longitude.
 ///
 /// **If you change it.** Its dynamical time is `3.75e5 s`, which asks `6` substeps of the shipped
 /// clock — free beside Io's `98`. Bringing it much closer than `10` Earth radii would make it, not Io,

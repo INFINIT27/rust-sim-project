@@ -18,7 +18,14 @@ compile inside the module and see its private items through `use super::*`.
 | `lambert_tests.rs` | `lambert.rs` | Curtis Example 5.2, an arc that propagates to its end point, the direction of travel, and degenerate inputs. |
 | `guidance_tests.rs` | `guidance.rs` | The braking budget, the landing law (burn, brake, coast on the curve, touch down at `10 m/s`, never speed up when landing), step sizes, the velocity-matching burn against Jupiter's gravity, detours, and the touchdown test. |
 | `flight_tests.rs` | `flight.rs` | Each propulsion's first phase, the departure burn ending in a cruise, the correction schedule, and a correction becoming a burn. |
-| `report_tests.rs` | `report.rs` | Energy and propellant from a burn, engine time for gentle trims, and a craft with no engine. |
+| `report_tests.rs` | `report.rs` | Energy and propellant from a burn, engine time for gentle trims, a craft with no engine, and a rocket's burn charged what its tanks lost. |
+| `rocket_tests.rs` | `rocket.rs` | The rocket equation in both directions; a tank draining by it; the acceleration rising as the mass falls and capped at the limit; burn times at full thrust and throttled; running dry; staging (a dropped stage, a burn across one, staging beating one lump); the look-ahead to the weakest stage; and the Saturn V lander's mass and its `4.01`, `5.29`, `6.82` and `3.32 km/s` stages. |
+
+The staged rocket also has tests in the other files: its craft data in `config_tests.rs`; its
+departure burn, tanks, staging and running dry in `flight_tests.rs`; and in `plan_tests.rs` its
+departure burn against the constant one, the whole flight from Earth to a soft landing on the Moon
+in `experiment_7`'s scene, the same flight with too heavy a payload running dry, and the two
+refusals (a first stage too weak to lift off, a last stage too weak to land).
 
 ## Conventions specific to this directory
 

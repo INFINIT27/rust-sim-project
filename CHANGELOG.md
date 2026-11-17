@@ -7,6 +7,67 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-16
+
+### Added
+
+- **`experiment_7`: the Earth and the Moon alone, at true size and true distance**
+  (`src/projects/interstellar/earth_moon.rs`, run with `earth-moon`, `earth`, `moon`, `luna` or
+  `7`). It is the first step of a new line of work on the Earth–Moon system, and this change is
+  the scene only. Both bodies are stored, drawn and collided at their real radii, `384,400 km`
+  apart, so the Moon is `0.273` of the Earth's radius and `60.3` Earth radii away on screen. Both
+  orbit their barycentre, which is at the origin and at rest: the Moon is `1/81.3` of the Earth's
+  mass, too much to pin the Earth and ignore it. The relative speed therefore has both masses in
+  it, `√(G·(M+m)/r)`, which gives a `27.28`-day period against a measured `27.32`. The Earth and
+  Moon data are the existing `SOLAR_SYSTEM_PLANETS` and `EARTH_MOONS` rows, so `experiment_3` and
+  this one cannot disagree. New constants, all in `src/projects/interstellar/constants.rs`:
+  `EARTH_MOON_TIME_SCALE`, `EARTH_MOON_CAMERA_POSITION_UNITS`, `EARTH_MOON_FRAMED_RADIUS_UNITS`,
+  `EARTH_MOON_TRAIL_LENGTH_UNITS`, `EARTH_MOON_BOUNDS_MARGIN_UNITS` and
+  `EARTH_MOON_SOFTENING_UNITS`. Not in yet: the orbit's eccentricity and tilt, rotation, surface
+  maps, and the Sun.
+- **A spacecraft that carries its propellant: a staged rocket flown by the rocket equation**
+  (`src/spacecraft/rocket.rs`, `Propulsion::Staged`). Until now every powered craft had a fixed
+  mass and an engine that never ran out; the report only said what it would have burned. This is
+  the first step toward realistic propulsion, starting with classic chemical rockets.
+  - *The craft.* A payload under a list of `Stage`s, each a dry mass, a propellant load and an
+    engine. A fourth built-in craft, `Spacecraft::saturn_v_lander`, is added to the fleet `G`
+    cycles and to `config/spacecraft.toml`: the Saturn V's three stages, a lunar-module descent
+    stage, and the empty ascent stage as payload. `2,922 t` at launch, `19.44 km/s` in all. The
+    three idealised craft are unchanged and stay in the fleet for comparison.
+  - *The rocket equation.* `Rocket::burn` takes a speed change and drains the tanks by
+    `m₁ = m₀ · exp(−Δv / v_e)`, dropping each stage as it empties. `rocket_delta_v_m_s` and
+    `rocket_mass_after_kg` are the equation in its two forms. The acceleration is the stage's
+    thrust over the present mass, capped at the craft's limit, so it rises as the rocket burns.
+  - *Running dry.* The rocket gives only the speed change its tanks hold. When the last is empty
+    the flight enters the new `Phase::Dry`: it glides under gravity with no burns and no
+    corrections. A launch is never refused for lack of propellant: the trip is planned as if the
+    tanks could cover it, and the rocket runs dry where it runs dry.
+  - *Gliding and stopping are the existing ones, adapted.* The rocket flies the crewed craft's
+    least-energy transfer with the same cruise, corrections and landing law. The departure burn
+    is cut into equal shares of speed change instead of equal times (`departure_burn_with`,
+    `Push`), because the time each share takes depends on the mass then. The landing is planned
+    on the weakest stage the rocket will light before it is down
+    (`Rocket::weakest_acceleration_m_s2`, `LANDING_LOOKAHEAD_FACTOR`): planned on the present
+    acceleration, the first test flight ran its third stage out part-way down and hit the Moon at
+    `2.2 km/s` with its lander stage nearly full.
+  - *What it shows.* From Earth to the Moon in `experiment_7` the Saturn lander spends
+    `18.5 km/s` and lands at `10 m/s` with about `1.4 t` of propellant left. Its departure costs
+    `15.2 km/s` where the idealised craft's costs `12.9`, because its upper stages light under
+    `1 g` on a straight climb. With the ascent stage fuelled (`4.7 t` instead of `2.15 t`) it
+    runs dry and hits at `370 m/s`.
+  - *Where it appears.* The status line shows the stage burning, the mass, and the propellant
+    and speed change left. The arrival pop-up adds propellant loaded, propellant left and stages
+    dropped. The `Esc` menu's spacecraft page edits each stage and shows the launch mass and
+    total Δv. `config/spacecraft.toml` takes `kind = "staged"` with `[[craft.propulsion.stages]]`.
+    The scene's copy of the craft weighs what the rocket weighs now.
+  - *New constants*, in `src/spacecraft/constants.rs`: `F1_VACUUM_THRUST_N`,
+    `F1_VACUUM_SPECIFIC_IMPULSE_S`, `J2_THRUST_N`, `J2_SPECIFIC_IMPULSE_S`, the six
+    `SATURN_S_*` stage masses, the five `LUNAR_MODULE_*` figures, and
+    `LANDING_LOOKAHEAD_FACTOR`. The Apollo figures were entered from memory of the public
+    summaries and should be checked against a source.
+  - *Not modelled.* Dropped stages vanish, there is no atmosphere, throttling is free, tanks burn
+    to empty, and the craft still starts at rest `200 km` up, not in orbit.
+
 ## 2026-11-14
 
 ### Changed
