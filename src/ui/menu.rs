@@ -841,6 +841,67 @@ fn spacecraft_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
                             );
                             *max_acceleration_m_s2 = limit_g * g;
                         }
+                        Propulsion::Staged {
+                            stages,
+                            max_acceleration_m_s2,
+                        } => {
+                            ui.label("Flies");
+                            ui.label("Staged rocket (mass above is the payload)");
+                            ui.end_row();
+                            let mut limit_g = *max_acceleration_m_s2 / g;
+                            number_row(
+                                ui,
+                                "Acceleration limit (g)",
+                                &mut limit_g,
+                                0.001..=1.0e6,
+                                0.05,
+                            );
+                            *max_acceleration_m_s2 = limit_g * g;
+                            for (number, stage) in stages.iter_mut().enumerate() {
+                                ui.label(format!("Stage {}", number + 1));
+                                ui.text_edit_singleline(&mut stage.name);
+                                ui.end_row();
+                                number_row(
+                                    ui,
+                                    "  Dry mass (kg)",
+                                    &mut stage.dry_mass_kg,
+                                    1.0..=1.0e9,
+                                    10.0,
+                                );
+                                number_row(
+                                    ui,
+                                    "  Propellant (kg)",
+                                    &mut stage.propellant_kg,
+                                    0.0..=1.0e10,
+                                    100.0,
+                                );
+                                number_row(
+                                    ui,
+                                    "  Thrust (N)",
+                                    &mut stage.engine.thrust_n,
+                                    1.0..=1.0e12,
+                                    1.0e4,
+                                );
+                                let mut isp = stage.engine.exhaust_speed_m_s / g;
+                                number_row(
+                                    ui,
+                                    "  Specific impulse (s)",
+                                    &mut isp,
+                                    1.0..=1.0e7,
+                                    1.0,
+                                );
+                                stage.engine.exhaust_speed_m_s = isp * g;
+                            }
+                        }
+                    }
+                    // What the rocket equation makes of the numbers above, updated as they change.
+                    if let Some(rocket) = craft.rocket() {
+                        ui.label("Launch mass");
+                        ui.label(format!("{:.1} t", rocket.mass_kg() / 1_000.0));
+                        ui.end_row();
+                        ui.label("Total Δv");
+                        ui.label(format!("{:.2} km/s", rocket.delta_v_left_m_s() / 1_000.0));
+                        ui.end_row();
                     }
                 });
             });

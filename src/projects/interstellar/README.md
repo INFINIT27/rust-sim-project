@@ -1,7 +1,7 @@
 # `src/projects/interstellar/` — the interstellar experiments
 
 > **Purpose:** The catalog of runnable simulations (two-body, three-body ring, solar system,
-> Jovian moons, size ruler, black hole), each one's clock scale and starting camera, the command-line
+> Jovian moons, size ruler, black hole, Earth and Moon), each one's clock scale and starting camera, the command-line
 > parsing, and the objects the `B` key places.
 > **Edit here to:** add or change an experiment, change planet or moon data, starting camera
 > poses, CLI arguments or `--help`, the random seed, or the `B`-key objects.
@@ -31,8 +31,9 @@ description of a world, not a renderer.
 | `jovian.rs` | `experiment_4`: Jupiter and the Galilean moons. `jovian_primary`, `jovian_orbit_speed_units_s`, `jovian_orbit_period_seconds`. |
 | `scale_check.rs` | `experiment_5`: a static size-comparison row. `ScaleRow`, `scale_rows`, `scale_check_layout`. A ruler, not a simulation. |
 | `black_hole.rs` | `experiment_6`: Sgr A*, spinning, with an accretion disc and six real S-stars on their measured orbits. `black_hole`, `SStar` and `s_star_state` (a measured orbit to a position and velocity), `spinning_horizon_units`, `BlackHoleRadii` and `black_hole_radii` (the non-spinning radii, for comparison), `black_hole_centre_units`, `SGR_A_STAR_NAME`. |
+| `earth_moon.rs` | `experiment_7`: the Earth and the Moon alone, at true size and distance, both orbiting their barycentre. `earth_moon_system`, `earth_moon_primary`, `earth_moon_satellite`, `earth_moon_mass_fraction`, `earth_moon_orbit_speed_units_s`, `earth_moon_orbit_period_seconds`. |
 
-## The six experiments
+## The seven experiments
 
 | Slug | Also | What it is |
 | --- | --- | --- |
@@ -42,6 +43,7 @@ description of a world, not a renderer.
 | `experiment_4` | `4`, `jovian`, `jupiter`, `moons` | Jupiter and the four Galilean moons, with the 1:2:4 Laplace resonance. The one system that is **visible** at true scale. |
 | `experiment_5` | `5`, `scale`, `sizes`, `ruler` | The Sun and eight planets in a static row at true size, bottoms aligned. Nothing moves — it is a ruler. |
 | `experiment_6` | `6`, `black-hole`, `sgr-a` | Sgr A*, spinning at `a = 0.9`, with a glowing accretion disc dragged round it. |
+| `experiment_7` | `7`, `earth-moon`, `earth`, `moon`, `luna` | The Earth and the Moon alone, at true size and true distance, both orbiting their barycentre every `27.3` days. |
 
 ```bash
 cargo run --release                          # experiment_1
@@ -51,6 +53,7 @@ cargo run --release -- solar-system          # the solar system
 cargo run --release -- moons                 # Jupiter and the Galilean moons
 cargo run --release -- scale                 # the size-comparison row
 cargo run --release -- black-hole            # Sgr A*, spinning, with its disc
+cargo run --release -- earth-moon            # the Earth and the Moon
 cargo run --release -- --list                # the catalog
 ```
 
@@ -250,6 +253,31 @@ compares the whole scene for equality. A ruler must not be able to bend.
 
 The radii come from `SOLAR_SYSTEM_PLANETS` and the Sun's own constant rather than a table of their
 own: an instrument has to be measuring the same object as the experiment it checks.
+
+## `experiment_7`, the Earth and the Moon on their own
+
+Two bodies and no floor, each stored, drawn and collided at its true radius, `384,400 km` apart.
+The Moon is `0.273` of the Earth's radius and `60.3` Earth radii away, and that is what the window
+shows: nothing is enlarged to make it easier to see.
+
+| Body | Mass | True radius | Distance from the barycentre |
+| --- | --- | --- | --- |
+| Earth | `5.9722e24 kg` | `0.006371` u | `0.00467` u |
+| Moon | `7.342e22 kg` | `0.0017374` u | `0.37973` u |
+
+- **Both bodies orbit.** The Moon is `1/81.3` of the Earth's mass, so the scene solves the
+  two-body problem exactly: each body starts on a circle about the barycentre, which is at the
+  origin and at rest. The barycentre is `4,668 km` from the Earth's centre, inside the Earth.
+- **The speed has both masses in it.** The relative speed is `√(G·(M+m)/r)` = `1024.6 m/s`, which
+  gives a period of `27.28` days against a measured `27.32`. `experiment_3` leaves the Moon's mass
+  out and gets `27.45`.
+- **The data is shared.** The Earth is the `"Earth"` row of `SOLAR_SYSTEM_PLANETS` and the Moon is
+  `EARTH_MOONS[0]`, the rows `experiment_3` reads.
+- **The clock** is `1e5`, one orbit every `23.6` seconds of watching.
+
+Still idealised: a circular orbit (the real eccentricity is `0.0549`), in the horizontal plane, with
+no Sun, so no phases or eclipses. Neither body rotates or has a surface map yet: each is a plain
+coloured sphere.
 
 ## `experiment_6`, where relativity stops being a rounding error
 

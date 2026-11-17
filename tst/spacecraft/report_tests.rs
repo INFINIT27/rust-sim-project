@@ -59,3 +59,60 @@ fn nothing_is_counted_for_no_thrust() {
     assert_eq!(report.delta_v_m_s, 0.0);
     assert_eq!(report.energy_j, Some(0.0));
 }
+
+#[test]
+fn a_rocket_burn_is_charged_what_the_rocket_equation_charged_it() {
+    use crate::spacecraft::rocket::Burn;
+
+    let mut report = FlightReport::new("rocket", true);
+    report.load_propellant(8_000.0);
+    assert_eq!(report.propellant_loaded_kg, Some(8_000.0));
+    assert_eq!(report.propellant_left_kg, Some(8_000.0));
+
+    let burn = Burn {
+        delta_v_m_s: 200.0,
+        propellant_kg: 650.0,
+        energy_j: 2.9e9,
+        seconds: 10.0,
+        stages_dropped: 1,
+    };
+    report.record_rocket_burn(&burn, 10.0, 25.0, 7_350.0);
+
+    assert_eq!(report.delta_v_m_s, 200.0);
+    // The burn's own propellant and energy, not a fixed-mass estimate.
+    assert_eq!(report.propellant_kg, Some(650.0));
+    assert_eq!(report.energy_j, Some(2.9e9));
+    assert_eq!(report.propellant_left_kg, Some(7_350.0));
+    assert_eq!(report.stages_dropped, 1);
+    assert!(!report.ran_dry);
+    // 20 m/s² for 10 s on an engine that could give 25: eight seconds at full thrust.
+    assert_eq!(report.peak_acceleration_m_s2, 20.0);
+    assert!((report.burn_time_s - 8.0).abs() < 1e-12);
+}
+
+#[test]
+fn a_rocket_burn_that_empties_the_tanks_is_noted() {
+    use crate::spacecraft::rocket::Burn;
+
+    let mut report = FlightReport::new("rocket", true);
+    report.load_propellant(100.0);
+    let burn = Burn {
+        delta_v_m_s: 50.0,
+        propellant_kg: 100.0,
+        energy_j: 1.0,
+        seconds: 1.0,
+        stages_dropped: 0,
+    };
+    report.record_rocket_burn(&burn, 1.0, 50.0, 0.0);
+    assert!(report.ran_dry);
+    assert_eq!(report.propellant_left_kg, Some(0.0));
+}
+
+#[test]
+fn an_idealised_craft_reports_no_tanks() {
+    let report = FlightReport::new("test", true);
+    assert_eq!(report.propellant_loaded_kg, None);
+    assert_eq!(report.propellant_left_kg, None);
+    assert_eq!(report.stages_dropped, 0);
+    assert!(!report.ran_dry);
+}

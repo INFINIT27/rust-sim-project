@@ -164,6 +164,23 @@ pub fn arrival_rows(
     if let Some(propellant) = report.propellant_kg {
         rows.push(("Propellant burned", mass_label(propellant)));
     }
+    // A craft that carries its propellant: what it had, what is left, and what it dropped.
+    if let (Some(loaded), Some(left)) = (report.propellant_loaded_kg, report.propellant_left_kg) {
+        rows.push(("Propellant loaded", mass_label(loaded)));
+        rows.push((
+            "Propellant left",
+            // To the kilogram while under ten tonnes: what is left at a landing is a tonne or
+            // two, and `mass_label` would round it to "1 t".
+            if report.ran_dry {
+                "none: ran dry".to_string()
+            } else if left < 10_000.0 {
+                format!("{} kg", thousands(left.round()))
+            } else {
+                mass_label(left)
+            },
+        ));
+        rows.push(("Stages dropped", report.stages_dropped.to_string()));
+    }
     if let Some(touchdown) = report.touchdown_speed_m_s {
         rows.push(("Touchdown speed", format!("{touchdown:.1} m/s")));
     }

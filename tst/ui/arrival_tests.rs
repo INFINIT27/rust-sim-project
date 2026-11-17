@@ -60,6 +60,7 @@ fn a_crewed_landing_reports_time_speed_energy_and_propellant() {
         propellant_kg: Some(201_000.0),
         touchdown_speed_m_s: Some(10.1),
         corrections: 11,
+        ..Default::default()
     };
     let (earth, mars, names) = earth_and_mars();
     let rows = arrival_rows(&report, earth, mars, &names);
@@ -111,4 +112,43 @@ fn the_popup_opens_once_per_landing_and_closes_when_it_ends() {
         PopupChange::Open,
         "a second trip to the same body is a new landing"
     );
+}
+
+#[test]
+fn a_rocket_that_carries_its_propellant_reports_its_tanks_and_stages() {
+    let mut report = FlightReport::new("Saturn V lander (staged)", true);
+    report.load_propellant(2_733_848.0);
+    report.propellant_left_kg = Some(1_495.0);
+    report.stages_dropped = 3;
+    let (earth, mars, names) = earth_and_mars();
+    let rows = arrival_rows(&report, earth, mars, &names);
+    let value = |label: &str| {
+        rows.iter()
+            .find(|(l, _)| *l == label)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| panic!("no row {label}: {rows:?}"))
+    };
+    assert_eq!(value("Propellant loaded"), "2,734 t");
+    assert_eq!(value("Propellant left"), "1,495 kg");
+    assert_eq!(value("Stages dropped"), "3");
+
+    // Out of propellant, it says so instead of a mass.
+    report.propellant_left_kg = Some(0.0);
+    report.ran_dry = true;
+    let rows = arrival_rows(&report, earth, mars, &names);
+    let left = rows.iter().find(|(l, _)| *l == "Propellant left").unwrap();
+    assert_eq!(left.1, "none: ran dry");
+}
+
+#[test]
+fn an_idealised_craft_has_no_tank_rows() {
+    let report = FlightReport::new("Crewed transfer (3 g)", true);
+    let (earth, mars, names) = earth_and_mars();
+    let labels: Vec<_> = arrival_rows(&report, earth, mars, &names)
+        .iter()
+        .map(|(l, _)| *l)
+        .collect();
+    for tank_row in ["Propellant loaded", "Propellant left", "Stages dropped"] {
+        assert!(!labels.contains(&tank_row), "{labels:?}");
+    }
 }

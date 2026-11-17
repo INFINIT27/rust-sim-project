@@ -21,7 +21,7 @@ use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::constants::{CRAFT_COLOR, CRAFT_RADIUS_M, LAUNCH_ALTITUDE_M};
-use crate::spacecraft::{Engine, Fleet, Propulsion, Spacecraft};
+use crate::spacecraft::{Engine, Fleet, Propulsion, Spacecraft, Stage};
 use crate::ui::arrival::ArrivalPopupConfig;
 use crate::ui::compass::CompassConfig;
 use crate::ui::crosshair::CrosshairConfig;
@@ -469,6 +469,28 @@ pub enum PropulsionFile {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_acceleration_g: Option<f64>,
     },
+    /// A rocket that carries its propellant, flying the least-energy transfer. The craft's
+    /// `mass_kg` is its payload.
+    Staged {
+        /// Acceleration limit, in g.
+        max_acceleration_g: f64,
+        /// `[[craft.propulsion.stages]]`, in the order they burn.
+        stages: Vec<StageFile>,
+    },
+}
+
+/// One `[[craft.propulsion.stages]]`.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct StageFile {
+    /// The stage's name.
+    pub name: String,
+    /// The stage with its tank empty, in kilograms.
+    pub dry_mass_kg: f64,
+    /// The propellant it starts with, in kilograms.
+    pub propellant_kg: f64,
+    /// `[craft.propulsion.stages.engine]`.
+    pub engine: EngineFile,
 }
 
 /// `[craft.propulsion.engine]`.
@@ -526,6 +548,21 @@ impl CraftFile {
                     engine,
                 }
             }
+            PropulsionFile::Staged {
+                max_acceleration_g,
+                stages,
+            } => Propulsion::Staged {
+                stages: stages
+                    .into_iter()
+                    .map(|stage| Stage {
+                        name: stage.name,
+                        dry_mass_kg: stage.dry_mass_kg,
+                        propellant_kg: stage.propellant_kg,
+                        engine: stage.engine.into_runtime(),
+                    })
+                    .collect(),
+                max_acceleration_m_s2: max_acceleration_g * STANDARD_GRAVITY_M_S2,
+            },
         };
         let [r, g, b, a] = self.color;
         Spacecraft {
@@ -561,7 +598,9 @@ impl SpacecraftFile {
             if !one.is_valid() {
                 return Err(format!(
                     "craft {:?}: mass, radius, thrust, specific impulse, acceleration limit and \
-                     departure speed must be above zero, and launch altitude zero or above",
+                     departure speed must be above zero, and launch altitude zero or above; a \
+                     staged craft needs at least one stage, each with a dry mass above zero, and \
+                     some propellant",
                     one.name
                 ));
             }
@@ -628,6 +667,21 @@ impl CraftFile {
             } => PropulsionFile::Transfer {
                 engine: EngineFile::from_runtime(engine),
                 max_acceleration_g: limit(engine, *max_acceleration_m_s2),
+            },
+            Propulsion::Staged {
+                stages,
+                max_acceleration_m_s2,
+            } => PropulsionFile::Staged {
+                max_acceleration_g: tidy(*max_acceleration_m_s2 / STANDARD_GRAVITY_M_S2),
+                stages: stages
+                    .iter()
+                    .map(|stage| StageFile {
+                        name: stage.name.clone(),
+                        dry_mass_kg: stage.dry_mass_kg,
+                        propellant_kg: stage.propellant_kg,
+                        engine: EngineFile::from_runtime(&stage.engine),
+                    })
+                    .collect(),
             },
         };
         let Color { r, g, b, a } = craft.color;

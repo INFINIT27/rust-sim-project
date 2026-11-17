@@ -8,10 +8,14 @@
 #   color                optional, linear [r, g, b, a], each 0-1
 #   launch_altitude_m    optional, height above the origin's surface (default 200 km)
 #   [craft.propulsion]   kind = "transfer" (least-energy transfer), "direct" (burns straight at the
-#                        target) or "coasting" (no engine)
+#                        target), "coasting" (no engine) or "staged" (a rocket that carries its
+#                        propellant, flying the least-energy transfer; mass_kg is its payload)
 #     max_acceleration_g     transfer/direct, optional: acceleration limit in g; full thrust if left out
 #     max_departure_speed_m_s  coasting: fastest launch it may be given, m/s
 #   [craft.propulsion.engine]  transfer/direct: name, thrust_n (N), specific_impulse_s (s)
+#     max_acceleration_g     staged: acceleration limit in g (required)
+#   [[craft.propulsion.stages]]  staged, one per stage in burn order: name, dry_mass_kg,
+#                        propellant_kg, and [craft.propulsion.stages.engine] as above
 
 [[craft]]
 name = "Crewed transfer (3 g)"
@@ -55,3 +59,56 @@ launch_altitude_m = 200_000.0
 [craft.propulsion]
 kind = "coasting"
 max_departure_speed_m_s = 15_400.0
+
+# A rocket that carries its propellant. `mass_kg` is the payload; the stages burn in order and each
+# is dropped when empty. When the last tank is empty the craft glides.
+[[craft]]
+name = "Saturn V lander (staged)"
+mass_kg = 2_150.0
+radius_m = 2.0
+color = [0.2, 0.95, 1.0, 1.0]
+launch_altitude_m = 200_000.0
+
+[craft.propulsion]
+kind = "staged"
+max_acceleration_g = 3.0
+
+[[craft.propulsion.stages]]
+name = "S-IC"
+dry_mass_kg = 130_000.0
+propellant_kg = 2_160_000.0
+
+[craft.propulsion.stages.engine]
+name = "5 × F-1"
+thrust_n = 38.85e6
+specific_impulse_s = 304.0
+
+[[craft.propulsion.stages]]
+name = "S-II"
+dry_mass_kg = 40_100.0
+propellant_kg = 456_100.0
+
+[craft.propulsion.stages.engine]
+name = "5 × J-2"
+thrust_n = 5.165e6
+specific_impulse_s = 421.0
+
+[[craft.propulsion.stages]]
+name = "S-IVB"
+dry_mass_kg = 13_500.0
+propellant_kg = 109_500.0
+
+[craft.propulsion.stages.engine]
+name = "J-2"
+thrust_n = 1.033e6
+specific_impulse_s = 421.0
+
+[[craft.propulsion.stages]]
+name = "LM descent stage"
+dry_mass_kg = 2_034.0
+propellant_kg = 8_248.0
+
+[craft.propulsion.stages.engine]
+name = "LM descent engine"
+thrust_n = 45_040.0
+specific_impulse_s = 311.0

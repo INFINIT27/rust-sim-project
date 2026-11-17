@@ -10,6 +10,11 @@
 //!   the speed change to leave the origin's surface onto it plus the speed change to land from it.
 //!   Then the cheapest arcs are solved in full, every body pulling, by
 //!   [`crate::core::transfer::solve_coast`], until one converges.
+//! - A **staged** craft, a rocket that carries its propellant, flies the same transfer. Only its
+//!   departure burn differs: it is flown by the rocket ([`Push::Rocket`]), whose acceleration
+//!   follows from its thrust and falling mass, so it costs more than the same burn at a constant
+//!   acceleration. The plan does not check that the propellant covers the trip; the live rocket
+//!   runs dry where it runs dry.
 //!
 //! Energy is counted as speed change (Δv) because, for a fixed exhaust speed and mass, a burn's
 //! energy is proportional to it (see [`FlightReport`](crate::spacecraft::FlightReport)). The
@@ -33,6 +38,7 @@ use crate::spacecraft::constants::{
 };
 use crate::spacecraft::guidance::{braking_m_s2, steer, Law, Sighting};
 use crate::spacecraft::lambert::lambert;
+use crate::spacecraft::rocket::Rocket;
 
 /// A planned flight: what the craft will do, and what it is expected to cost.
 #[derive(Clone, Debug, PartialEq)]
@@ -118,7 +124,7 @@ pub fn plan_flight(
         }
         Propulsion::Direct { .. } => {
             let accel = craft.acceleration_m_s2().ok_or(NoFlight::InvalidRoute)?;
-            check_gravity(scene, origin, target, accel, craft.launch_altitude_m)?;
+            check_gravity(scene, origin, target, accel, accel, craft.launch_altitude_m)?;
             plan_direct(
                 scene,
                 origin,
@@ -130,15 +136,58 @@ pub fn plan_flight(
         }
         Propulsion::Transfer { .. } => {
             let accel = craft.acceleration_m_s2().ok_or(NoFlight::InvalidRoute)?;
-            check_gravity(scene, origin, target, accel, craft.launch_altitude_m)?;
+            check_gravity(scene, origin, target, accel, accel, craft.launch_altitude_m)?;
             plan_transfer(
                 scene,
                 origin,
                 target,
-                accel,
+                &Push::Constant(accel),
                 craft.launch_altitude_m,
                 progress,
             )
+        }
+        Propulsion::Staged { .. } => {
+            // The same transfer, pushed by a rocket whose acceleration changes as it burns. It
+            // must lift off on its first stage with full tanks, and be able to land on its last.
+            // Whether its propellant covers the trip is not checked: the flight is planned as if
+            // it did, and the live rocket runs dry where it runs dry (see `Rocket::plan_burn`).
+            let rocket = craft.rocket().ok_or(NoFlight::InvalidRoute)?;
+            check_gravity(
+                scene,
+                origin,
+                target,
+                rocket.acceleration_m_s2(),
+                rocket.last_stage_acceleration_m_s2(),
+                craft.launch_altitude_m,
+            )?;
+            plan_transfer(
+                scene,
+                origin,
+                target,
+                &Push::Rocket(rocket),
+                craft.launch_altitude_m,
+                progress,
+            )
+        }
+    }
+}
+
+/// What pushes a departure burn: a fixed acceleration (the idealised craft), or a rocket with full
+/// tanks, whose acceleration follows from its thrust and its falling mass.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Push {
+    /// The same acceleration throughout, in m/s².
+    Constant(f64),
+    /// A rocket as it stands at the start of the burn.
+    Rocket(Rocket),
+}
+
+impl Push {
+    /// The time a burn of `delta_v_m_s` takes from the start, in seconds.
+    pub fn burn_seconds(&self, delta_v_m_s: f64) -> f64 {
+        match self {
+            Push::Constant(accel) => delta_v_m_s / accel,
+            Push::Rocket(rocket) => rocket.clone().plan_burn(delta_v_m_s),
         }
     }
 }
@@ -159,14 +208,16 @@ pub fn surface_gravity_m_s2(scene: &Scene, id: BodyId, altitude_m: f64) -> Optio
     (r > 0.0).then(|| mu / (r * r))
 }
 
-/// Whether an engine of `accel` can lift off from `origin` (at the launch altitude) and land
-/// softly on `target`: it must beat the origin's gravity, and leave a braking budget at the
-/// target's surface (see [`braking_m_s2`]).
+/// Whether a craft that lifts off at `lift_accel` and lands at `land_accel` can leave `origin` (at
+/// the launch altitude) and land softly on `target`: it must beat the origin's gravity, and leave
+/// a braking budget at the target's surface (see [`braking_m_s2`]). The two are the same for a
+/// craft of fixed mass; a staged rocket lifts off on its first stage and lands on its last.
 fn check_gravity(
     scene: &Scene,
     origin: BodyId,
     target: BodyId,
-    accel: f64,
+    lift_accel: f64,
+    land_accel: f64,
     launch_altitude_m: f64,
 ) -> Result<(), NoFlight> {
     let (Some((_, origin_radius)), Some((_, target_radius))) =
@@ -177,18 +228,19 @@ fn check_gravity(
     if origin_radius <= 0.0 || target_radius <= 0.0 {
         return Err(NoFlight::InvalidRoute);
     }
-    let too_much = |body: BodyId, gravity_m_s2: f64| NoFlight::TooMuchGravity {
-        body,
-        gravity_m_s2,
-        acceleration_m_s2: accel,
-    };
+    let too_much =
+        |body: BodyId, gravity_m_s2: f64, acceleration_m_s2: f64| NoFlight::TooMuchGravity {
+            body,
+            gravity_m_s2,
+            acceleration_m_s2,
+        };
     let lift = surface_gravity_m_s2(scene, origin, launch_altitude_m).unwrap_or(0.0);
-    if lift >= accel {
-        return Err(too_much(origin, lift));
+    if lift >= lift_accel {
+        return Err(too_much(origin, lift, lift_accel));
     }
     let land = surface_gravity_m_s2(scene, target, 0.0).unwrap_or(0.0);
-    if braking_m_s2(accel, land) <= 0.0 {
-        return Err(too_much(target, land));
+    if braking_m_s2(land_accel, land) <= 0.0 {
+        return Err(too_much(target, land, land_accel));
     }
     Ok(())
 }
@@ -367,7 +419,7 @@ fn plan_transfer(
     scene: &Scene,
     origin: BodyId,
     target: BodyId,
-    accel: f64,
+    push: &Push,
     launch_altitude_m: f64,
     progress: &PlanProgress,
 ) -> Result<FlightPlan, NoFlight> {
@@ -593,11 +645,11 @@ fn plan_transfer(
         // recovers from.
         let launch_rel = arc.launch_m - o0;
         let instant = arc.launch_velocity_m_s - vo0;
-        let Some(guess) = energy_matched_burn(mu_o, launch_rel, instant, accel) else {
+        let Some(guess) = energy_matched_burn(mu_o, launch_rel, instant, push) else {
             continue;
         };
         let launcher = |burn: DVec3| {
-            departure_burn(mu_o, launch_rel, burn, accel).map(|(r, v)| (o0 + r, vo0 + v))
+            departure_burn_with(mu_o, launch_rel, burn, push).map(|(r, v)| (o0 + r, vo0 + v))
         };
         let Some(coast) = solve_coast_with(&forecast, guess, window, &launcher) else {
             continue;
@@ -648,7 +700,7 @@ pub fn plan_correction_for(
             expected_arrival_s,
             via,
         ),
-        Propulsion::Transfer { .. } => {
+        Propulsion::Transfer { .. } | Propulsion::Staged { .. } => {
             plan_transfer_correction(scene, craft_id, origin, target, expected_arrival_s)
         }
         Propulsion::Direct { .. } => None,
@@ -727,16 +779,53 @@ pub fn departure_burn(
     Some((r, v))
 }
 
+/// [`departure_burn`] for any [`Push`]. A fixed acceleration is flown exactly as
+/// [`departure_burn`] flies it. A rocket's burn is cut into [`DEPARTURE_BURN_STEPS`] equal shares
+/// of the speed change instead of equal times: each share takes as long as the rocket needs for it
+/// at its mass then ([`Rocket::plan_burn`]), so the acceleration rises as the tanks empty and
+/// changes when a stage is dropped. The step count is still fixed, so the end state still changes
+/// smoothly with `burn`.
+pub fn departure_burn_with(
+    mu: f64,
+    start_rel: DVec3,
+    burn: DVec3,
+    push: &Push,
+) -> Option<(DVec3, DVec3)> {
+    let rocket = match push {
+        Push::Constant(accel) => return departure_burn(mu, start_rel, burn, *accel),
+        Push::Rocket(rocket) => rocket,
+    };
+    let speed = burn.length();
+    if !speed.is_finite() {
+        return None;
+    }
+    let mut rocket = rocket.clone();
+    let direction = burn.normalize_or_zero();
+    let share = speed / DEPARTURE_BURN_STEPS as f64;
+    let floor = start_rel.length() * DEPARTURE_FLOOR_FRACTION;
+    let (mut r, mut v) = (start_rel, DVec3::ZERO);
+    for _ in 0..DEPARTURE_BURN_STEPS {
+        let d = r.length();
+        if d < floor {
+            return None;
+        }
+        let dt = rocket.plan_burn(share);
+        v += direction * share - r * (mu / (d * d * d)) * dt;
+        r += v * dt;
+    }
+    Some((r, v))
+}
+
 /// The departure burn along `instant` (a speed change an instant launch from `start_rel` would
 /// need) that ends with the same orbital energy about the origin as that instant launch, found by
 /// bisection on its size: [`departure_burn`] climbs while it burns, so it needs more than
 /// `|instant|` to make up for what the origin's gravity takes. `None` when no burn up to
 /// [`ENERGY_MATCH_MAX_FACTOR`] times the instant one does.
-fn energy_matched_burn(mu: f64, start_rel: DVec3, instant: DVec3, accel: f64) -> Option<DVec3> {
+fn energy_matched_burn(mu: f64, start_rel: DVec3, instant: DVec3, push: &Push) -> Option<DVec3> {
     let direction = instant.normalize_or_zero();
     let goal = 0.5 * instant.length_squared() - mu / start_rel.length();
     let energy = |size: f64| {
-        departure_burn(mu, start_rel, direction * size, accel)
+        departure_burn_with(mu, start_rel, direction * size, push)
             .map(|(r, v)| 0.5 * v.length_squared() - mu / r.length())
     };
     let (mut lo, mut hi) = (instant.length(), ENERGY_MATCH_MAX_FACTOR * instant.length());

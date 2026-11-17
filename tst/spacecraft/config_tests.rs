@@ -54,12 +54,12 @@ fn every_built_in_craft_is_valid_and_a_broken_one_is_not() {
 fn the_default_fleet_starts_on_the_crewed_transfer_and_g_cycles_round() {
     let mut fleet = Fleet::default();
     let names: Vec<_> = fleet.craft().iter().map(|c| c.name.clone()).collect();
-    assert_eq!(names.len(), 3);
+    assert_eq!(names.len(), 4);
     assert_eq!(fleet.selected(), &Spacecraft::crewed_transfer());
-    for step in 1..=3 {
+    for step in 1..=4 {
         fleet.select_next();
-        assert_eq!(fleet.selected().name, names[step % 3]);
-        assert_eq!(fleet.selected_index(), step % 3);
+        assert_eq!(fleet.selected().name, names[step % 4]);
+        assert_eq!(fleet.selected_index(), step % 4);
     }
 }
 
@@ -87,4 +87,85 @@ fn the_craft_prop_has_its_mass_and_size() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The staged rocket
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn the_saturn_lander_is_four_stages_under_a_two_tonne_payload() {
+    let craft = Spacecraft::saturn_v_lander();
+    assert!(craft.is_valid());
+    assert_eq!(craft.mass_kg, 2_150.0, "the payload alone");
+    let Propulsion::Staged { stages, .. } = &craft.propulsion else {
+        panic!("{:?}", craft.propulsion);
+    };
+    let names: Vec<_> = stages.iter().map(|stage| stage.name.as_str()).collect();
+    assert_eq!(names, ["S-IC", "S-II", "S-IVB", "LM descent stage"]);
+    // It launches at 1,360 times its payload.
+    assert!((craft.launch_mass_kg() - 2_921_632.0).abs() < 1.0);
+    assert_eq!(craft.prop().mass_kg, craft.launch_mass_kg() as f32);
+}
+
+#[test]
+fn a_staged_craft_reports_its_first_engine_and_its_launch_acceleration() {
+    let craft = Spacecraft::saturn_v_lander();
+    assert_eq!(craft.engine().unwrap().name, "5 × F-1");
+    let g = craft.acceleration_m_s2().unwrap() / STANDARD_GRAVITY_M_S2;
+    assert!((g - 1.356).abs() < 0.005, "{g} g");
+    assert!(craft.rocket().is_some());
+}
+
+#[test]
+fn an_idealised_craft_has_no_rocket_and_launches_at_its_own_mass() {
+    for craft in [
+        Spacecraft::crewed_transfer(),
+        Spacecraft::full_thrust_direct(),
+        Spacecraft::coasting_probe(),
+    ] {
+        assert!(craft.rocket().is_none(), "{}", craft.name);
+        assert_eq!(craft.launch_mass_kg(), craft.mass_kg);
+    }
+}
+
+#[test]
+fn the_real_engines_have_their_published_exhaust_speeds() {
+    assert!((Engine::f1_cluster().exhaust_speed_m_s - 2_981.2).abs() < 0.1);
+    assert!((Engine::j2().exhaust_speed_m_s - 4_128.6).abs() < 0.1);
+    assert_eq!(
+        Engine::j2_cluster().exhaust_speed_m_s,
+        Engine::j2().exhaust_speed_m_s
+    );
+    assert!((Engine::j2_cluster().thrust_n / Engine::j2().thrust_n - 5.0).abs() < 1e-12);
+    assert!((Engine::lunar_module_descent().exhaust_speed_m_s - 3_049.9).abs() < 0.1);
+}
+
+#[test]
+fn a_staged_craft_needs_stages_propellant_and_a_limit() {
+    let broken = |edit: &dyn Fn(&mut Vec<Stage>, &mut f64)| {
+        let mut craft = Spacecraft::saturn_v_lander();
+        if let Propulsion::Staged {
+            stages,
+            max_acceleration_m_s2,
+        } = &mut craft.propulsion
+        {
+            edit(stages, max_acceleration_m_s2);
+        }
+        !craft.is_valid()
+    };
+    assert!(broken(&|stages, _| stages.clear()), "no stages");
+    assert!(
+        broken(&|stages, _| stages.iter_mut().for_each(|s| s.propellant_kg = 0.0)),
+        "no propellant at all"
+    );
+    assert!(
+        broken(&|stages, _| stages[1].dry_mass_kg = 0.0),
+        "a massless stage"
+    );
+    assert!(broken(&|stages, _| stages[0].propellant_kg = -1.0));
+    assert!(broken(&|stages, _| stages[2].engine.thrust_n = f64::NAN));
+    assert!(broken(&|_, limit| *limit = 0.0), "no limit");
+    // One empty stage among full ones is allowed: it is dropped at once.
+    assert!(!broken(&|stages, _| stages[0].propellant_kg = 0.0));
 }

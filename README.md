@@ -34,7 +34,7 @@ view, so you will see the Sun and the orbit trails. Fly toward a planet to see i
 | `C` | Cycle camera speed (normal, fast, slow) |
 | `F`, then mouse / scroll | Lock onto the body at the crosshair, orbit it, zoom in/out |
 | `R`, then `R` | Rocket: aim at the departure body and press `R`, then at the destination and press `R`. It flies under real gravity and its path is drawn |
-| `G` | Pick the next spacecraft in the fleet: by default crewed transfer, full thrust, coasting probe; see below |
+| `G` | Pick the next spacecraft in the fleet: by default crewed transfer, full thrust, coasting probe, staged Saturn V lander; see below |
 | `P` / `]` / `[` | Pause, or double/halve the time scale |
 | `Esc` | Close a pop-up, or open the menu: settings (rebind any key, video), configuration, exit |
 | `Cmd`-`Q` / `Alt`-`F4` | Quit |
@@ -53,7 +53,20 @@ used, peak g, and touchdown speed.
 `G` cycles through the rest of the fleet. The built-in fleet also has the same ship at
 **full thrust** (`178 g`, uncrewed), which burns straight at the target, flips, and brakes
 (Mercury to Jupiter in 13 hours at 12% of light speed), and a **coasting probe** that leaves at
-up to Voyager 2's `15.4 km/s` and can use gravity assists. The craft are plain data (`src/spacecraft/config.rs`), and the fleet is read from
+up to Voyager 2's `15.4 km/s` and can use gravity assists.
+
+Those three are idealised: their mass is fixed and their engine never runs out. The fourth, the
+**Saturn V lander**, carries every kilogram it burns. It is a four-stage rocket (the Saturn V's
+three stages and a lunar-module descent stage) under a `2.15 t` payload, `2,922 t` at launch, of
+which `93.5%` is propellant. Its mass falls as it burns by the rocket equation
+(`Δv = v_e · ln(m₀/m₁)`), its acceleration rises as it lightens, and each stage is dropped when
+its tank is empty. It carries `19.4 km/s` of speed change in all. Earth to the Moon
+(`cargo run --release -- earth-moon`) takes `18.5 km/s` of it and lands with about `1.4 t` of
+propellant left. If the tanks empty first, the engine is out and the craft glides: it coasts on
+under gravity and hits whatever is in its way. The status line shows the stage burning, the mass,
+and the propellant and speed change left.
+
+The craft are plain data (`src/spacecraft/config.rs`), and the fleet is read from
 `config/spacecraft.toml` at launch: edit it to change a craft or add your own.
 
 ### Settings
@@ -74,6 +87,7 @@ cargo run --release -- --help   # arguments and all in-window keys
 cargo run --release -- moons    # Jupiter and the Galilean moons
 cargo run --release -- scale    # the planets side by side at true size
 cargo run --release -- black-hole  # Sgr A*, the Milky Way's central black hole
+cargo run --release -- earth-moon  # the Earth and the Moon at true size and distance
 ```
 
 Running with no argument starts `experiment_1`, the two-body free fall.

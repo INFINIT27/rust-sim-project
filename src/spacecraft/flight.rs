@@ -10,6 +10,11 @@
 //!   the steering needs steps much shorter than the scene's substep. Kept relative to the target,
 //!   the craft rides along with the target's own motion, so the approach stays smooth. The scene's copy is
 //!   then set so the scene's step ends where the craft really is, for drawing and for the path.
+//! - A **rocket** ([`Propulsion::Staged`]) is a powered craft whose engine is not a constant. Each
+//!   step asks its [`Rocket`] what acceleration it can give now, pays for the burn out of its
+//!   tanks by the rocket equation, and gets only the speed change they hold. Its landing is
+//!   planned on the weakest stage it will brake on. When the last tank is empty the flight is
+//!   [`Phase::Dry`]: no burns, no corrections, moved by gravity until it hits something.
 
 use bevy::math::DVec3;
 
@@ -23,12 +28,13 @@ use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::spacecraft::config::{Propulsion, Spacecraft};
 use crate::spacecraft::constants::{
     BURN_DONE_M_S, CORRECTION_FIRST_FRACTION, CORRECTION_MIN_REMAINING_S, CRUISE_STEP_FRACTION,
-    DEPARTURE_BURN_STEPS, LANDING_START_BRAKING_DISTANCES, LANDING_START_RADII,
-    POWERED_MIN_SUBSTEP_S,
+    DEPARTURE_BURN_STEPS, LANDING_LOOKAHEAD_FACTOR, LANDING_START_BRAKING_DISTANCES,
+    LANDING_START_RADII, POWERED_MIN_SUBSTEP_S,
 };
 use crate::spacecraft::guidance::{braking_m_s2, match_velocity, steer, Law, Sighting};
 use crate::spacecraft::plan::FlightPlan;
 use crate::spacecraft::report::FlightReport;
+use crate::spacecraft::rocket::Rocket;
 use crate::time::simulation::TimeStep;
 
 /// What a flight is doing.
@@ -51,6 +57,9 @@ pub enum Phase {
     Correction { goal_velocity_m_s: DVec3 },
     /// A transfer braking to land.
     Landing,
+    /// A rocket whose last tank is empty: no engine, moved by gravity alone until it hits
+    /// something or is abandoned. It makes no corrections and cannot brake.
+    Dry,
     /// On the target's surface.
     Landed,
 }
@@ -65,6 +74,7 @@ impl Phase {
             Phase::Cruise => "cruising",
             Phase::Correction { .. } => "correction burn",
             Phase::Landing => "braking to land",
+            Phase::Dry => "out of propellant, gliding",
             Phase::Landed => "landed",
         }
     }
@@ -95,6 +105,9 @@ pub struct Flight {
     relative_velocity_m_s: DVec3,
     /// When a transfer last planned a correction, on the scene's clock.
     last_correction_s: Option<f64>,
+    /// The rocket, for a craft that carries its propellant: what is left in its tanks, which stage
+    /// is burning, and so what it weighs and how hard it can push now.
+    rocket: Option<Rocket>,
 }
 
 impl Flight {
@@ -120,6 +133,10 @@ impl Flight {
             },
         );
         let mut report = FlightReport::new(&craft.name, craft.engine().is_some());
+        let rocket = craft.rocket();
+        if let Some(rocket) = &rocket {
+            report.load_propellant(rocket.propellant_left_kg());
+        }
         let phase = match (&craft.propulsion, plan.departure_burn_m_s) {
             (Propulsion::Coasting { .. }, _) => {
                 // The booster's push, from rest relative to the origin to the launch velocity.
@@ -136,6 +153,17 @@ impl Flight {
                     step_s: burn.length() / accel / DEPARTURE_BURN_STEPS as f64,
                 }
             }
+            (Propulsion::Staged { .. }, Some(burn)) => {
+                // The planner's step: the time the whole burn takes the rocket, in equal parts.
+                let seconds = rocket
+                    .as_ref()
+                    .map_or(0.0, |rocket| rocket.clone().plan_burn(burn.length()));
+                Phase::Departure {
+                    direction: burn.normalize_or_zero(),
+                    remaining_m_s: burn.length(),
+                    step_s: seconds / DEPARTURE_BURN_STEPS as f64,
+                }
+            }
             _ => Phase::Direct,
         };
         report.record_speed(to_metres(plan.transfer.velocity_units_s).length());
@@ -148,7 +176,13 @@ impl Flight {
             relative_m,
             relative_velocity_m_s,
             last_correction_s: None,
+            rocket,
         }
+    }
+
+    /// The rocket as it stands now, for a craft that carries its propellant.
+    pub fn rocket(&self) -> Option<&Rocket> {
+        self.rocket.as_ref()
     }
 
     /// What the flight is doing now.
@@ -257,7 +291,8 @@ impl Flight {
         if matches!(self.phase, Phase::Coasting | Phase::Landed) || self.has_landed() {
             return;
         }
-        let (Some(accel), Some(engine)) = (self.craft.acceleration_m_s2(), self.craft.engine())
+        let (Some(fixed_accel), Some(engine)) =
+            (self.craft.acceleration_m_s2(), self.craft.engine())
         else {
             return;
         };
@@ -324,11 +359,32 @@ impl Flight {
         } else {
             0.0
         };
-        let braking = braking_m_s2(accel, surface_gravity);
 
         let (mut relative, mut relative_velocity) = (self.relative_m, self.relative_velocity_m_s);
         let mut tau = 0.0;
         while tau < dt && self.voyage.touchdown_offset_units.is_none() {
+            // What the engine can give now. Fixed for an idealised craft; for a rocket, its
+            // thrust over its present mass, and nothing once the last tank is empty.
+            let accel = self
+                .rocket
+                .as_ref()
+                .map_or(fixed_accel, Rocket::acceleration_m_s2);
+            if self.rocket.as_ref().is_some_and(Rocket::is_dry) {
+                self.phase = Phase::Dry;
+            }
+            // A landing is planned on the weakest the engine will be while it brakes. For a
+            // rocket that is the weakest stage it will light before it is down: the speed it has
+            // to lose is the speed it would hit the surface at unbraked, with a margin for what
+            // gravity adds during the burn.
+            let braking_accel = self.rocket.as_ref().map_or(accel, |rocket| {
+                let distance = relative.length().max(target_radius);
+                let impact_m_s = (relative_velocity.length_squared()
+                    + 2.0 * target_mu * (1.0 / target_radius.max(1.0) - 1.0 / distance.max(1.0)))
+                .max(0.0)
+                .sqrt();
+                rocket.weakest_acceleration_m_s2(LANDING_LOOKAHEAD_FACTOR * impact_m_s)
+            });
+            let braking = braking_m_s2(braking_accel, surface_gravity);
             let target_now = target_start + target_velocity * tau;
             let craft_now = target_now + relative;
             let craft_velocity = target_velocity + relative_velocity;
@@ -402,7 +458,7 @@ impl Flight {
                     let s = match_velocity(craft_velocity, goal_velocity_m_s, pull, accel, left);
                     (s.acceleration_m_s2, s.substep_s)
                 }
-                Phase::Cruise => {
+                Phase::Cruise | Phase::Dry => {
                     // A step a small fraction of the shortest dynamical time √(d³/μ) to any body:
                     // about a minute just after leaving a planet, as long as the scene's own
                     // substep in deep space.
@@ -426,8 +482,30 @@ impl Flight {
                 Phase::Coasting | Phase::Landed => break,
             };
             let h = h.min(left).max(f64::MIN_POSITIVE);
-            self.report
-                .record_burn(thrust.length(), h, mass, exhaust, accel);
+            let thrust = match &mut self.rocket {
+                // A rocket pays for the burn out of its tanks, by the rocket equation, and gives
+                // only what they hold: the step's thrust is cut to the speed change it got.
+                Some(rocket) => {
+                    let wanted = thrust.length() * h;
+                    if wanted > 0.0 {
+                        let burn = rocket.burn(wanted);
+                        self.report.record_rocket_burn(
+                            &burn,
+                            h,
+                            accel,
+                            rocket.propellant_left_kg(),
+                        );
+                        thrust * (burn.delta_v_m_s / wanted)
+                    } else {
+                        thrust
+                    }
+                }
+                None => {
+                    self.report
+                        .record_burn(thrust.length(), h, mass, exhaust, accel);
+                    thrust
+                }
+            };
 
             // The craft's acceleration relative to the target: thrust, plus the pull on the craft
             // (the target's included) less the pull on the target.
@@ -465,6 +543,10 @@ impl Flight {
         }
         let pull = gravitational_acceleration(&scene.props, craft_index, softening);
         scene.props[craft_index].velocity_units_s = end_velocity - pull * dt;
+        // The scene's copy weighs what the rocket weighs now, so the overlay shows the mass fall.
+        if let Some(rocket) = &self.rocket {
+            scene.props[craft_index].mass_kg = rocket.mass_kg() as f32;
+        }
     }
 }
 

@@ -19,6 +19,7 @@
 //! | [`jovian`] | `experiment_4`: Jupiter and the Galilean moons — the first exactly-real scene. |
 //! | [`scale_check`] | `experiment_5`: a static size-comparison row. A ruler, not a simulation. |
 //! | [`black_hole`] | `experiment_6`: Sgr A*, spinning, with an accretion disc. |
+//! | [`earth_moon`] | `experiment_7`: the Earth and the Moon alone, at true size and distance. |
 //! | [`constants`] | The layer's tunables: ring geometry, speed window, camera poses, fallback seed. |
 //!
 //! # The experiments
@@ -39,6 +40,8 @@
 //!   [`jovian`] and [`scale_check`].
 //! - **`experiment_6` — the black hole.** Sgr A*, spinning, with an accretion disc dragged round it
 //!   and glowing with the heat of its friction, under the exact Kerr equation of motion. See [`black_hole`].
+//! - **`experiment_7` — the Earth and the Moon.** The two bodies alone, at true size and true
+//!   distance, both orbiting their barycentre. See [`earth_moon`].
 //!
 //! # Determinism, and why the seed is recorded
 //!
@@ -71,6 +74,7 @@
 pub mod black_hole;
 pub mod catalog;
 pub mod constants;
+pub mod earth_moon;
 pub mod jovian;
 pub mod objects;
 pub mod random;
