@@ -26,6 +26,13 @@
 //! A body in the way is flown around ([`Law::avoid`]): while the straight line to the target passes
 //! within [`POWERED_CLEARANCE_RADII`] of a body, the craft heads for a point beside it instead.
 //!
+//! # Swinging round instead of landing
+//!
+//! [`swing_by`] is not a feedback law but a single answer: the velocity a craft on a landing
+//! approach should turn to so that it passes the body at a chosen distance, on the side that
+//! sends it back toward where it came from. A return trip burns to it once, with the
+//! velocity-matching burn below, and then coasts round.
+//!
 //! # Velocity-matching burns
 //!
 //! [`match_velocity`] burns toward a velocity, at up to the engine's acceleration: a transfer's
@@ -160,6 +167,83 @@ pub fn match_velocity(
             substep_s,
         ),
         substep_s,
+    }
+}
+
+/// The velocity to turn to, relative to a body, so that a craft heading for it swings round it at
+/// `periapsis_m` from its centre instead of hitting it, on the side that sends it back toward
+/// home.
+///
+/// Everything is relative to the body: the craft at `relative_m` moving at
+/// `relative_velocity_m_s`, home at `home_m`, and `body_velocity_m_s` the body's own velocity
+/// relative to home. `mu` is the body's `G · m`. The speed is kept and only the heading changes,
+/// so the turn costs the least it can.
+///
+/// The heading follows from two-body motion about the body. Energy gives the speed at closest
+/// approach, `v_p² = v² − 2μ/d + 2μ/r_p`; angular momentum is the same there as here,
+/// `r_p · v_p = d · v · sin φ`; so `φ` is the angle to hold between the velocity and the line to
+/// the centre.
+///
+/// The craft can pass on either side. A pass bends its path toward the body by
+/// `δ = 2 · asin(1 / e)`, with `e = 1 + r_p · v∞² / μ`, so each side leaves in a different
+/// direction, and the side chosen is the one whose departure, seen from home, has the most speed
+/// toward home. Round the Moon that is the far side, the loop a free-return flight makes.
+///
+/// Returns the velocity unchanged for a craft already inside `periapsis_m`, or at rest.
+pub fn swing_by(
+    relative_m: DVec3,
+    relative_velocity_m_s: DVec3,
+    mu: f64,
+    periapsis_m: f64,
+    home_m: DVec3,
+    body_velocity_m_s: DVec3,
+) -> DVec3 {
+    let (distance, speed) = (relative_m.length(), relative_velocity_m_s.length());
+    if !(distance > periapsis_m && periapsis_m > 0.0 && speed > 0.0) {
+        return relative_velocity_m_s;
+    }
+    let inward = -relative_m / distance;
+    let pass_speed_squared = speed * speed - 2.0 * mu / distance + 2.0 * mu / periapsis_m;
+    let sin_heading =
+        (periapsis_m * pass_speed_squared.max(0.0).sqrt() / (distance * speed)).min(1.0);
+    let cos_heading = (1.0 - sin_heading * sin_heading).sqrt();
+
+    // The two sides lie in the plane through the body, the craft and home; failing that (home
+    // dead ahead or behind), in the plane of the body's own motion.
+    // A direction counts as off the line of approach when at least a millionth of it is.
+    let across = |v: DVec3| {
+        let off = v - inward * v.dot(inward);
+        (off.length() > 1e-6 * v.length()).then(|| off.normalize())
+    };
+    let side = across(home_m)
+        .or_else(|| across(body_velocity_m_s))
+        .unwrap_or_else(|| inward.any_orthonormal_vector());
+
+    // How far the pass turns the path, and so which way the craft leaves on each side.
+    let excess_squared = speed * speed - 2.0 * mu / distance;
+    let (turn, excess) = if excess_squared > 0.0 {
+        let eccentricity = 1.0 + periapsis_m * excess_squared / mu.max(f64::MIN_POSITIVE);
+        (2.0 * (1.0 / eccentricity).asin(), excess_squared.sqrt())
+    } else {
+        // Bound to the body: it comes back the way it went in.
+        (std::f64::consts::PI, 0.0)
+    };
+    let home_direction = home_m.normalize_or_zero();
+    let candidate = |sign: f64| {
+        let side = side * sign;
+        let heading = inward * cos_heading + side * sin_heading;
+        // Passing on `side` puts the body on the other side of the path, so the path bends away
+        // from `side`.
+        let toward = (side - heading * side.dot(heading)).normalize_or_zero();
+        let leaving = (heading * turn.cos() - toward * turn.sin()) * excess;
+        let score = (leaving + body_velocity_m_s).dot(home_direction);
+        (heading * speed, score)
+    };
+    let (plus, minus) = (candidate(1.0), candidate(-1.0));
+    if minus.1 > plus.1 {
+        minus.0
+    } else {
+        plus.0
     }
 }
 

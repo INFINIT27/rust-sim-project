@@ -21,11 +21,20 @@ compile inside the module and see its private items through `use super::*`.
 | `report_tests.rs` | `report.rs` | Energy and propellant from a burn, engine time for gentle trims, a craft with no engine, and a rocket's burn charged what its tanks lost. |
 | `rocket_tests.rs` | `rocket.rs` | The rocket equation in both directions; a tank draining by it; the acceleration rising as the mass falls and capped at the limit; burn times at full thrust and throttled; running dry; staging (a dropped stage, a burn across one, staging beating one lump); the look-ahead to the weakest stage; and the Saturn V lander's mass and its `4.01`, `5.29`, `6.82` and `3.32 km/s` stages. |
 
+The return trip is tested across the files too: `Trip` and the fleet that carries it in
+`config_tests.rs`; `swing_by` in `guidance_tests.rs` (the speed kept, the pass distance checked
+against two-body motion, the far side chosen, the degenerate approaches); and in `plan_tests.rs`
+what each trip asks of a craft, `plan_return` from beside the Moon, the pass going round the far
+side, a flight with no way back drifting, and the whole flight: Earth, round the Moon one radius
+up, and a soft landing back on Earth.
+
 The staged rocket also has tests in the other files: its craft data in `config_tests.rs`; its
 departure burn, tanks, staging and running dry in `flight_tests.rs`; and in `plan_tests.rs` its
 departure burn against the constant one, the whole flight from Earth to a soft landing on the Moon
 in `experiment_7`'s scene, the same flight with too heavy a payload running dry, and the two
-refusals (a first stage too weak to lift off, a last stage too weak to land).
+launch rules (a first stage too weak to lift off is refused; a last stage too weak to land is not),
+and the whole return trip on the Saturn V lander: round the Moon, home, dry, and into Earth at
+`8.8 km/s`.
 
 ## Conventions specific to this directory
 

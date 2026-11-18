@@ -16,6 +16,11 @@
 //!   acceleration. The plan does not check that the propellant covers the trip; the live rocket
 //!   runs dry where it runs dry.
 //!
+//! [`plan_flight`] plans a flight that lands. [`plan_trip`] plans one for a kind of
+//! [`Trip`]: the same, or a return trip, whose way out is the same transfer and whose way back
+//! [`plan_return`] plans later, in flight, from where the craft is as it leaves the body it swung
+//! round.
+//!
 //! Energy is counted as speed change (Δv) because, for a fixed exhaust speed and mass, a burn's
 //! energy is proportional to it (see [`FlightReport`](crate::spacecraft::FlightReport)). The
 //! departure is *now*, when `R` is pressed: the search finds the cheapest arc from where the
@@ -29,7 +34,7 @@ use crate::core::transfer::{
     to_units, Forecast, NoTransfer, PlanProgress, Reach, TransferPlan,
 };
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
-use crate::spacecraft::config::{Propulsion, Spacecraft};
+use crate::spacecraft::config::{Propulsion, Spacecraft, Trip};
 use crate::spacecraft::constants::{
     DEPARTURE_BURN_STEPS, ORBIT_SEARCH_CANDIDATES, ORBIT_SEARCH_DIRECTIONS,
     ORBIT_SEARCH_MAX_FRACTION, ORBIT_SEARCH_MIN_FRACTION, ORBIT_SEARCH_REFINE_STEPS,
@@ -50,8 +55,12 @@ pub struct FlightPlan {
     /// fixed direction from rest above the origin (see [`departure_burn`]).
     pub departure_burn_m_s: Option<DVec3>,
     /// The speed change the flight is expected to take, in m/s, counting burns as instantaneous.
-    /// The live flight's finite burns fight gravity for a while, so it takes somewhat more.
+    /// The live flight's finite burns fight gravity for a while, so it takes somewhat more. For a
+    /// [`Trip::Return`] it covers the way out only: the way back is planned in flight.
     pub delta_v_estimate_m_s: f64,
+    /// What the flight does at the destination: land, or swing round it and come back. The plan
+    /// itself is the same either way, the flight out; see [`plan_trip`].
+    pub trip: Trip,
 }
 
 /// Why there is no flight.
@@ -80,6 +89,9 @@ pub enum NoFlight {
     /// The prediction of where the bodies will be could not be built: the target is no longer in
     /// the scene, or the flight has no time to cover. Not a cancel, which says so itself.
     NoForecast,
+    /// The craft cannot fly a [`Trip::Return`]: only a craft that flies the least-energy transfer
+    /// (the crewed one, or a staged rocket) can swing round the destination and come back.
+    NoReturnTrip,
 }
 
 impl From<NoTransfer> for NoFlight {
@@ -90,6 +102,68 @@ impl From<NoTransfer> for NoFlight {
             NoTransfer::OutOfReach(reach) => NoFlight::OutOfReach(reach),
         }
     }
+}
+
+/// Plan `craft`'s flight from `origin` to `target` for the kind of `trip`: a landing on `target`
+/// ([`plan_flight`]), or a swing round it and a return to land on `origin`.
+///
+/// A return trip is planned in two parts, because the way back depends on how the craft comes out
+/// of the swing-by. This plans the way out: the same least-energy transfer to `target` a landing
+/// flies. The live [`Flight`](crate::spacecraft::Flight) turns it into a pass instead of a
+/// landing, and asks for the way back ([`plan_return`]) as it leaves.
+///
+/// What differs here is what the craft must be able to do. It lifts off from `origin` and lands on
+/// `origin`, so `target`'s gravity is never fought and only needs a surface to pass. A coasting or
+/// direct craft cannot fly it ([`NoFlight::NoReturnTrip`]). A staged rocket is held only to
+/// lifting off, as in [`plan_flight`]: it is launched whether or not it can land when it gets
+/// home.
+pub fn plan_trip(
+    scene: &Scene,
+    origin: BodyId,
+    target: BodyId,
+    craft: &Spacecraft,
+    trip: Trip,
+    progress: &PlanProgress,
+) -> Result<FlightPlan, NoFlight> {
+    if trip == Trip::Land {
+        return plan_flight(scene, origin, target, craft, progress);
+    }
+    if origin == target || !craft.is_valid() {
+        return Err(NoFlight::InvalidRoute);
+    }
+    let (lift, land, push) = match &craft.propulsion {
+        Propulsion::Coasting { .. } | Propulsion::Direct { .. } => {
+            return Err(NoFlight::NoReturnTrip)
+        }
+        Propulsion::Transfer { .. } => {
+            let accel = craft.acceleration_m_s2().ok_or(NoFlight::InvalidRoute)?;
+            (accel, accel, Push::Constant(accel))
+        }
+        Propulsion::Staged { .. } => {
+            // A rocket is held to lifting off, not to landing: see `plan_flight`.
+            let rocket = craft.rocket().ok_or(NoFlight::InvalidRoute)?;
+            (
+                rocket.acceleration_m_s2(),
+                f64::INFINITY,
+                Push::Rocket(rocket),
+            )
+        }
+    };
+    if mu_and_radius(scene, target).is_none_or(|(_, radius)| radius <= 0.0) {
+        return Err(NoFlight::InvalidRoute);
+    }
+    // Lift off from the origin, and land back on it.
+    check_gravity(scene, origin, origin, lift, land, craft.launch_altitude_m)?;
+    let mut plan = plan_transfer(
+        scene,
+        origin,
+        target,
+        &push,
+        craft.launch_altitude_m,
+        progress,
+    )?;
+    plan.trip = Trip::Return;
+    Ok(plan)
 }
 
 /// Plan `craft`'s flight from `origin` to a landing on `target`, by its propulsion (see the module
@@ -118,6 +192,7 @@ pub fn plan_flight(
             )?;
             Ok(FlightPlan {
                 delta_v_estimate_m_s: transfer.departure_speed_m_s,
+                trip: Trip::Land,
                 departure_burn_m_s: None,
                 transfer,
             })
@@ -148,16 +223,20 @@ pub fn plan_flight(
         }
         Propulsion::Staged { .. } => {
             // The same transfer, pushed by a rocket whose acceleration changes as it burns. It
-            // must lift off on its first stage with full tanks, and be able to land on its last.
-            // Whether its propellant covers the trip is not checked: the flight is planned as if
-            // it did, and the live rocket runs dry where it runs dry (see `Rocket::plan_burn`).
+            // must lift off on its first stage with full tanks, and that is all that is asked of
+            // it. Whether its propellant covers the trip is not checked, and neither is whether
+            // the stage it arrives on can hold it up against the gravity where it lands: the
+            // flight is planned as if both were so, and the live rocket brakes with what it has,
+            // runs dry where it runs dry (see `Rocket::plan_burn`), and the report says how hard
+            // it came down. A rocket that is always launched shows what it cannot do; one that is
+            // refused shows nothing.
             let rocket = craft.rocket().ok_or(NoFlight::InvalidRoute)?;
             check_gravity(
                 scene,
                 origin,
                 target,
                 rocket.acceleration_m_s2(),
-                rocket.last_stage_acceleration_m_s2(),
+                f64::INFINITY,
                 craft.launch_altitude_m,
             )?;
             plan_transfer(
@@ -359,6 +438,7 @@ fn plan_direct(
                 },
                 departure_burn_m_s: None,
                 delta_v_estimate_m_s: delta_v,
+                trip: Trip::Land,
             });
         }
         // Any other body hit on the way. The origin only counts once the craft has left it.
@@ -412,6 +492,178 @@ struct Arc {
     delta_v_in_m_s: f64,
     launch_m: DVec3,
     launch_velocity_m_s: DVec3,
+}
+
+/// The cheapest arcs `cost` can find for times of flight between `t_min` and `t_max` seconds:
+/// log-spaced samples of the time of flight (the best of `directions` at each), then every local
+/// minimum, refined by golden section. Unsorted.
+fn cheapest_arcs(
+    t_min: f64,
+    t_max: f64,
+    directions: usize,
+    cost: &dyn Fn(f64, usize) -> Option<Arc>,
+) -> Vec<Arc> {
+    let best_at = |tof_s: f64| {
+        (0..directions)
+            .filter_map(|k| cost(tof_s, k))
+            .min_by(|a, b| a.delta_v_m_s.total_cmp(&b.delta_v_m_s))
+    };
+    let ratio = (t_max / t_min).powf(1.0 / (ORBIT_SEARCH_SAMPLES - 1) as f64);
+    let samples: Vec<(f64, Option<Arc>)> = (0..ORBIT_SEARCH_SAMPLES)
+        .map(|i| {
+            let tof = t_min * ratio.powi(i as i32);
+            (tof, best_at(tof))
+        })
+        .collect();
+    let value = |i: usize| samples[i].1.map_or(f64::INFINITY, |arc| arc.delta_v_m_s);
+    (0..samples.len())
+        .filter(|&i| {
+            let here = value(i);
+            here.is_finite()
+                && (i == 0 || here <= value(i - 1))
+                && (i + 1 == samples.len() || here <= value(i + 1))
+        })
+        .filter_map(|i| {
+            // Golden-section refinement between the neighbouring samples, same direction.
+            let k = samples[i].1?.direction;
+            let (mut a, mut b) = (
+                samples[i.saturating_sub(1)].0,
+                samples[(i + 1).min(samples.len() - 1)].0,
+            );
+            let phi = 0.5 * (5.0_f64.sqrt() - 1.0);
+            let f = |tof: f64| cost(tof, k).map_or(f64::INFINITY, |arc| arc.delta_v_m_s);
+            for _ in 0..ORBIT_SEARCH_REFINE_STEPS {
+                let (c, d) = (b - phi * (b - a), a + phi * (b - a));
+                if f(c) < f(d) {
+                    b = d;
+                } else {
+                    a = c;
+                }
+            }
+            cost(0.5 * (a + b), k).or(samples[i].1)
+        })
+        .collect()
+}
+
+/// The way back for a craft already in flight: the velocity that coasts from where `craft` is now
+/// in `scene` to a landing on `home`, for the least speed change. The returned plan's
+/// `velocity_units_s` is that velocity; the flight burns toward it, cruises, and lands. `None`
+/// when no arc converges or `progress` is cancelled.
+///
+/// The return leg of a [`Trip::Return`], planned as the craft leaves the body it swung round
+/// (`from`). It is the same two-stage search as the outbound transfer: a two-body Lambert search
+/// over the time of flight about the body the leg is flown about, then the cheapest arcs solved in
+/// full by [`solve_coast`]. What differs is the start. The craft is already moving, so leaving
+/// costs the difference between the velocity it has and the one the arc needs, and the arc goes
+/// round the way the craft is already going.
+pub fn plan_return(
+    scene: &Scene,
+    craft: BodyId,
+    from: BodyId,
+    home: BodyId,
+    progress: &PlanProgress,
+) -> Option<TransferPlan> {
+    let central = central_body(scene, from, home)?;
+    let (mu_c, _) = mu_and_radius(scene, central)?;
+    let (mu_h, radius_h) = mu_and_radius(scene, home)?;
+    let at = |id: BodyId| {
+        scene
+            .get(id)
+            .map(|p| (to_metres(p.body.center()), to_metres(p.velocity_units_s)))
+    };
+    let ((r0, v0), (c0, vc0), (h0, _)) = (at(craft)?, at(central)?, at(home)?);
+
+    let r_c = (r0 - c0).length();
+    let r_h = if home == central {
+        radius_h
+    } else {
+        (h0 - c0).length()
+    };
+    let semi_major = 0.5 * (r_c + r_h);
+    let hohmann_s = std::f64::consts::PI * (semi_major.powi(3) / mu_c).sqrt();
+    let (t_min, t_max) = (
+        ORBIT_SEARCH_MIN_FRACTION * hohmann_s,
+        ORBIT_SEARCH_MAX_FRACTION * hohmann_s,
+    );
+    let horizon = t_max * (1.0 + ORBIT_SOLVE_WINDOW_FRACTION) * 1.05;
+    let forecast = Forecast::new(scene, Some(craft), home, Some(from), horizon, progress)?;
+    let (ci, hi) = (forecast.index_of(central)?, forecast.index_of(home)?);
+
+    // The way the craft is already going round the central body.
+    let normal = {
+        let n = (r0 - c0).cross(v0 - vc0);
+        if n.length_squared() > 0.0 {
+            n.normalize()
+        } else {
+            DVec3::Y
+        }
+    };
+    // Landing on the central body itself: where on its surface the arc arrives is searched too.
+    let reference = {
+        let toward = (r0 - c0) - normal * (r0 - c0).dot(normal);
+        if toward.length_squared() > 0.0 {
+            toward.normalize()
+        } else {
+            normal.any_orthonormal_vector()
+        }
+    };
+    let surface_direction = |k: usize| {
+        let angle = std::f64::consts::TAU * k as f64 / ORBIT_SEARCH_DIRECTIONS as f64;
+        reference * angle.cos() + normal.cross(reference) * angle.sin()
+    };
+    let directions = if home == central {
+        ORBIT_SEARCH_DIRECTIONS
+    } else {
+        1
+    };
+
+    let cost = |tof_s: f64, k: usize| -> Option<Arc> {
+        let c_t = forecast.position_m(ci, tof_s);
+        let vc_t = forecast.velocity_m_s(ci, tof_s);
+        let r2 = if home == central {
+            surface_direction(k) * radius_h
+        } else {
+            forecast.position_m(hi, tof_s) - c_t
+        };
+        let (v1, v2) = lambert(r0 - c0, r2, tof_s, mu_c, normal)?;
+        // Leaving: the burn from the velocity the craft has to the one the arc starts with.
+        let delta_v_out = (v1 - (v0 - vc0)).length();
+        // Arriving: everything left relative to home at its surface has to be braked away.
+        let delta_v_in = if home == central {
+            v2.length()
+        } else {
+            let v_inf = v2 - (forecast.velocity_m_s(hi, tof_s) - vc_t);
+            (v_inf.length_squared() + 2.0 * mu_h / radius_h).sqrt()
+        };
+        let delta_v_m_s = delta_v_out + delta_v_in;
+        delta_v_m_s.is_finite().then_some(Arc {
+            tof_s,
+            direction: k,
+            delta_v_m_s,
+            delta_v_in_m_s: delta_v_in,
+            launch_m: r0,
+            launch_velocity_m_s: vc0 + v1,
+        })
+    };
+
+    let mut minima = cheapest_arcs(t_min, t_max, directions, &cost);
+    minima.sort_by(|a, b| a.delta_v_m_s.total_cmp(&b.delta_v_m_s));
+    for arc in minima.iter().take(ORBIT_SEARCH_CANDIDATES) {
+        if progress.is_cancelled() {
+            return None;
+        }
+        let window = (
+            arc.tof_s * (1.0 - ORBIT_SOLVE_WINDOW_FRACTION),
+            (arc.tof_s * (1.0 + ORBIT_SOLVE_WINDOW_FRACTION)).min(forecast.horizon_s()),
+        );
+        let Some(coast) = solve_coast(&forecast, r0, arc.launch_velocity_m_s, window) else {
+            continue;
+        };
+        if coast.plan.miss_m <= radius_h {
+            return Some(coast.plan);
+        }
+    }
+    None
 }
 
 /// The least-energy transfer (see the module docs).
@@ -580,47 +832,7 @@ fn plan_transfer(
     let mut minima: Vec<Arc> = if origin == central {
         ascent().into_iter().collect()
     } else {
-        let best_at = |tof_s: f64| {
-            (0..directions)
-                .filter_map(|k| cost(tof_s, k))
-                .min_by(|a, b| a.delta_v_m_s.total_cmp(&b.delta_v_m_s))
-        };
-        // Log-spaced samples of the time of flight, then every local minimum, refined.
-        let ratio = (t_max / t_min).powf(1.0 / (ORBIT_SEARCH_SAMPLES - 1) as f64);
-        let samples: Vec<(f64, Option<Arc>)> = (0..ORBIT_SEARCH_SAMPLES)
-            .map(|i| {
-                let tof = t_min * ratio.powi(i as i32);
-                (tof, best_at(tof))
-            })
-            .collect();
-        let value = |i: usize| samples[i].1.map_or(f64::INFINITY, |arc| arc.delta_v_m_s);
-        (0..samples.len())
-            .filter(|&i| {
-                let here = value(i);
-                here.is_finite()
-                    && (i == 0 || here <= value(i - 1))
-                    && (i + 1 == samples.len() || here <= value(i + 1))
-            })
-            .filter_map(|i| {
-                // Golden-section refinement between the neighbouring samples, same direction.
-                let k = samples[i].1?.direction;
-                let (mut a, mut b) = (
-                    samples[i.saturating_sub(1)].0,
-                    samples[(i + 1).min(samples.len() - 1)].0,
-                );
-                let phi = 0.5 * (5.0_f64.sqrt() - 1.0);
-                let f = |tof: f64| cost(tof, k).map_or(f64::INFINITY, |arc| arc.delta_v_m_s);
-                for _ in 0..ORBIT_SEARCH_REFINE_STEPS {
-                    let (c, d) = (b - phi * (b - a), a + phi * (b - a));
-                    if f(c) < f(d) {
-                        b = d;
-                    } else {
-                        a = c;
-                    }
-                }
-                cost(0.5 * (a + b), k).or(samples[i].1)
-            })
-            .collect()
+        cheapest_arcs(t_min, t_max, directions, &cost)
     };
     if progress.is_cancelled() {
         return Err(NoFlight::Cancelled);
@@ -673,6 +885,7 @@ fn plan_transfer(
             transfer,
             departure_burn_m_s: Some(coast.velocity_m_s),
             delta_v_estimate_m_s: delta_v_out + delta_v_in,
+            trip: Trip::Land,
         });
     }
     Err(NoFlight::NoArc)

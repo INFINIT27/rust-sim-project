@@ -233,3 +233,138 @@ fn the_touchdown_test_finds_the_entry_point() {
     )
     .is_none());
 }
+
+// ---------------------------------------------------------------------------------------------
+// The swing-by: turning onto a pass instead of a landing
+// ---------------------------------------------------------------------------------------------
+
+/// The Moon's `G · m`, in m³/s².
+const MOON_MU: f64 = 4.9028e12;
+/// The Moon's radius, in metres.
+const MOON_RADIUS: f64 = 1.7374e6;
+
+/// The closest approach of the two-body path about a body of `mu` from `r` at `v`, in metres:
+/// from the energy and angular momentum, the smaller root of the pass-distance quadratic.
+fn two_body_periapsis(r: DVec3, v: DVec3, mu: f64) -> f64 {
+    let h = r.cross(v).length();
+    let energy = 0.5 * v.length_squared() - mu / r.length();
+    let eccentricity = (1.0 + 2.0 * energy * h * h / (mu * mu)).max(0.0).sqrt();
+    h * h / (mu * (1.0 + eccentricity))
+}
+
+/// A craft `20` Moon radii out, heading straight for the Moon's centre at `1 km/s`, with the Earth
+/// off to one side (`+Z`) and the Moon moving along `−X` as seen from the Earth.
+fn approach() -> (DVec3, DVec3, DVec3, DVec3) {
+    let relative = DVec3::new(20.0 * MOON_RADIUS, 0.0, 0.0);
+    let velocity = DVec3::new(-1_000.0, 0.0, 0.0);
+    let home = DVec3::new(0.0, 0.0, 3.844e8);
+    let body_velocity = DVec3::new(-1_018.0, 0.0, 0.0);
+    (relative, velocity, home, body_velocity)
+}
+
+#[test]
+fn a_swing_by_keeps_the_speed_and_changes_the_heading() {
+    let (relative, velocity, home, body_velocity) = approach();
+    let turned = swing_by(
+        relative,
+        velocity,
+        MOON_MU,
+        2.0 * MOON_RADIUS,
+        home,
+        body_velocity,
+    );
+    assert!((turned.length() - 1_000.0).abs() < 1e-9, "{turned:?}");
+    assert!(turned != velocity);
+    // Still closing on the body, only off to one side of it.
+    assert!(turned.x < 0.0 && turned.y.abs() < 1e-9 && turned.z.abs() > 10.0);
+}
+
+#[test]
+fn a_swing_by_passes_at_the_distance_asked_for() {
+    let (relative, velocity, home, body_velocity) = approach();
+    for radii in [1.5, 2.0, 3.0, 6.0] {
+        let wanted = radii * MOON_RADIUS;
+        let turned = swing_by(relative, velocity, MOON_MU, wanted, home, body_velocity);
+        let got = two_body_periapsis(relative, turned, MOON_MU);
+        assert!((got / wanted - 1.0).abs() < 1e-9, "{radii} radii: {got} m");
+    }
+}
+
+#[test]
+fn a_swing_by_goes_round_the_far_side_from_home() {
+    // Home is toward +Z. Passing on the far side means aiming at −Z of the body, so that the
+    // body's pull bends the path back toward +Z: toward home.
+    let (relative, velocity, home, body_velocity) = approach();
+    let turned = swing_by(
+        relative,
+        velocity,
+        MOON_MU,
+        2.0 * MOON_RADIUS,
+        home,
+        body_velocity,
+    );
+    assert!(turned.z < 0.0, "{turned:?}");
+
+    // And with home on the other side, the other side.
+    let turned = swing_by(
+        relative,
+        velocity,
+        MOON_MU,
+        2.0 * MOON_RADIUS,
+        -home,
+        body_velocity,
+    );
+    assert!(turned.z > 0.0, "{turned:?}");
+}
+
+#[test]
+fn a_swing_by_with_home_dead_ahead_still_finds_a_side() {
+    // Home on the line of approach gives no side to prefer; the body's own motion does.
+    let relative = DVec3::new(20.0 * MOON_RADIUS, 0.0, 0.0);
+    let velocity = DVec3::new(-1_000.0, 0.0, 0.0);
+    let home = DVec3::new(-3.844e8, 0.0, 0.0);
+    let body_velocity = DVec3::new(0.0, 0.0, 1_018.0);
+    let wanted = 2.0 * MOON_RADIUS;
+    let turned = swing_by(relative, velocity, MOON_MU, wanted, home, body_velocity);
+    assert!((two_body_periapsis(relative, turned, MOON_MU) / wanted - 1.0).abs() < 1e-9);
+    assert!(turned.y.abs() < 1e-9 && turned.z.abs() > 10.0, "{turned:?}");
+
+    // With nothing at all to go by, it still turns, onto some side.
+    let turned = swing_by(relative, velocity, MOON_MU, wanted, home, DVec3::ZERO);
+    assert!((two_body_periapsis(relative, turned, MOON_MU) / wanted - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_swing_by_leaves_a_craft_that_cannot_turn_as_it_is() {
+    let (relative, velocity, home, body_velocity) = approach();
+    // Already inside the pass distance.
+    let inside = DVec3::new(1.5 * MOON_RADIUS, 0.0, 0.0);
+    assert_eq!(
+        swing_by(
+            inside,
+            velocity,
+            MOON_MU,
+            2.0 * MOON_RADIUS,
+            home,
+            body_velocity
+        ),
+        velocity
+    );
+    // At rest relative to the body.
+    assert_eq!(
+        swing_by(
+            relative,
+            DVec3::ZERO,
+            MOON_MU,
+            2.0 * MOON_RADIUS,
+            home,
+            body_velocity
+        ),
+        DVec3::ZERO
+    );
+    // No pass distance at all.
+    assert_eq!(
+        swing_by(relative, velocity, MOON_MU, 0.0, home, body_velocity),
+        velocity
+    );
+}

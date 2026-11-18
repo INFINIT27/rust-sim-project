@@ -250,7 +250,7 @@ pub const WINDOW_HEIGHT_PX: f32 = 600.0;
 /// **If you change it.** Changing a default key rebinds it for everyone who has not saved their
 /// own `config/controls.toml`. Two actions on one key fail `tst/bindings_tests.rs`. Adding an
 /// action means a variant in [`Action`], a row here, and a `KeyMap` call in the system that acts.
-pub const ACTIONS: [ActionInfo; 28] = [
+pub const ACTIONS: [ActionInfo; 27] = [
     ActionInfo {
         action: Action::MoveForward,
         name: "move_forward",
@@ -411,13 +411,6 @@ pub const ACTIONS: [ActionInfo; 28] = [
         label: "Rocket: on the departure body, then on the destination",
         group: BindingGroup::Place,
         default_key: KeyCode::KeyR,
-    },
-    ActionInfo {
-        action: Action::NextCraft,
-        name: "next_craft",
-        label: "Next spacecraft in the fleet",
-        group: BindingGroup::Place,
-        default_key: KeyCode::KeyG,
     },
     ActionInfo {
         action: Action::ToggleBlackHoleView,

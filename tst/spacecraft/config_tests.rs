@@ -1,5 +1,5 @@
 //! Tests for [`crate::spacecraft::config`], `#[path]`-included as a unit-test module of it, not an
-//! integration test: the built-in craft, their limits, and the fleet `G` cycles.
+//! integration test: the built-in craft, their limits, the fleet and its selection, and the kind of trip.
 
 use super::*;
 
@@ -51,7 +51,7 @@ fn every_built_in_craft_is_valid_and_a_broken_one_is_not() {
 }
 
 #[test]
-fn the_default_fleet_starts_on_the_crewed_transfer_and_g_cycles_round() {
+fn the_default_fleet_starts_on_the_crewed_transfer_and_selecting_the_next_cycles_round() {
     let mut fleet = Fleet::default();
     let names: Vec<_> = fleet.craft().iter().map(|c| c.name.clone()).collect();
     assert_eq!(names.len(), 4);
@@ -168,4 +168,36 @@ fn a_staged_craft_needs_stages_propellant_and_a_limit() {
     assert!(broken(&|_, limit| *limit = 0.0), "no limit");
     // One empty stage among full ones is allowed: it is dropped at once.
     assert!(!broken(&|stages, _| stages[0].propellant_kg = 0.0));
+}
+
+// ---------------------------------------------------------------------------------------------
+// The kind of trip
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn a_trip_lands_by_default_and_each_kind_has_a_name_and_a_label() {
+    assert_eq!(Trip::default(), Trip::Land);
+    assert_eq!(Trip::ALL, [Trip::Land, Trip::Return]);
+    for trip in Trip::ALL {
+        assert_eq!(Trip::from_name(trip.name()), Some(trip));
+        assert!(!trip.label().is_empty());
+    }
+    assert_eq!(Trip::Land.name(), "land");
+    assert_eq!(Trip::Return.name(), "return");
+    assert_ne!(Trip::Land.label(), Trip::Return.label());
+    assert_eq!(Trip::from_name("orbit"), None);
+}
+
+#[test]
+fn a_fleet_carries_the_trip_the_next_launch_flies() {
+    let mut fleet = Fleet::default();
+    assert_eq!(fleet.trip(), Trip::Land, "the built-in fleet lands");
+    fleet.set_trip(Trip::Return);
+    assert_eq!(fleet.trip(), Trip::Return);
+    // Choosing another craft keeps the trip.
+    fleet.select_next();
+    assert_eq!(fleet.trip(), Trip::Return);
+    // A fleet built from a list lands until told otherwise.
+    let fleet = Fleet::new(vec![Spacecraft::coasting_probe()]).unwrap();
+    assert_eq!(fleet.trip(), Trip::Land);
 }

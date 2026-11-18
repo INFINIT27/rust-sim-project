@@ -4,7 +4,7 @@
 use super::*;
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::projects::interstellar::solar_system::solar_system;
-use crate::spacecraft::{Flight, Phase, Spacecraft};
+use crate::spacecraft::{Flight, Leg, Phase, Spacecraft, Trip};
 use crate::time::simulation::TimeStep;
 
 fn pair(name_a: &str, name_b: &str) -> (Scene, BodyId, BodyId) {
@@ -32,7 +32,8 @@ fn plan(craft: &Spacecraft, from: &str, to: &str) -> (Scene, BodyId, BodyId, Fli
 
 /// Fly `plan` through the live scene, about 1,200 frames as the app's clock spreads a flight,
 /// with correction burns when they are due, until the craft lands or three planned flight times
-/// have passed.
+/// have passed (five for a return trip, whose plan covers the way out only). A return trip's way
+/// back is planned when the flight asks for it, as the mission does.
 fn fly(
     scene: Scene,
     craft: Spacecraft,
@@ -45,14 +46,25 @@ fn fly(
     let mut scene = scene;
     let mut flight = Flight::launch(&mut scene, craft, origin, target, plan.clone(), 0.0);
     let mut now = 0.0;
-    while !flight.has_landed() && now < 3.0 * plan.transfer.flight_seconds {
+    let patience = if plan.trip == Trip::Return { 5.0 } else { 3.0 };
+    while !flight.has_landed() && now < patience * plan.transfer.flight_seconds {
+        if flight.needs_return_plan() {
+            let back = plan_return(
+                &scene,
+                flight.voyage.craft,
+                flight.voyage.target,
+                flight.ends().0,
+                &PlanProgress::default(),
+            );
+            flight.begin_return(&scene, back, now);
+        }
         if flight.next_correction_at().is_some_and(|at| now >= at) {
             let fix = plan_correction_for(
                 &scene,
                 &flight.craft,
                 flight.voyage.craft,
-                origin,
-                target,
+                flight.voyage.origin,
+                flight.voyage.target,
                 flight.voyage.arrival_at_s - now,
                 flight.next_flyby(now).as_ref(),
             );
@@ -648,12 +660,330 @@ fn a_rocket_too_weak_for_the_origin_is_refused_by_its_first_stage() {
 }
 
 #[test]
-fn a_rocket_is_refused_a_landing_its_last_stage_cannot_hold_up() {
-    // The lunar module's engine gives 3.6 m/s²: enough for the Moon, not for Earth.
+fn a_rocket_is_not_refused_a_landing_its_last_stage_cannot_hold_up() {
+    // The lunar module's engine gives 3.6 m/s²: enough for the Moon, not for Earth. An idealised
+    // craft that weak is refused the landing. A rocket is held only to lifting off, as it is not
+    // held to carrying enough propellant: it is launched, and the flight shows how it ends.
     let (scene, earth, moon) = earth_and_moon();
     let craft = Spacecraft::saturn_v_lander();
-    match plan_flight(&scene, moon, earth, &craft, &PlanProgress::default()) {
+    let last = craft.rocket().unwrap().last_stage_acceleration_m_s2();
+    assert!(last < surface_gravity_m_s2(&scene, earth, 0.0).unwrap());
+    assert!(plan_flight(&scene, moon, earth, &craft, &PlanProgress::default()).is_ok());
+
+    let mut weak = Spacecraft::crewed_transfer();
+    if let Propulsion::Transfer {
+        max_acceleration_m_s2,
+        ..
+    } = &mut weak.propulsion
+    {
+        *max_acceleration_m_s2 = last;
+    }
+    match plan_flight(&scene, moon, earth, &weak, &PlanProgress::default()) {
         Err(NoFlight::TooMuchGravity { body, .. }) => assert_eq!(body, earth),
         other => panic!("{other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The return trip: out, round the destination, and back to land where it started
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn a_landing_trip_is_planned_exactly_as_a_flight() {
+    let (scene, earth, moon) = earth_and_moon();
+    let craft = Spacecraft::crewed_transfer();
+    let progress = PlanProgress::default();
+    let flight = plan_flight(&scene, earth, moon, &craft, &progress).unwrap();
+    let trip = plan_trip(&scene, earth, moon, &craft, Trip::Land, &progress).unwrap();
+    assert_eq!(trip, flight);
+    assert_eq!(trip.trip, Trip::Land);
+}
+
+#[test]
+fn a_return_trip_is_planned_as_the_same_way_out() {
+    let (scene, earth, moon) = earth_and_moon();
+    let craft = Spacecraft::crewed_transfer();
+    let progress = PlanProgress::default();
+    let landing = plan_flight(&scene, earth, moon, &craft, &progress).unwrap();
+    let returning = plan_trip(&scene, earth, moon, &craft, Trip::Return, &progress).unwrap();
+    assert_eq!(returning.trip, Trip::Return);
+    assert_eq!(returning.transfer, landing.transfer);
+    assert_eq!(returning.departure_burn_m_s, landing.departure_burn_m_s);
+}
+
+#[test]
+fn only_a_craft_that_flies_the_transfer_can_fly_a_return_trip() {
+    let (scene, earth, moon) = earth_and_moon();
+    let progress = PlanProgress::default();
+    for craft in [
+        Spacecraft::full_thrust_direct(),
+        Spacecraft::coasting_probe(),
+    ] {
+        assert_eq!(
+            plan_trip(&scene, earth, moon, &craft, Trip::Return, &progress),
+            Err(NoFlight::NoReturnTrip),
+            "{}",
+            craft.name
+        );
+    }
+    // The same body twice, or a broken craft, is refused as for a landing.
+    let craft = Spacecraft::crewed_transfer();
+    assert_eq!(
+        plan_trip(&scene, earth, earth, &craft, Trip::Return, &progress),
+        Err(NoFlight::InvalidRoute)
+    );
+}
+
+#[test]
+fn the_saturn_lander_loops_round_the_moon_and_comes_home_too_fast_to_land() {
+    // The whole return trip on a rocket that carries its propellant. It is launched, though it
+    // cannot land on Earth: its last stage gives 3.6 m/s² against Earth's 9.8, and after the way
+    // out, the pass and the burn home it has under 3 km/s left of the 13.7 a powered landing on
+    // Earth takes. So it flies the loop, comes home, brakes with what it has as late as it can,
+    // runs dry, and hits. Without an atmosphere to brake in, that is what this rocket does.
+    let (scene, earth, moon) = earth_and_moon();
+    let craft = Spacecraft::saturn_v_lander();
+    let carried = craft.rocket().unwrap().delta_v_left_m_s();
+    let plan = plan_trip(
+        &scene,
+        earth,
+        moon,
+        &craft,
+        Trip::Return,
+        &PlanProgress::default(),
+    )
+    .expect("a rocket is launched whether or not it can land");
+    let out_s = plan.transfer.flight_seconds;
+    let flight = fly(scene, craft, earth, moon, plan);
+    let report = flight.report();
+
+    // It went round the Moon about one radius up, and came back to Earth.
+    let altitude = report.pass_altitude_m.expect("it passed the Moon");
+    assert!(
+        (1.4e6..2.2e6).contains(&altitude),
+        "passed {:.0} km up",
+        altitude / 1_000.0
+    );
+    assert_eq!(flight.leg(), Leg::Return);
+    assert_eq!(flight.voyage.target, earth);
+    assert!(flight.has_landed(), "it reached Earth: {report:?}");
+    let travel = report.travel_time_s.unwrap();
+    assert!(travel > 1.3 * out_s && travel < 2.0 * out_s, "{travel} s");
+
+    // Every drop of propellant spent, the last of it braking, and still most of the speed left.
+    assert!(report.ran_dry);
+    assert_eq!(report.propellant_left_kg, Some(0.0));
+    assert!((report.delta_v_m_s - carried).abs() < 1.0);
+    assert_eq!(report.stages_dropped, 3);
+    let touchdown = report.touchdown_speed_m_s.unwrap();
+    assert!(
+        (7_000.0..10_500.0).contains(&touchdown),
+        "hit at {touchdown:.0} m/s"
+    );
+    // It did brake: an unbraked fall from the Moon's distance arrives at 11 km/s.
+    assert!(touchdown < 10_500.0);
+}
+
+#[test]
+fn a_return_trip_does_not_need_to_be_able_to_land_on_what_it_swings_round() {
+    // A craft held to half a g cannot land on Earth, so Moon to Earth is refused as a landing.
+    // As a return trip it never fights Earth's gravity: it lifts off from the Moon and lands on
+    // the Moon, so the same route is allowed.
+    let (scene, earth, moon) = earth_and_moon();
+    let mut craft = Spacecraft::crewed_transfer();
+    if let Propulsion::Transfer {
+        max_acceleration_m_s2,
+        ..
+    } = &mut craft.propulsion
+    {
+        *max_acceleration_m_s2 = 0.5 * STANDARD_GRAVITY_M_S2;
+    }
+    let progress = PlanProgress::default();
+    assert!(matches!(
+        plan_trip(&scene, moon, earth, &craft, Trip::Land, &progress),
+        Err(NoFlight::TooMuchGravity { .. })
+    ));
+    assert!(plan_trip(&scene, moon, earth, &craft, Trip::Return, &progress).is_ok());
+}
+
+/// Fly the crewed craft from Earth round the Moon and back, in `experiment_7`'s scene.
+fn fly_round_the_moon() -> (Flight, BodyId, BodyId, f64) {
+    let (scene, earth, moon) = earth_and_moon();
+    let craft = Spacecraft::crewed_transfer();
+    let plan = plan_trip(
+        &scene,
+        earth,
+        moon,
+        &craft,
+        Trip::Return,
+        &PlanProgress::default(),
+    )
+    .unwrap();
+    let out_s = plan.transfer.flight_seconds;
+    (fly(scene, craft, earth, moon, plan), earth, moon, out_s)
+}
+
+#[test]
+fn the_crewed_craft_loops_round_the_moon_and_lands_back_on_earth() {
+    let (flight, earth, moon, out_s) = fly_round_the_moon();
+    let report = flight.report();
+
+    // It came down softly, and on Earth, not on the Moon.
+    assert!(flight.has_landed(), "never landed: {report:?}");
+    assert_eq!(flight.leg(), Leg::Return);
+    assert_eq!(flight.voyage.target, earth);
+    assert_eq!(
+        flight.voyage.origin, moon,
+        "the way back starts at the Moon"
+    );
+    assert_eq!(flight.ends(), (earth, moon));
+    let touchdown = report.touchdown_speed_m_s.unwrap();
+    assert!(touchdown <= 11.0, "landed at {touchdown:.1} m/s");
+
+    // It passed the Moon about one radius up (two radii from the centre) without touching it.
+    let altitude = report.pass_altitude_m.unwrap();
+    assert!(
+        (1.4e6..2.2e6).contains(&altitude),
+        "passed {:.0} km up",
+        altitude / 1_000.0
+    );
+
+    // About four and a half days out and under three back: longer than the way out alone, and
+    // well under twice it, because the way back is not a slow climb but a fall.
+    let travel = report.travel_time_s.unwrap();
+    assert!(travel > 1.3 * out_s && travel < 2.0 * out_s, "{travel} s");
+    assert!((6.0..9.0).contains(&(travel / 86_400.0)));
+
+    // Never more than the crew's 3 g, on any of the burns.
+    assert!(report.peak_acceleration_m_s2 <= 3.0 * STANDARD_GRAVITY_M_S2 * (1.0 + 1e-9));
+    // It costs more than landing on the Moon (15.7 km/s): there is no cheap landing at the far
+    // end, and Earth's gravity has to be braked against on the way down.
+    assert!(
+        (22_000.0..32_000.0).contains(&report.delta_v_m_s),
+        "{} m/s",
+        report.delta_v_m_s
+    );
+}
+
+#[test]
+fn a_return_trip_goes_round_the_far_side_of_the_moon() {
+    // Fly until the craft is closest to the Moon and look where it is: beyond the Moon as seen
+    // from Earth, which is the loop a free-return flight makes.
+    let (scene, earth, moon) = earth_and_moon();
+    let craft = Spacecraft::crewed_transfer();
+    let plan = plan_trip(
+        &scene,
+        earth,
+        moon,
+        &craft,
+        Trip::Return,
+        &PlanProgress::default(),
+    )
+    .unwrap();
+    let frame_s = plan.transfer.flight_seconds / 1_200.0;
+    let frame = TimeStep::from_seconds(frame_s).unwrap();
+    let mut scene = scene;
+    let mut flight = Flight::launch(&mut scene, craft, earth, moon, plan.clone(), 0.0);
+    let mut now = 0.0;
+    let mut closest: Option<(f64, f64)> = None;
+    while !flight.needs_return_plan() && now < 2.0 * plan.transfer.flight_seconds {
+        if flight.next_correction_at().is_some_and(|at| now >= at) {
+            let fix = plan_correction_for(
+                &scene,
+                &flight.craft,
+                flight.voyage.craft,
+                earth,
+                moon,
+                flight.voyage.arrival_at_s - now,
+                None,
+            );
+            flight.apply_correction(&mut scene, fix, now);
+        }
+        scene.step_steered(
+            frame,
+            &mut flight,
+            |flight, scene, substep| flight.steer(scene, substep),
+            |flight, scene| flight.observe(scene),
+        );
+        now += frame_s;
+        if matches!(flight.leg(), Leg::Passing { .. }) {
+            let at = |id: BodyId| scene.get(id).unwrap().body.center();
+            let from_moon = at(flight.voyage.craft) - at(moon);
+            let earth_from_moon = at(earth) - at(moon);
+            // Positive toward Earth, negative beyond the Moon.
+            let toward_earth = from_moon.dot(earth_from_moon.normalize());
+            if closest.is_none_or(|(distance, _)| from_moon.length() < distance) {
+                closest = Some((from_moon.length(), toward_earth));
+            }
+        }
+    }
+    assert!(flight.needs_return_plan(), "{:?}", flight.leg());
+    let (_, toward_earth) = closest.expect("the craft passed the Moon");
+    assert!(
+        toward_earth < 0.0,
+        "closest on the near side: {toward_earth}"
+    );
+    // It makes no corrections while it swings round or waits for the way back.
+    assert!(flight.next_correction_at().is_none());
+
+    // With no way back found, it drifts: nothing to aim at, and no corrections.
+    flight.begin_return(&scene, None, now);
+    assert_eq!(flight.leg(), Leg::Adrift);
+    assert_eq!(flight.doing(), "no way back found, drifting");
+    assert!(!flight.needs_return_plan());
+    assert!(flight.next_correction_at().is_none());
+}
+
+#[test]
+fn a_way_back_handed_over_before_it_is_asked_for_is_ignored() {
+    let (scene, earth, moon) = earth_and_moon();
+    let craft = Spacecraft::crewed_transfer();
+    let plan = plan_trip(
+        &scene,
+        earth,
+        moon,
+        &craft,
+        Trip::Return,
+        &PlanProgress::default(),
+    )
+    .unwrap();
+    let mut scene = scene;
+    let mut flight = Flight::launch(&mut scene, craft, earth, moon, plan, 0.0);
+    // Handing it a return before it has asked for one does nothing.
+    flight.begin_return(&scene, None, 0.0);
+    assert_eq!(flight.leg(), Leg::Outbound);
+}
+
+#[test]
+fn the_way_back_is_planned_from_where_the_craft_is_to_a_landing_at_home() {
+    // A craft placed beyond the Moon, moving with it: the plan must give it a velocity that
+    // coasts to Earth's surface.
+    let (mut scene, earth, moon) = earth_and_moon();
+    let (moon_at, moon_velocity) = {
+        let prop = scene.get(moon).unwrap();
+        (prop.body.center(), prop.velocity_units_s)
+    };
+    let earth_at = scene.get(earth).unwrap().body.center();
+    let outward = (moon_at - earth_at).normalize();
+    let mut prop = Spacecraft::crewed_transfer().prop();
+    if let crate::core::scene::Body::Sphere { pose, .. } = &mut prop.body {
+        pose.position = moon_at + outward * to_units(DVec3::X * 4.0e7).length();
+    }
+    prop.velocity_units_s = moon_velocity;
+    let craft = scene.add(prop);
+
+    let back = plan_return(&scene, craft, moon, earth, &PlanProgress::default())
+        .expect("a way back from beside the Moon");
+    let earth_radius = physical_radius_m(scene.get(earth).unwrap());
+    assert!(back.miss_m <= earth_radius, "misses by {} m", back.miss_m);
+    // A fall from the Moon's distance takes days, not hours or months.
+    assert!((1.0..12.0).contains(&(back.flight_seconds / 86_400.0)));
+    // The burn onto it is modest: the craft was already moving with the Moon.
+    let burn = to_metres(back.velocity_units_s - moon_velocity).length();
+    assert!(burn < 3_000.0, "{burn} m/s");
+
+    // Cancelled, there is no plan.
+    let cancelled = PlanProgress::default();
+    cancelled.cancel();
+    assert!(plan_return(&scene, craft, moon, earth, &cancelled).is_none());
 }

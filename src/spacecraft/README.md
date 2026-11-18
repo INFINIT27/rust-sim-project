@@ -1,6 +1,6 @@
 # `src/spacecraft/` — what a craft is, and how it flies
 
-> **Purpose:** What a craft is and how it flies: the fleet `G` cycles, flight planning by
+> **Purpose:** What a craft is and how it flies: the fleet the menu chooses from, the kind of trip (land, or loop round and return), flight planning by
 > propulsion (the least-energy Lambert transfer by default), steering and landing, correction
 > burns, and the flight report.
 > **Edit here to:** add or change a craft or engine, the crew g-limit, burns, the guidance or
@@ -19,12 +19,12 @@ hard, and toward what, and counts what the flight cost.
 | --- | --- |
 | `mod.rs` | Declares the layer and re-exports its surface. |
 | `constants.rs` | Every constant the layer reads: the built-in craft (Aerojet 260 thrust and exhaust speed, masses, the `3 g` crew limit, the probe's launch speed), the transfer search (`ORBIT_*`), burns and corrections, and the steering law (`POWERED_*`). |
-| `config.rs` | `Spacecraft`, `Propulsion` (`Coasting`, `Direct`, `Transfer`, `Staged`), `Engine`, `Stage`, and `Fleet`, the roster `G` cycles. Plain data, so a settings menu can build or edit it. `Fleet::default` is the built-in set: crewed transfer (selected), full-thrust direct, coasting probe, staged Saturn V lander. |
+| `config.rs` | `Spacecraft`, `Propulsion` (`Coasting`, `Direct`, `Transfer`, `Staged`), `Engine`, `Stage`, `Trip` (`Land` or `Return`), and `Fleet`: the roster, which craft is selected, and the trip the next launch flies, all chosen on the menu's spacecraft page. Plain data, so a settings menu can build or edit it. `Fleet::default` is the built-in set: crewed transfer (selected), full-thrust direct, coasting probe, staged Saturn V lander. |
 | `rocket.rs` | `Rocket`: a craft that carries its propellant. `rocket_delta_v_m_s` and `rocket_mass_after_kg` (the rocket equation, both ways), `Rocket::burn` (drain the tanks for a speed change, drop empty stages), `acceleration_m_s2` (thrust over present mass, capped), `weakest_acceleration_m_s2` (what a landing is planned on), `plan_burn`, `Burn`. |
-| `plan.rs` | `plan_flight`, by propulsion: the coasting planner, the direct flight flown through the forecast, or the least-energy transfer. `departure_burn`, `plan_transfer_correction`, `plan_correction_for`, `central_body`, `NoFlight`. |
+| `plan.rs` | `plan_flight`, by propulsion: the coasting planner, the direct flight flown through the forecast, or the least-energy transfer. `plan_trip`, the same for a kind of trip, and `plan_return`, the way back for a craft already in flight. `departure_burn`, `plan_transfer_correction`, `plan_correction_for`, `central_body`, `NoFlight`. |
 | `lambert.rs` | `lambert`: the two-body arc between two points in a given time, universal variables, solved by bisection. The transfer search's cost model. |
-| `guidance.rs` | The steering laws: `steer` (land on the braking curve; a direct flight also burns toward it and flies around bodies), `match_velocity` (correction burns), `braking_m_s2`, `blocking`. Touchdown uses `core::transfer::segment_entry`. |
-| `flight.rs` | `Flight`: a craft in the live scene, its `Phase` (`Dry` once a rocket's tanks are empty), its `f64` state for a powered craft, its `Rocket` if it carries propellant, its correction schedule, and its report. |
+| `guidance.rs` | The steering laws: `steer` (land on the braking curve; a direct flight also burns toward it and flies around bodies), `match_velocity` (correction burns), `swing_by` (the heading that turns a landing approach into a pass on the side that leads home), `braking_m_s2`, `blocking`. Touchdown uses `core::transfer::segment_entry`. |
+| `flight.rs` | `Flight`: a craft in the live scene, its `Phase` (`Dry` once a rocket's tanks are empty), its `Leg` of a return trip (`begin_return` starts the way back), its `f64` state for a powered craft, its `Rocket` if it carries propellant, its correction schedule, and its report. |
 | `report.rs` | `FlightReport`: time, peak speed, Δv, engine time, peak g, energy, propellant, touchdown; for a rocket also the propellant loaded and left, stages dropped, and whether it ran dry. |
 
 ## The rocket that carries its propellant
@@ -74,6 +74,82 @@ costs `15.2 km/s` against the `12.9 km/s` the same climb costs at a constant `3 
 stages light under `1 g` and lose the difference to gravity. Apollo went into orbit first, where
 gravity losses are small. Launching from orbit is the natural next step.
 
+## Trips: landing, or looping round and coming back
+
+`Trip` says what a flight does at its destination. It is a setting of the `Fleet`, chosen on the
+menu's spacecraft page beside the craft itself, and `Mission` passes it to `plan_trip`.
+
+- **`Trip::Land`**, the default, is the flight described above: out, and a landing.
+- **`Trip::Return`** flies out the same way, swings round the destination without landing, flies
+  back, and lands where it started. It is flown in four legs (`Leg`):
+
+| Leg | What the craft does | How it ends |
+| --- | --- | --- |
+| `Outbound` | The landing flight's departure burn, cruise and corrections, aimed at the destination's centre. | At the point a landing would begin (`LANDING_START_RADII`), it turns onto the pass. |
+| `Passing` | One burn that keeps the speed and changes the heading (`guidance::swing_by`), then a coast round the body at `SWING_BY_PERIAPSIS_RADII`. No corrections. | It is moving away and is as far out as it turned in. |
+| `AwaitingReturn` | Coasts on, for the frame or two the way back takes to plan. | `plan_return` gives a plan (`Flight::begin_return`), or none (`Adrift`). |
+| `Return` | A burn onto the way back, a cruise with corrections, the landing law, and touchdown on the body it started from. | It lands. |
+
+Three decisions shaped it:
+
+- **The way out is the landing's plan, unchanged.** `plan_trip` returns the same transfer either
+  way; only the trip it carries differs. The pass is made in flight, by one small burn, because a
+  craft aimed at the centre is already aimed well enough to turn onto any pass.
+- **The way back is planned in flight, not at launch.** How the craft comes out of the swing-by
+  depends on every error the way out picked up, so `plan_return` plans from where the craft
+  really is: the same Lambert search and full solve as the outbound transfer, started from a
+  moving craft, so leaving costs the difference between the velocity it has and the one the arc
+  needs.
+- **The pass goes round the side that sends it home.** `swing_by` works out the heading for the
+  pass distance from energy and angular momentum about the body, then picks, of the two sides, the
+  one whose departure has the most speed toward home. Round the Moon that is the far side: the
+  loop a free-return flight makes.
+
+What a craft must be able to do changes with the trip. It lifts off from the origin and lands on
+the origin, so the destination's gravity is never fought. An idealised craft too weak to land on
+Earth can fly Moon → Earth → Moon, and one that can only land on the Moon is refused
+Earth → Moon → Earth. Only a craft that flies the transfer (`Propulsion::Transfer` or `Staged`)
+can fly a return at all; a direct or coasting craft gets `NoFlight::NoReturnTrip`.
+
+**A rocket is always launched.** A staged rocket is held only to lifting off, on either kind of
+trip. Whether its propellant covers the trip is not checked, and neither is whether the stage it
+arrives on can hold it up where it lands. It is flown, and the flight shows how it ends. When its
+engine cannot beat the gravity it is landing against, it brakes as late as its propellant allows
+(over the distance it covers while it burns what is left) and then falls.
+
+So the Saturn V lander starts the return trip and cannot finish it. It passes the Moon `1,781 km`
+up, comes home, brakes with its last `2.7 km/s`, runs dry and hits Earth at `8.8 km/s` after
+`7.3` days. Real crews come home through the atmosphere, which is not modelled, so here coming
+home takes an engine.
+
+What it would take, on this route and for the `4,184 kg` it has to land (payload and last stage,
+empty):
+
+| | Speed change | Exhaust energy | Propellant |
+| --- | --- | --- | --- |
+| The trip needs | `30.4 km/s` | | |
+| The stack carries | `19.44 km/s` | `14.5 TJ` | `2,734 t` |
+| Kinetic floor, `½·m·Δv²` | | `1.93 TJ` | |
+| Least for any rocket (exhaust at `19 km/s`) | `30.4 km/s` | `2.98 TJ` | `16.4 t` |
+| At the J-2's `4.13 km/s`, weightless tanks | `30.4 km/s` | `55.7 TJ` | `6,540 t` |
+
+The `30.4 km/s` is `16.7` to reach the point of braking at Earth, measured on the rocket, plus
+`13.7` to land there under power at `3 g`, measured on the crewed craft. The energy is the kinetic
+energy given to the exhaust, `½·m_p·v_e²`, with the propellant from the rocket equation,
+`m_p = m·(e^(Δv/v_e) − 1)`. It is least when `Δv/v_e ≈ 1.59`, where it is `1.54` times the kinetic
+floor. Chemical exhaust is nearly five times slower than that, so most of its energy goes into
+propellant that is itself thrown away.
+
+Flown by the crewed craft in `experiment_7`: Earth, a pass `1,785 km` above the Moon's far side,
+and a landing back on Earth at `10 m/s`, in `7.4` days for `27.4 km/s`. Landing on the Moon costs
+`15.7 km/s`; the return costs more because Earth's whole well is braked against under power.
+
+The `27.4 km/s` breaks down as `12.9` to leave Earth, `0.4` for the corrections and the turn onto
+the pass, `0.4` for the burn home, and `13.7` to land on Earth.
+
+Not done: the pass is not a free return (the turn and the burn home are powered, about `0.4 km/s`
+each at the Moon), and a rocket that runs dry mid-trip is simply `Dry`.
+
 ## Constants
 
 All in `constants.rs`, each with its reasoning. The ones that shape a flight most:
@@ -88,6 +164,7 @@ All in `constants.rs`, each with its reasoning. The ones that shape a flight mos
 | `LANDING_START_RADII` | `20` | The landing law starts by twenty radii out at the latest, as terminal guidance. |
 | `DEPARTURE_BURN_STEPS` | `2,000` | A fixed step count keeps the burn smooth in what is solved for. |
 | `LANDING_LOOKAHEAD_FACTOR` | `2` | A rocket plans its landing on the weakest stage it will light within twice its impact speed of burning. |
+| `SWING_BY_PERIAPSIS_RADII` | `2` | A return trip passes its destination one radius above the surface. |
 | `F1_*`, `J2_*`, `SATURN_*`, `LUNAR_MODULE_*` | — | The staged rocket's engines and stage masses: Apollo-era figures, with the Δv each stage gives. |
 
 ## Rules and invariants

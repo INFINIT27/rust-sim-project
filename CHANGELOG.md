@@ -67,6 +67,62 @@ one exists. The convention is specified in
     summaries and should be checked against a source.
   - *Not modelled.* Dropped stages vanish, there is no atmosphere, throttling is free, tanks burn
     to empty, and the craft still starts at rest `200 km` up, not in orbit.
+- **A return trip: fly to a body, loop round it without landing, come back, and land where the
+  flight started** (`Trip::Return`, `plan_trip`, `plan_return`, `guidance::swing_by`, `Leg`).
+  Until now every flight ended in a landing on its destination. The kind of trip is a general
+  setting, for any pair of bodies: `Trip::Land` is what flights did before and stays the default.
+  - *How it flies.* The way out is the landing's transfer, unchanged. Where a landing would
+    begin, the craft makes one burn that keeps its speed and turns its heading, so that it passes
+    the body at `SWING_BY_PERIAPSIS_RADII` (two radii from the centre) on the side that sends it
+    back toward home. Once it has swung round and is leaving, the way back is planned from where
+    it really is (`plan_return`: the outbound transfer's Lambert search and full solve, started
+    from a moving craft), and it burns onto it, cruises with corrections, and lands with the
+    existing landing law. Planning the way back in flight, not at launch, is deliberate: how the
+    craft comes out of the pass depends on every error the way out picked up.
+  - *What it shows.* The crewed craft flies Earth, a pass `1,785 km` above the Moon's far side,
+    and a landing back on Earth at `10 m/s`, in `7.4` days for `27.4 km/s`: `12.9` to leave,
+    `0.4` for corrections and the turn onto the pass, `0.4` for the burn home, and `13.7` to land
+    on Earth, because there is no atmosphere here to brake in.
+  - *Which craft can.* One that flies the least-energy transfer: the crewed craft, or a staged
+    rocket. A direct or coasting craft is refused (`NoFlight::NoReturnTrip`). An idealised
+    craft must be able to lift off from and land on the body it starts from; the destination's
+    gravity is never fought.
+  - *A rocket is always launched.* A staged rocket is now held only to lifting off, for either
+    kind of trip. Whether the stage it arrives on can hold it up against the gravity where it
+    lands is no longer checked, as whether its propellant covers the trip never was. The first
+    version of this refused the Saturn V lander the return trip (its last stage gives `3.6 m/s²`
+    against Earth's `9.8`), and the result in the window was that nothing appeared. Launched, it
+    shows what it cannot do: it loops round the Moon `1,781 km` up, comes home, brakes with its
+    last `2.7 km/s`, runs dry and hits Earth at `8.8 km/s`. An engine that cannot hold the craft
+    up brakes as late as its propellant allows, over the distance it covers while it burns what
+    is left; started from far out, the landing law would stop it there and let it sink for weeks.
+  - *What the Saturn V lander would need.* The trip takes `30.4 km/s` on this route: `16.7` to
+    reach the point of braking at Earth (measured on the rocket) and `13.7` to land there under
+    power at `3 g` (measured on the crewed craft). It carries `19.44`. To land its `4,184 kg`
+    (payload and last stage, empty): the kinetic floor `½·m·Δv²` is `1.93 TJ`; the least exhaust
+    energy any rocket can do it on is `2.98 TJ`, at an exhaust speed of `19 km/s`, which no
+    chemical engine reaches; at the J-2's `4.13 km/s`, the best on the stack, it is `55.7 TJ` and
+    `6,540 t` of propellant even with weightless tanks. The stack carries `14.5 TJ` and `2,734 t`.
+  - *Where it appears.* The status line shows the whole route (`Earth → Moon → Earth`) and the
+    leg ("turning onto the pass", "swinging round", "planning the way back", "return burn",
+    "cruising back"). The arrival pop-up shows the route there and back and a "Closest pass" row.
+  - *New constant*: `SWING_BY_PERIAPSIS_RADII`, in `src/spacecraft/constants.rs`.
+  - *Not done.* The pass is not a free return: the turn and the burn home are powered. A flight
+    for which no way back converges drifts (`Leg::Adrift`).
+
+### Changed
+
+- **The spacecraft and the kind of trip are chosen in the menu, and the `G` key is gone.** The
+  `Esc` menu's spacecraft page now opens with the next launch: a list to pick the craft `R`
+  flies, and a list to pick the trip (land, or loop round and return). Both are settings, saved
+  with the page to `config/spacecraft.toml` as two new optional keys, `selected` (a craft's name;
+  the first craft when left out) and `trip` (`"land"` or `"return"`; `"land"` when left out).
+  `G`, which cycled the craft, did the first of these with no way to see the list or save the
+  choice, and there would have been no room for the second on a key. Removed with it: the
+  `next_craft` action (`Action::NextCraft`, its row in `ACTIONS` and in `config/controls.toml`)
+  and `LaunchRequest`'s engine-switch request. A `controls.toml` that still has a `next_craft`
+  line is now an error naming it, as any unknown action is; delete the line. The `G` key itself
+  is free to bind to something else.
 
 ## 2026-11-14
 

@@ -5,7 +5,8 @@
 //! [`Propulsion::Staged`] craft is the realistic one: a payload under [`Stage`]s that carry their
 //! propellant, flown as a [`Rocket`].
 //!
-//! [`Fleet`] is the roster `G` cycles through. Its [`Default`] is the built-in set, assembled from
+//! [`Fleet`] is the roster the menu chooses from, with the craft selected and the [`Trip`] the
+//! next launch flies. Its [`Default`] is the built-in set, assembled from
 //! [`crate::spacecraft::constants`]; anything else (a menu, a saved file) can build its own.
 
 use crate::constants::METRES_PER_UNIT;
@@ -363,22 +364,74 @@ impl Engine {
     }
 }
 
-/// The spacecraft `R` can launch, and which one it launches next.
+/// What a flight does once it reaches its destination.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum Trip {
+    /// Fly to the destination and land on it.
+    #[default]
+    Land,
+    /// Fly to the destination, swing round it without landing, fly back, and land where the
+    /// flight started.
+    Return,
+}
+
+impl Trip {
+    /// Both kinds, in the order the menu lists them.
+    pub const ALL: [Trip; 2] = [Trip::Land, Trip::Return];
+
+    /// What the menu and the status line call it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Trip::Land => "Land on the destination",
+            Trip::Return => "Loop round the destination and return",
+        }
+    }
+
+    /// Its name in `config/spacecraft.toml`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Trip::Land => "land",
+            Trip::Return => "return",
+        }
+    }
+
+    /// The trip whose `config/spacecraft.toml` name is `name`.
+    pub fn from_name(name: &str) -> Option<Trip> {
+        Trip::ALL.into_iter().find(|trip| trip.name() == name)
+    }
+}
+
+/// The spacecraft `R` can launch, which one it launches next, and what kind of trip it flies. All
+/// three are chosen on the menu's spacecraft page.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Fleet {
     craft: Vec<Spacecraft>,
     selected: usize,
+    trip: Trip,
 }
 
 impl Fleet {
     /// A fleet of `craft`, the first selected. `None` for an empty list or an invalid craft, since
     /// `R` must always have something it can fly.
     pub fn new(craft: Vec<Spacecraft>) -> Option<Self> {
-        (!craft.is_empty() && craft.iter().all(Spacecraft::is_valid))
-            .then_some(Fleet { craft, selected: 0 })
+        (!craft.is_empty() && craft.iter().all(Spacecraft::is_valid)).then_some(Fleet {
+            craft,
+            selected: 0,
+            trip: Trip::default(),
+        })
     }
 
-    /// Every craft, in the order `G` cycles through them.
+    /// The kind of trip the next launch flies.
+    pub fn trip(&self) -> Trip {
+        self.trip
+    }
+
+    /// Choose the kind of trip the next launch flies.
+    pub fn set_trip(&mut self, trip: Trip) {
+        self.trip = trip;
+    }
+
+    /// Every craft, in the order the menu lists them.
     pub fn craft(&self) -> &[Spacecraft] {
         &self.craft
     }
@@ -400,7 +453,7 @@ impl Fleet {
         self.selected
     }
 
-    /// Select the next craft, wrapping round. What `G` does.
+    /// Select the next craft, wrapping round.
     pub fn select_next(&mut self) {
         self.selected = (self.selected + 1) % self.craft.len();
     }
@@ -427,6 +480,7 @@ impl Default for Fleet {
                 Spacecraft::saturn_v_lander(),
             ],
             selected: 0,
+            trip: Trip::default(),
         }
     }
 }

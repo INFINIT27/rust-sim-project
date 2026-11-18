@@ -19,7 +19,7 @@
 //! - [`projects`] — the simulations, one module per kind; [`projects::interstellar`] holds
 //!   every experiment so far, the catalog of simulations, each one's settings, and the
 //!   command-line selection that picks one. Bevy-free like [`core`].
-//! - [`spacecraft`] — what a craft is (the [`Fleet`] `G` cycles), how it plans a flight
+//! - [`spacecraft`] — what a craft is (the [`Fleet`] the menu chooses from), how it plans a flight
 //!   between two bodies, how it flies it, and what it cost. Above [`core`], and like it
 //!   Bevy-free but for `bevy::math`.
 //!
@@ -157,7 +157,7 @@ pub use crate::core::transfer::{
     Voyage,
 };
 
-// Spacecraft: what a craft is, the roster `G` cycles, planning and flying a flight, and its report.
+// Spacecraft: what a craft is, the fleet the menu chooses from, planning and flying a flight, and its report.
 pub use crate::input::mission::{launch_input_system, LaunchInputPlugin, LaunchRequest};
 pub use crate::render::mission::{
     draw_mission_system, mission_system, pick_route_system, Mission, MissionPhase, MissionPlugin,
@@ -172,9 +172,10 @@ pub use crate::spacecraft::constants::{
     POWERED_BRAKE_FRACTION, POWERED_CANCEL_CHECK_STEPS, POWERED_CLEARANCE_RADII,
     POWERED_HORIZON_FACTOR, POWERED_MAX_SUBSTEP_S, POWERED_MIN_SUBSTEP_S, POWERED_SUBSTEP_FRACTION,
     POWERED_TOUCHDOWN_SPEED_M_S, PROBE_MASS_KG, PROBE_MAX_DEPARTURE_SPEED_M_S,
+    SWING_BY_PERIAPSIS_RADII,
 };
 pub use crate::spacecraft::guidance::{
-    blocking, braking_m_s2, match_velocity, steer, Law, Sighting, Steering,
+    blocking, braking_m_s2, match_velocity, steer, swing_by, Law, Sighting, Steering,
 };
 pub use crate::spacecraft::lambert::lambert;
 // Configuration files: `config/*.toml`, read once at startup into the resources above.
@@ -188,9 +189,9 @@ pub use crate::config::{
 
 pub use crate::spacecraft::{
     central_body, departure_burn, departure_burn_with, plan_correction_for, plan_flight,
-    plan_transfer_correction, rocket_delta_v_m_s, rocket_mass_after_kg, surface_gravity_m_s2, Burn,
-    Engine, Fleet, Flight, FlightPlan, FlightReport, NoFlight, Phase, Propulsion, Push, Rocket,
-    Spacecraft, Stage,
+    plan_return, plan_transfer_correction, plan_trip, rocket_delta_v_m_s, rocket_mass_after_kg,
+    surface_gravity_m_s2, Burn, Engine, Fleet, Flight, FlightPlan, FlightReport, Leg, NoFlight,
+    Phase, Propulsion, Push, Rocket, Spacecraft, Stage, Trip,
 };
 
 // Body physics: the triangle hull that bounds a prop, the contact test over
