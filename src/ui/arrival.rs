@@ -127,9 +127,24 @@ pub fn arrival_rows(
         ("Spacecraft", report.craft_name.clone()),
         (
             "Route",
-            format!("{} → {}", names.label(origin), names.label(target)),
+            // A return trip swung round the target and came back to where it started.
+            if report.pass_altitude_m.is_some() {
+                format!("{} → {} → {0}", names.label(origin), names.label(target))
+            } else {
+                format!("{} → {}", names.label(origin), names.label(target))
+            },
         ),
     ];
+    if let Some(altitude) = report.pass_altitude_m {
+        rows.push((
+            "Closest pass",
+            format!(
+                "{} km above {}",
+                thousands((altitude / 1_000.0).round()),
+                names.label(target)
+            ),
+        ));
+    }
     if let Some(time) = report.travel_time_s {
         rows.push(("Time of travel", duration_label(time)));
     }
@@ -274,12 +289,7 @@ pub fn arrival_popup_system(
         return;
     }
     let names = names.map(|names| names.clone()).unwrap_or_default();
-    let rows = arrival_rows(
-        flight.report(),
-        flight.voyage.origin,
-        flight.voyage.target,
-        &names,
-    );
+    let rows = arrival_rows(flight.report(), flight.ends().0, flight.ends().1, &names);
     let config = config.map(|config| *config).unwrap_or_default();
     let mut open = true;
     let ctx = contexts.ctx_mut();

@@ -1,5 +1,11 @@
-# The spacecraft `G` cycles through, in order. The first is selected at launch.
+# The spacecraft `R` can launch, in the order the menu lists them.
 # Delete every [[craft]] to fall back to the built-in fleet.
+#
+# Two optional keys go before the first [[craft]]. The menu's spacecraft page sets both, and
+# saving from it writes them here:
+#   selected = "<name>"  the craft `R` launches (default: the first one below)
+#   trip = "land"        what a flight does at its destination: "land" on it (the default), or
+#                        "return" to swing round it without landing and land back where it started
 #
 # Each craft:
 #   name                 shown in the HUD and the arrival pop-up

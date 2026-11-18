@@ -26,7 +26,7 @@ and where a new one would go.
 | `physics_utils/` | Physical constants and closed-form formulas, in `f64`. |
 | `time/` | The two clocks and the `TimeStep` every physics entry point takes. No Bevy import at all. |
 | `projects/` | The simulations, one directory per kind of physics. `interstellar/` holds every experiment so far, the catalog of simulations with each one's settings, and the command-line selection that picks one. |
-| `spacecraft/` | What a craft is, the fleet `G` cycles, planning a flight (the least-energy transfer by default), flying it, and its report. Above `core`, Bevy-free but for `bevy::math`. |
+| `spacecraft/` | What a craft is, the fleet the menu chooses from, the kind of trip (land, or loop round and return), planning a flight (the least-energy transfer by default), flying it, and its report. Above `core`, Bevy-free but for `bevy::math`. |
 | `performance/` | The `RGA_*` switches that trade image quality for frame time (anti-aliasing, floor eclipse, vsync), the frame-time benchmark, and the measurements behind each default. |
 | `config/` | Reads `config/*.toml` at startup into the resources the other layers own: the fleet, camera tuning, crosshair, compass, arrival pop-up, trails, performance switches. Above every other layer, beside `main.rs`. |
 

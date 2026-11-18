@@ -4,7 +4,7 @@
 use super::*;
 use crate::config::files::{CameraFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile};
 use crate::performance::AntiAliasing;
-use crate::spacecraft::{Propulsion, Spacecraft};
+use crate::spacecraft::{Propulsion, Spacecraft, Trip};
 use bevy::input::keyboard::KeyCode;
 
 /// The shipped `config/` directory.
@@ -427,4 +427,55 @@ fn the_save_system_writes_the_requested_page_and_reports_where() {
         .to_string();
     assert!(status.starts_with("Saved"), "{status}");
     assert!(!Config::load(&dir).unwrap().trails.visible);
+}
+
+// ---------------------------------------------------------------------------------------------
+// spacecraft.toml: which craft is selected, and the kind of trip
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn a_fleet_file_with_neither_key_selects_the_first_craft_and_lands() {
+    let fleet = parse(ONE_PROBE, SpacecraftFile::into_runtime).unwrap();
+    assert_eq!(fleet.selected_index(), 0);
+    assert_eq!(fleet.trip(), Trip::Land);
+}
+
+#[test]
+fn a_fleet_file_can_name_the_selected_craft_and_the_trip() {
+    // With no `[[craft]]` the built-in fleet is kept, and the two keys still apply to it.
+    let fleet = parse(
+        "selected = \"Saturn V lander (staged)\"\ntrip = \"return\"",
+        SpacecraftFile::into_runtime,
+    )
+    .unwrap();
+    assert_eq!(fleet.selected(), &Spacecraft::saturn_v_lander());
+    assert_eq!(fleet.trip(), Trip::Return);
+    assert_eq!(fleet.craft(), Fleet::default().craft());
+}
+
+#[test]
+fn a_fleet_file_naming_no_such_craft_or_trip_is_an_error() {
+    let error = parse("selected = \"Nostromo\"", SpacecraftFile::into_runtime).unwrap_err();
+    assert!(
+        error.contains("selected") && error.contains("Nostromo"),
+        "{error}"
+    );
+
+    let error = parse("trip = \"orbit\"", SpacecraftFile::into_runtime).unwrap_err();
+    assert!(error.contains("trip") && error.contains("orbit"), "{error}");
+}
+
+#[test]
+fn the_selected_craft_and_the_trip_save_and_load_back() {
+    let mut fleet = Fleet::default();
+    fleet.select(3);
+    fleet.set_trip(Trip::Return);
+    // Its own directory: `save_and_reload` names one after the file, which the built-in fleet's
+    // test is writing to at the same time.
+    let dir = scratch("save_selected_craft_and_trip");
+    write_file(&dir, SPACECRAFT_FILE, &SpacecraftFile::from_runtime(&fleet)).expect("writes");
+    let reloaded = Config::load(&dir).expect("a saved file loads");
+    assert_eq!(reloaded.fleet, fleet);
+    assert_eq!(reloaded.fleet.selected_index(), 3);
+    assert_eq!(reloaded.fleet.trip(), Trip::Return);
 }

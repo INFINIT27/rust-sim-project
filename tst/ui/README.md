@@ -19,7 +19,7 @@ Tests for the egui overlay, the crosshair, the compass, and the `Esc` menu. See
 | `compass_tests.rs` | The pure `compass_axes` projection: screen mapping, the depth cue's sign, and the yaw/pitch derivations spelled out in comments. |
 | `menu_tests.rs` | 13 tests over the panel's pure content: every settings row present, labelled, and tracking the live resource it reads; the menu listing `Esc`; save requests taken once with their outcome reported; an unchanged edit not marking its resource changed; every anti-aliasing mode labelled; and one crude width check on `MENU_WIDTH_PX`. |
 | `placement_tests.rs` | 9 tests over `placement_rows`: every object gets a row, exactly one is marked, the masses shown are the catalog's, and the longest row fits the panel. |
-| `arrival_tests.rs` | 6 tests over the arrival pop-up's pure content: duration, energy and mass formatting, a crewed landing's rows, no engine rows for a coasting probe, and when the pop-up opens and closes (once per landing). |
+| `arrival_tests.rs` | Tests over the arrival pop-up's pure content: duration, energy and mass formatting, a crewed landing's rows, a rocket's tank rows, a return trip's route and closest pass, no engine rows for a coasting probe, and when the pop-up opens and closes (once per landing). |
 | `proptest-regressions/` | Committed proptest failure seeds. Tool-owned; no `README.md` required. |
 
 ## Nothing here calls a system that paints

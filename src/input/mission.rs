@@ -1,6 +1,7 @@
-//! The rocket's keys: `R` launches one, `G` switches its engine between powered and coasting.
+//! The rocket's key: `R` launches one. Which spacecraft it launches, and whether it lands or
+//! loops round and returns, are chosen on the `Esc` menu's spacecraft page, not by a key.
 //!
-//! This layer only records the requests. [`MissionPlugin`](crate::render::mission::MissionPlugin)
+//! This layer only records the request. [`MissionPlugin`](crate::render::mission::MissionPlugin)
 //! in the render layer plans the transfer and flies it, the same split the object placer uses.
 
 use bevy::app::{App, Plugin, Update};
@@ -11,11 +12,10 @@ use bevy::input::ButtonInput;
 use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::input::menu::MenuState;
 
-/// Whether a launch, or a switch of engine, has been asked for and not yet acted on.
+/// Whether a launch has been asked for and not yet acted on.
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LaunchRequest {
     requested: bool,
-    engine_switch: bool,
 }
 
 impl LaunchRequest {
@@ -32,22 +32,9 @@ impl LaunchRequest {
     pub fn take(&mut self) -> bool {
         std::mem::take(&mut self.requested)
     }
-
-    /// Ask for the engine to switch between powered and coasting.
-    #[inline]
-    pub fn request_engine_switch(&mut self) {
-        self.engine_switch = true;
-    }
-
-    /// Whether an engine switch is waiting, clearing the request. Taken like [`Self::take`].
-    #[inline]
-    pub fn take_engine_switch(&mut self) -> bool {
-        std::mem::take(&mut self.engine_switch)
-    }
 }
 
-/// Bevy system: `R` requests a launch and `G` an engine switch. Inert while the `Esc` menu is open,
-/// like every other key.
+/// Bevy system: `R` requests a launch. Inert while the `Esc` menu is open, like every other key.
 pub fn launch_input_system(
     keys: Res<ButtonInput<KeyCode>>,
     keymap: Option<Res<KeyMap>>,
@@ -60,12 +47,9 @@ pub fn launch_input_system(
     if keymap_or_default(&keymap).just_pressed(&keys, Action::Launch) {
         request.request();
     }
-    if keymap_or_default(&keymap).just_pressed(&keys, Action::NextCraft) {
-        request.request_engine_switch();
-    }
 }
 
-/// Plugin that inserts [`LaunchRequest`] and binds `R` and `G`.
+/// Plugin that inserts [`LaunchRequest`] and binds `R`.
 pub struct LaunchInputPlugin;
 
 impl Plugin for LaunchInputPlugin {

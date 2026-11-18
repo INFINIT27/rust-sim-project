@@ -15,6 +15,14 @@
 //!   tanks by the rocket equation, and gets only the speed change they hold. Its landing is
 //!   planned on the weakest stage it will brake on. When the last tank is empty the flight is
 //!   [`Phase::Dry`]: no burns, no corrections, moved by gravity until it hits something.
+//!
+//! A flight that lands at its destination is one leg. A **return trip** ([`Trip::Return`]) is
+//! four ([`Leg`]): out; a pass of the destination, turned onto where a landing would begin
+//! ([`crate::spacecraft::guidance::swing_by`]); a wait, as it leaves, for the way back to be planned
+//! ([`Flight::needs_return_plan`], [`Flight::begin_return`]); and the way back, which ends in the
+//! same landing law on the body the flight started from. A powered craft's state is kept relative
+//! to its target, so the target changing from the body passed to the body gone home to is where
+//! [`Flight::begin_return`] moves it from one to the other.
 
 use bevy::math::DVec3;
 
@@ -25,13 +33,13 @@ use crate::core::transfer::{
     physical_radius_m, segment_entry, to_metres, to_units, Flyby, TransferPlan, Voyage,
 };
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
-use crate::spacecraft::config::{Propulsion, Spacecraft};
+use crate::spacecraft::config::{Propulsion, Spacecraft, Trip};
 use crate::spacecraft::constants::{
     BURN_DONE_M_S, CORRECTION_FIRST_FRACTION, CORRECTION_MIN_REMAINING_S, CRUISE_STEP_FRACTION,
     DEPARTURE_BURN_STEPS, LANDING_LOOKAHEAD_FACTOR, LANDING_START_BRAKING_DISTANCES,
-    LANDING_START_RADII, POWERED_MIN_SUBSTEP_S,
+    LANDING_START_RADII, POWERED_MIN_SUBSTEP_S, SWING_BY_PERIAPSIS_RADII,
 };
-use crate::spacecraft::guidance::{braking_m_s2, match_velocity, steer, Law, Sighting};
+use crate::spacecraft::guidance::{braking_m_s2, match_velocity, steer, swing_by, Law, Sighting};
 use crate::spacecraft::plan::FlightPlan;
 use crate::spacecraft::report::FlightReport;
 use crate::spacecraft::rocket::Rocket;
@@ -108,6 +116,34 @@ pub struct Flight {
     /// The rocket, for a craft that carries its propellant: what is left in its tanks, which stage
     /// is burning, and so what it weighs and how hard it can push now.
     rocket: Option<Rocket>,
+    /// What the flight does at its destination.
+    trip: Trip,
+    /// The body the flight left from: where a return trip lands.
+    home: BodyId,
+    /// The body the flight set out for: where a landing lands, and what a return trip swings round.
+    destination: BodyId,
+    /// Which part of the trip the flight is on.
+    leg: Leg,
+    /// When the current leg began, on the scene's clock: the correction schedule counts from it.
+    leg_started_s: f64,
+}
+
+/// Which part of its trip a flight is on. A landing is [`Leg::Outbound`] all the way; a
+/// [`Trip::Return`] goes through each in turn.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Leg {
+    /// Flying out to the destination.
+    Outbound,
+    /// Swinging round the destination, from the turn onto the pass until it has left again.
+    /// `entered_m` is how far from the body's centre it turned in.
+    Passing { entered_m: f64 },
+    /// Past the destination and leaving it, with the way back not planned yet. The mission plans
+    /// it ([`crate::spacecraft::plan_return`]) and hands it to [`Flight::begin_return`].
+    AwaitingReturn,
+    /// Flying back to land where it started.
+    Return,
+    /// No way back was found. The craft coasts on with nothing to aim at.
+    Adrift,
 }
 
 impl Flight {
@@ -167,6 +203,7 @@ impl Flight {
             _ => Phase::Direct,
         };
         report.record_speed(to_metres(plan.transfer.velocity_units_s).length());
+        let trip = plan.trip;
         let voyage = Voyage::launch(scene, craft.prop(), origin, target, plan.transfer, now_s);
         Flight {
             voyage,
@@ -177,7 +214,85 @@ impl Flight {
             relative_velocity_m_s,
             last_correction_s: None,
             rocket,
+            trip,
+            home: origin,
+            destination: target,
+            leg: Leg::Outbound,
+            leg_started_s: now_s,
         }
+    }
+
+    /// What the flight does at its destination.
+    pub fn trip(&self) -> Trip {
+        self.trip
+    }
+
+    /// Which part of the trip the flight is on.
+    pub fn leg(&self) -> Leg {
+        self.leg
+    }
+
+    /// The body the flight left from, and the one it set out for. A return trip lands on the
+    /// first; `voyage.target` is whichever of the two it is flying toward now.
+    pub fn ends(&self) -> (BodyId, BodyId) {
+        (self.home, self.destination)
+    }
+
+    /// What the flight is doing, for the status line: the phase's own label, or the part of a
+    /// return trip it is on.
+    pub fn doing(&self) -> &'static str {
+        match (self.leg, self.phase) {
+            (_, Phase::Dry | Phase::Landed) => self.phase.label(),
+            (Leg::Passing { .. }, Phase::Correction { .. }) => "turning onto the pass",
+            (Leg::Passing { .. }, _) => "swinging round",
+            (Leg::AwaitingReturn, _) => "leaving, the way back not planned yet",
+            (Leg::Return, Phase::Correction { .. }) if self.last_correction_s.is_none() => {
+                "return burn"
+            }
+            (Leg::Return, Phase::Cruise) => "cruising back",
+            (Leg::Adrift, _) => "no way back found, drifting",
+            _ => self.phase.label(),
+        }
+    }
+
+    /// Whether the craft has swung round its destination and is waiting for the way back: the
+    /// mission then plans it with [`crate::spacecraft::plan_return`] and calls
+    /// [`begin_return`](Self::begin_return).
+    pub fn needs_return_plan(&self) -> bool {
+        self.leg == Leg::AwaitingReturn
+    }
+
+    /// Start the way back on `plan`, from [`crate::spacecraft::plan_return`]: burn toward its
+    /// velocity, cruise with corrections, and land where the flight started. With no plan the
+    /// craft is [`Leg::Adrift`]. Does nothing unless the flight is waiting for one.
+    ///
+    /// From here the flight's target is its home. The craft's true state is kept relative to its
+    /// target, so it is moved from the body it passed to the body it is going back to.
+    pub fn begin_return(&mut self, scene: &Scene, plan: Option<TransferPlan>, now_s: f64) {
+        if self.leg != Leg::AwaitingReturn {
+            return;
+        }
+        let (Some(plan), Some(passed), Some(home)) =
+            (plan, scene.get(self.voyage.target), scene.get(self.home))
+        else {
+            self.leg = Leg::Adrift;
+            return;
+        };
+        self.relative_m += to_metres(passed.body.center() - home.body.center());
+        self.relative_velocity_m_s += to_metres(passed.velocity_units_s - home.velocity_units_s);
+        self.voyage.origin = self.voyage.target;
+        self.voyage.target = self.home;
+        self.voyage.arrival_at_s = now_s + plan.flight_seconds;
+        self.voyage.flybys.clear();
+        self.leg = Leg::Return;
+        self.leg_started_s = now_s;
+        self.last_correction_s = None;
+        if self.phase == Phase::Cruise {
+            self.phase = Phase::Correction {
+                goal_velocity_m_s: to_metres(plan.velocity_units_s),
+            };
+        }
+        self.voyage.planned_path_units = plan.path_units;
     }
 
     /// The rocket as it stands now, for a craft that carries its propellant.
@@ -215,8 +330,9 @@ impl Flight {
     pub fn next_correction_at(&self) -> Option<f64> {
         match self.phase {
             Phase::Coasting => self.voyage.next_correction_at(),
-            Phase::Cruise => {
-                let (launched, arrival) = (self.voyage.launched_at_s, self.voyage.arrival_at_s);
+            // Only on a leg with something to aim at: not during a pass, nor adrift.
+            Phase::Cruise if matches!(self.leg, Leg::Outbound | Leg::Return) => {
+                let (launched, arrival) = (self.leg_started_s, self.voyage.arrival_at_s);
                 let next = match self.last_correction_s {
                     None => launched + CORRECTION_FIRST_FRACTION * (arrival - launched),
                     Some(last) => last + 0.5 * (arrival - last),
@@ -322,6 +438,8 @@ impl Flight {
         let target_radius = physical_radius_m(target_prop);
         let target_mu = GRAVITATIONAL_CONSTANT * f64::from(target_prop.mass_kg);
         let (target_start, target_velocity) = moving(target_index);
+        // Where the flight started, for a return trip's pass to turn back toward.
+        let home_state = scene.iter().position(|(id, _)| id == self.home).map(moving);
         let others: Vec<Neighbour> = scene
             .iter()
             .enumerate()
@@ -399,15 +517,72 @@ impl Flight {
             // distance, or within a few of the target's radii, whichever is further: there the
             // landing law takes over the aiming too, as terminal guidance, and removes what drift
             // the last correction left before the target's gravity amplifies it.
-            if self.phase == Phase::Cruise {
+            //
+            // A return trip does not land at its destination. At the same point it turns onto a
+            // pass instead: a burn that keeps its speed and changes its heading, so that it
+            // swings round the body at `SWING_BY_PERIAPSIS_RADII` (see `guidance::swing_by`).
+            if self.phase == Phase::Cruise && matches!(self.leg, Leg::Outbound | Leg::Return) {
                 let surface_m = (relative.length() - target_radius).max(0.0);
-                let braking_distance =
-                    relative_velocity.length_squared() / (2.0 * braking.max(f64::MIN_POSITIVE));
-                if surface_m
-                    <= (LANDING_START_BRAKING_DISTANCES * braking_distance)
+                let passing = self.trip == Trip::Return && self.leg == Leg::Outbound;
+                let start_m = if braking > 0.0 || passing {
+                    let braking_distance =
+                        relative_velocity.length_squared() / (2.0 * braking.max(f64::MIN_POSITIVE));
+                    (LANDING_START_BRAKING_DISTANCES * braking_distance)
                         .max(LANDING_START_RADII * target_radius)
+                } else {
+                    // An engine that cannot hold the craft up against this body's gravity (only a
+                    // rocket arrives with one) cannot land softly, and the landing law, started
+                    // from far out, would stop it there and let it sink for weeks. It brakes as
+                    // late as its propellant allows instead: over the distance it covers while
+                    // it burns what is left. Then it is dry, and falls the rest of the way.
+                    let burn_left_s = self.rocket.as_ref().map_or(0.0, |rocket| {
+                        rocket.delta_v_left_m_s() / accel.max(f64::MIN_POSITIVE)
+                    });
+                    relative_velocity.length() * burn_left_s
+                };
+                if surface_m <= start_m {
+                    if passing {
+                        let (home_m, home_velocity) = home_state
+                            .map_or((-target_now, -target_velocity), |(start, velocity)| {
+                                (start + velocity * tau - target_now, velocity)
+                            });
+                        let turned = swing_by(
+                            relative,
+                            relative_velocity,
+                            target_mu,
+                            SWING_BY_PERIAPSIS_RADII * target_radius,
+                            home_m,
+                            target_velocity - home_velocity,
+                        );
+                        self.phase = Phase::Correction {
+                            goal_velocity_m_s: target_velocity + turned,
+                        };
+                        self.leg = Leg::Passing {
+                            entered_m: relative.length(),
+                        };
+                        self.report.pass_altitude_m = Some(relative.length() - target_radius);
+                    } else {
+                        self.phase = Phase::Landing;
+                    }
+                }
+            }
+            // A craft on its pass has left once it is moving away and is as far out as it turned
+            // in. From there the way back can be planned.
+            if let Leg::Passing { entered_m } = self.leg {
+                let distance = relative.length();
+                let altitude = distance - target_radius;
+                if self
+                    .report
+                    .pass_altitude_m
+                    .is_none_or(|closest| altitude < closest)
                 {
-                    self.phase = Phase::Landing;
+                    self.report.pass_altitude_m = Some(altitude);
+                }
+                if self.phase == Phase::Cruise
+                    && distance >= entered_m
+                    && relative.dot(relative_velocity) > 0.0
+                {
+                    self.leg = Leg::AwaitingReturn;
                 }
             }
 

@@ -265,7 +265,7 @@ pub struct ExperimentSpec {
     /// which also widens the sample spacing to match.
     pub trail_length_units: Option<f32>,
     /// Whether `R` launches a spacecraft in this experiment. Which spacecraft is the user's choice
-    /// (the [`Fleet`](crate::spacecraft::Fleet) `G` cycles), not the experiment's; an experiment only
+    /// (chosen from the [`Fleet`](crate::spacecraft::Fleet) in the menu), not the experiment's; an experiment only
     /// says whether flying makes sense in it. The size-comparison ruler says no, since nothing in it
     /// is meant to move.
     pub launches: bool,

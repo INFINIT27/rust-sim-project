@@ -53,7 +53,7 @@ use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::projects::interstellar::catalog::ExperimentSpec;
 use crate::render::mission::Mission;
 use crate::render::trail::TrailConfig;
-use crate::spacecraft::{Fleet, Propulsion};
+use crate::spacecraft::{Fleet, Propulsion, Trip};
 use crate::time::simulation::SimulationClock;
 use crate::ui::arrival::ArrivalPopupConfig;
 use crate::ui::compass::CompassConfig;
@@ -770,6 +770,44 @@ fn spacecraft_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     let mut fleet = mission.fleet.clone();
     let selected = fleet.selected_index();
     let mut select = None;
+
+    // What the next `R` launches: which craft, and what it does at the destination. Both used to
+    // need a key (`G`) or did not exist; they are settings, so they live here.
+    let mut trip = fleet.trip();
+    settings_grid(ui, "menu_next_launch", |ui| {
+        ui.label("Spacecraft");
+        egui::ComboBox::from_id_source("menu_selected_craft")
+            .selected_text(fleet.selected().name.clone())
+            .show_ui(ui, |ui| {
+                for (index, craft) in fleet.craft().iter().enumerate() {
+                    if ui
+                        .selectable_label(index == selected, &craft.name)
+                        .clicked()
+                    {
+                        select = Some(index);
+                    }
+                }
+            });
+        ui.end_row();
+        ui.label("Trip");
+        egui::ComboBox::from_id_source("menu_trip")
+            .selected_text(trip.label())
+            .show_ui(ui, |ui| {
+                for kind in Trip::ALL {
+                    ui.selectable_value(&mut trip, kind, kind.label());
+                }
+            });
+        ui.end_row();
+    });
+    fleet.set_trip(trip);
+    ui.label(
+        egui::RichText::new(
+            "A trip that returns swings round the destination without landing and lands back \
+             where it started. Only a craft that flies the least-energy transfer can.",
+        )
+        .weak(),
+    );
+    ui.separator();
     for (index, craft) in fleet.craft_mut().iter_mut().enumerate() {
         egui::CollapsingHeader::new(&craft.name)
             .id_source(("menu_craft", index))

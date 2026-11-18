@@ -79,20 +79,12 @@ fn press_r(app: &mut App) {
     tick(app);
 }
 
-fn press_g(app: &mut App) {
-    app.world_mut()
-        .resource_mut::<LaunchRequest>()
-        .request_engine_switch();
-    tick(app);
-}
-
 /// The built-in fleet's order: see `Fleet::default`.
 const CREWED: usize = 0;
 const DIRECT: usize = 1;
 const COASTING: usize = 2;
 
-/// Select craft `index` of the fleet directly. Not with `G`: a press is a frame, which would move
-/// the planets away from crosshair targets already spawned. `G` itself has its own test.
+/// Select craft `index` of the fleet directly, as the menu does.
 fn select(app: &mut App, index: usize) {
     assert!(app
         .world_mut()
@@ -399,7 +391,9 @@ fn an_out_of_reach_target_says_why_and_what_it_would_take() {
 }
 
 #[test]
-fn g_cycles_through_the_fleet_and_the_crewed_transfer_is_the_default() {
+fn the_status_line_names_the_craft_and_trip_chosen_in_the_menu() {
+    // Both are settings on the menu's spacecraft page, which edits the mission's fleet. No key
+    // changes either.
     let mut app = app_for(solar_system());
     let earth = named(&app, "Earth");
     spawn_targets(&mut app, &[earth]);
@@ -410,22 +404,100 @@ fn g_cycles_through_the_fleet_and_the_crewed_transfer_is_the_default() {
         CREWED,
         "the crewed transfer is the default"
     );
+    assert_eq!(
+        app.world().resource::<Mission>().fleet.trip(),
+        crate::spacecraft::Trip::Land,
+        "and it lands"
+    );
 
     aim_at(&mut app, earth);
     press_r(&mut app);
-    for step in 0..=fleet.craft().len() {
-        let expected = &fleet.craft()[step % fleet.craft().len()].name;
-        let status = app
-            .world()
-            .resource::<Mission>()
-            .status_line(0.0, &names)
-            .unwrap();
-        assert!(
-            status.contains(&format!("({expected}; G switches)")),
-            "{status}"
-        );
-        press_g(&mut app);
+    for (index, craft) in fleet.craft().iter().enumerate() {
+        select(&mut app, index);
+        for (trip, says) in [
+            (crate::spacecraft::Trip::Land, "lands there"),
+            (crate::spacecraft::Trip::Return, "loops round and returns"),
+        ] {
+            app.world_mut()
+                .resource_mut::<Mission>()
+                .fleet
+                .set_trip(trip);
+            let status = app
+                .world()
+                .resource::<Mission>()
+                .status_line(0.0, &names)
+                .unwrap();
+            assert!(
+                status.contains(&format!(
+                    "({}; {says}; the Esc menu changes both)",
+                    craft.name
+                )),
+                "{status}"
+            );
+        }
     }
+}
+
+#[test]
+fn a_return_trip_flown_through_the_app_loops_round_the_moon_and_lands_on_earth() {
+    let mut app = app_for(solar_system());
+    let (earth, moon) = (named(&app, "Earth"), named(&app, "Moon"));
+    spawn_targets(&mut app, &[earth, moon]);
+    app.world_mut()
+        .resource_mut::<Mission>()
+        .fleet
+        .set_trip(crate::spacecraft::Trip::Return);
+    aim_at(&mut app, earth);
+    press_r(&mut app);
+    aim_at(&mut app, moon);
+    press_r(&mut app);
+    let names = app.world().resource::<BodyNames>().clone();
+
+    let started = std::time::Instant::now();
+    let mut planned_the_way_back = false;
+    let mut route_shown = false;
+    loop {
+        let mission = app.world().resource::<Mission>();
+        match &mission.phase {
+            MissionPhase::Landed { flight, .. } => {
+                assert_eq!(flight.voyage.target, earth, "it came down on Earth");
+                assert_eq!(flight.ends(), (earth, moon));
+                let report = flight.report();
+                let touchdown = report.touchdown_speed_m_s.expect("it touched down");
+                assert!(touchdown <= 15.0, "landed at {touchdown:.1} m/s");
+                let altitude = report.pass_altitude_m.expect("it passed the Moon");
+                assert!(altitude > 0.0, "it did not touch the Moon: {altitude}");
+                let status = mission.status_line(0.0, &names).unwrap();
+                assert!(status.contains("Earth → Moon → Earth"), "{status}");
+                break;
+            }
+            MissionPhase::Correcting { flight, .. } => {
+                if flight.needs_return_plan() {
+                    planned_the_way_back = true;
+                    let status = mission.status_line(0.0, &names).unwrap();
+                    assert!(status.contains("planning the way back"), "{status}");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            MissionPhase::Planning { .. } => {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            MissionPhase::Cruise(_) => {
+                let status = mission.status_line(0.0, &names).unwrap();
+                route_shown |= status.contains("Earth → Moon → Earth");
+            }
+            _ => panic!("the voyage ended without landing"),
+        }
+        assert!(started.elapsed().as_secs() < 300, "never landed");
+        tick(&mut app);
+    }
+    assert!(planned_the_way_back, "the way back was planned in flight");
+    assert!(route_shown, "the status line shows the whole route");
+    assert_eq!(
+        app.world().resource::<SimulationClock>().scale(),
+        experiment_scale(),
+        "the clock is back to its own scale"
+    );
 }
 
 #[test]

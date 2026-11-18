@@ -34,9 +34,8 @@ view, so you will see the Sun and the orbit trails. Fly toward a planet to see i
 | `C` | Cycle camera speed (normal, fast, slow) |
 | `F`, then mouse / scroll | Lock onto the body at the crosshair, orbit it, zoom in/out |
 | `R`, then `R` | Rocket: aim at the departure body and press `R`, then at the destination and press `R`. It flies under real gravity and its path is drawn |
-| `G` | Pick the next spacecraft in the fleet: by default crewed transfer, full thrust, coasting probe, staged Saturn V lander; see below |
 | `P` / `]` / `[` | Pause, or double/halve the time scale |
-| `Esc` | Close a pop-up, or open the menu: settings (rebind any key, video), configuration, exit |
+| `Esc` | Close a pop-up, or open the menu: settings (rebind any key, video), configuration (including which spacecraft `R` launches and the kind of trip; see below), exit |
 | `Cmd`-`Q` / `Alt`-`F4` | Quit |
 
 ### The spacecraft
@@ -50,7 +49,19 @@ Moon takes about 4.6 days, Earth to Mars about 17 months, Earth to Neptune 17 ye
 a pop-up shows the time of travel, top speed, speed change, engine time, energy and propellant
 used, peak g, and touchdown speed.
 
-`G` cycles through the rest of the fleet. The built-in fleet also has the same ship at
+Two things about the next launch are chosen in the menu, under `Esc` > Configuration >
+Spacecraft, and saved to `config/spacecraft.toml` from there:
+
+- **Which spacecraft** `R` launches. (This used to be the `G` key.)
+- **The kind of trip.** *Land on the destination*, as above, or *loop round the destination and
+  return*: the craft flies out the same way, but instead of landing it turns onto a pass one
+  radius above the surface, swings round the far side, burns onto the cheapest way back, and
+  lands where it started. Earth, round the Moon, and back to Earth takes `7.4` days and
+  `27.4 km/s`: more than landing on the Moon, because there is no atmosphere here to brake in and
+  all of Earth's gravity has to be braked against under power. Only a craft that flies the
+  least-energy transfer can fly it.
+
+The built-in fleet also has the same ship at
 **full thrust** (`178 g`, uncrewed), which burns straight at the target, flips, and brakes
 (Mercury to Jupiter in 13 hours at 12% of light speed), and a **coasting probe** that leaves at
 up to Voyager 2's `15.4 km/s` and can use gravity assists.
@@ -64,7 +75,10 @@ its tank is empty. It carries `19.4 km/s` of speed change in all. Earth to the M
 (`cargo run --release -- earth-moon`) takes `18.5 km/s` of it and lands with about `1.4 t` of
 propellant left. If the tanks empty first, the engine is out and the craft glides: it coasts on
 under gravity and hits whatever is in its way. The status line shows the stage burning, the mass,
-and the propellant and speed change left.
+and the propellant and speed change left. It can start the return trip but not finish it. It loops round the Moon and comes home, then
+runs dry braking and hits Earth at `8.8 km/s`: the trip takes `30.4 km/s` and it carries `19.4`.
+Its last stage is a lunar lander, whose `3.6 m/s²` could not hold it up against Earth's
+`9.8 m/s²` in any case. A real crew comes home through the atmosphere, which is not modelled.
 
 The craft are plain data (`src/spacecraft/config.rs`), and the fleet is read from
 `config/spacecraft.toml` at launch: edit it to change a craft or add your own.

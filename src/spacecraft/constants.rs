@@ -619,3 +619,20 @@ pub const LANDING_START_RADII: f64 = 20.0;
 /// plans on a weaker stage than the landing will reach, so it brakes earlier and more gently than
 /// it needs to and loses more to gravity.
 pub const LANDING_LOOKAHEAD_FACTOR: f64 = 2.0;
+
+/// How far from a body's centre a return trip swings round it, in the body's radii.
+///
+/// **Why this value.** Two: one radius above the surface, `1,737 km` over the Moon. A return trip
+/// turns onto its pass at the point a landing would begin (see [`LANDING_START_RADII`]) and is
+/// aimed there by a two-body estimate ([`crate::spacecraft::guidance::swing_by`]), so the pass needs room
+/// for that estimate's error. It also has to stay clear of the scene's gravitational softening,
+/// which is `1,000 km` in the Earth–Moon scene and would blunt a pass much lower. Apollo 13 passed
+/// `254 km` up, about `1.15` radii, on a path planned far more finely than this one.
+///
+/// **Used by.** [`crate::spacecraft::flight`], for a [`crate::spacecraft::Trip::Return`].
+///
+/// **If you change it.** Lower bends the path more (at the Moon, `2` radii turns it about `90°`)
+/// and risks grazing the surface. Higher bends it less, so the burn onto the way back grows.
+/// Above [`LANDING_START_RADII`] the craft is already inside it when it turns and does not turn
+/// at all.
+pub const SWING_BY_PERIAPSIS_RADII: f64 = 2.0;

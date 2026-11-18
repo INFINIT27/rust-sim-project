@@ -21,7 +21,7 @@ use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::constants::{CRAFT_COLOR, CRAFT_RADIUS_M, LAUNCH_ALTITUDE_M};
-use crate::spacecraft::{Engine, Fleet, Propulsion, Spacecraft, Stage};
+use crate::spacecraft::{Engine, Fleet, Propulsion, Spacecraft, Stage, Trip};
 use crate::ui::arrival::ArrivalPopupConfig;
 use crate::ui::compass::CompassConfig;
 use crate::ui::crosshair::CrosshairConfig;
@@ -401,11 +401,18 @@ impl PerformanceFile {
 // spacecraft.toml
 // ---------------------------------------------------------------------------------------------
 
-/// `spacecraft.toml`: the fleet, in the order `G` cycles through it. The first craft is selected
-/// at launch. A file with no `[[craft]]` entries keeps the built-in fleet.
+/// `spacecraft.toml`: the fleet, in the order the menu lists it, which craft `R` launches, and
+/// what kind of trip it flies. A file with no `[[craft]]` entries keeps the built-in fleet.
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct SpacecraftFile {
+    /// The name of the craft `R` launches. Optional: the first craft when left out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected: Option<String>,
+    /// What a flight does at its destination: `"land"`, or `"return"` to swing round it and come
+    /// back. Optional: `"land"` when left out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trip: Option<String>,
     /// One `[[craft]]` table per spacecraft.
     pub craft: Vec<CraftFile>,
 }
@@ -580,6 +587,27 @@ impl SpacecraftFile {
     /// The [`Fleet`] this file describes (the built-in one when it lists no craft), or a message
     /// naming the craft that is not valid.
     pub fn into_runtime(self) -> Result<Fleet, String> {
+        let trip = match &self.trip {
+            None => Trip::default(),
+            Some(name) => Trip::from_name(name)
+                .ok_or_else(|| format!("`trip` must be \"land\" or \"return\", not {name:?}"))?,
+        };
+        let selected = self.selected.clone();
+        let mut fleet = self.fleet()?;
+        fleet.set_trip(trip);
+        if let Some(name) = selected {
+            let index = fleet
+                .craft()
+                .iter()
+                .position(|craft| craft.name == name)
+                .ok_or_else(|| format!("`selected` names no craft in the fleet: {name:?}"))?;
+            fleet.select(index);
+        }
+        Ok(fleet)
+    }
+
+    /// The craft this file lists, as a fleet with its first craft selected.
+    fn fleet(self) -> Result<Fleet, String> {
         if self.craft.is_empty() {
             return Ok(Fleet::default());
         }
@@ -700,6 +728,8 @@ impl SpacecraftFile {
     /// The file that describes `fleet`, for saving.
     pub fn from_runtime(fleet: &Fleet) -> Self {
         Self {
+            selected: Some(fleet.selected().name.clone()),
+            trip: Some(fleet.trip().name().to_string()),
             craft: fleet.craft().iter().map(CraftFile::from_runtime).collect(),
         }
     }

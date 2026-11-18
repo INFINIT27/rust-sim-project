@@ -3,12 +3,14 @@
 //! `R` (see [`crate::input::mission`]) with the crosshair on a body picks it as the **origin**. A
 //! second `R` on another body picks the **destination** and launches. `R` on the origin again
 //! cancels. Picking uses the same crosshair test as the camera lock (`F`), so whatever `F` would
-//! lock onto, `R` can fly between, including objects placed with `B`. `G` selects the next
-//! spacecraft in the [`Mission`]'s [`Fleet`]; the crewed least-energy transfer is the default.
+//! lock onto, `R` can fly between, including objects placed with `B`. Which spacecraft flies, and
+//! whether it lands or loops round the destination and returns ([`Trip`]), are settings of the
+//! [`Mission`]'s [`Fleet`], chosen on the `Esc` menu's spacecraft page; the crewed least-energy
+//! transfer, landing, is the default.
 //!
 //! A flight then goes:
 //!
-//! 1. **Plan.** [`plan_flight`] runs on a background task against a snapshot of the scene, with
+//! 1. **Plan.** [`plan_trip`] runs on a background task against a snapshot of the scene, with
 //!    the simulation clock held. It takes milliseconds for a direct flight, seconds for a
 //!    transfer, and can take minutes for a coasting probe to an outer planet; `R` cancels it. The
 //!    snapshot is then still the present when the plan comes back, and the camera stays live.
@@ -20,7 +22,12 @@
 //! 3. **Correct.** At the times [`Flight::next_correction_at`] gives, [`plan_correction_for`] re-aims
 //!    from where the craft really is, again on a held clock. A coasting craft takes the burn at
 //!    once; a transfer burns toward it at up to its acceleration.
-//! 4. **Land.** At touchdown the craft leaves the scene, a ring rides on the target's surface where
+//! 4. **Return**, for a [`Trip::Return`] only. The flight turns onto a pass of the destination
+//!    instead of landing. Once it has swung round and is leaving ([`Flight::needs_return_plan`]),
+//!    [`plan_return`] plans the way back from where the craft is, on a held clock like a
+//!    correction, and [`Flight::begin_return`] starts it. Steps 2 and 3 then repeat toward the
+//!    body the flight started from.
+//! 5. **Land.** At touchdown the craft leaves the scene, a ring rides on the target's surface where
 //!    it came down, and the flight's [`FlightReport`](crate::spacecraft::FlightReport) is complete
 //!    for the arrival pop-up ([`crate::ui::arrival`]). A craft is far below what `f32` can add to any
 //!    body it lands on, so the landing is an inelastic merge with the arithmetic left out.
@@ -52,8 +59,8 @@ use crate::render::constants::{
 };
 use crate::render::plugin::MirroredBody;
 use crate::spacecraft::{
-    plan_correction_for, plan_flight, Fleet, Flight, FlightPlan, NoFlight, Phase, Propulsion,
-    Spacecraft,
+    plan_correction_for, plan_return, plan_trip, Fleet, Flight, FlightPlan, NoFlight, Phase,
+    Propulsion, Spacecraft, Trip,
 };
 use crate::time::simulation::{SimulationClock, TimeStep};
 
@@ -103,7 +110,8 @@ pub struct Mission {
     pub phase: MissionPhase,
     /// The clock scale before a short flight slowed it, to put back on arrival.
     pub restore_scale: Option<f32>,
-    /// The spacecraft `R` can launch; `G` selects the next. Built-in by default (see
+    /// The spacecraft `R` can launch, which one is selected, and the kind of trip: all chosen on
+    /// the menu's spacecraft page. Built-in by default (see
     /// [`Fleet::default`]); anything that edits it, such as a settings menu, changes the next launch.
     pub fleet: Fleet,
 }
@@ -174,10 +182,13 @@ impl Mission {
             format!("{} → {}", names.label(origin), names.label(target))
         };
         // The whole route a flight flies, with each planet it passes for an assist in between.
+        // A return trip ends where it began.
         let flight_route = |flight: &Flight| {
-            std::iter::once(flight.voyage.origin)
+            let (home, destination) = flight.ends();
+            std::iter::once(home)
                 .chain(flight.voyage.plan_flybys.iter().map(|flyby| flyby.body))
-                .chain([flight.voyage.target])
+                .chain([destination])
+                .chain((flight.trip() == Trip::Return).then_some(home))
                 .map(|id| names.label(id))
                 .collect::<Vec<_>>()
                 .join(" → ")
@@ -217,10 +228,10 @@ impl Mission {
                         "rocket {}: {}, {progress}, Δv {:.2} km/s so far, peak {:.1} km/s \
                          ({:.2}% of c){tanks}",
                         flight_route(flight),
-                        if doing == "planning a correction" && phase != Phase::Dry {
+                        if doing.starts_with("planning") && phase != Phase::Dry {
                             doing
                         } else {
-                            phase.label()
+                            flight.doing()
                         },
                         report.delta_v_m_s / 1_000.0,
                         report.max_speed_m_s / 1_000.0,
@@ -233,9 +244,13 @@ impl Mission {
         Some(match &self.phase {
             MissionPhase::Idle => return None,
             MissionPhase::Choosing { origin } => format!(
-                "rocket from {} ({selected}; G switches): aim at the destination and press R (R on \
-                 {0} cancels)",
-                names.label(*origin)
+                "rocket from {} ({selected}; {}; the Esc menu changes both): aim at the \
+                 destination and press R (R on {0} cancels)",
+                names.label(*origin),
+                match self.fleet.trip() {
+                    Trip::Land => "lands there",
+                    Trip::Return => "loops round and returns",
+                }
             ),
             MissionPhase::Requested { origin, target } => {
                 format!(
@@ -262,7 +277,14 @@ impl Mission {
                 ),
             },
             MissionPhase::Cruise(flight) => flying(flight, "cruising"),
-            MissionPhase::Correcting { flight, .. } => flying(flight, "planning a correction"),
+            MissionPhase::Correcting { flight, .. } => flying(
+                flight,
+                if flight.needs_return_plan() {
+                    "planning the way back"
+                } else {
+                    "planning a correction"
+                },
+            ),
             MissionPhase::Landed {
                 flight,
                 landed_after_s,
@@ -337,15 +359,20 @@ fn why_not(reason: &NoFlight, names: &BodyNames, origin: BodyId, target: BodyId)
             acceleration_m_s2,
         } => format!(
             "{}'s surface gravity is {:.1} g, more than this craft's {:.1} g can lift off from or land \
-             against (G picks another craft)",
+             against (the Esc menu picks another craft)",
             names.label(*body),
             gravity_m_s2 / STANDARD_GRAVITY_M_S2,
             acceleration_m_s2 / STANDARD_GRAVITY_M_S2
         ),
         NoFlight::NoArc => format!(
-            "no coasting arc to {} converged from where the planets are now (G picks another craft)",
+            "no coasting arc to {} converged from where the planets are now (the Esc menu picks \
+             another craft)",
             names.label(target)
         ),
+        NoFlight::NoReturnTrip => "this craft cannot loop round a body and return: only one that \
+                                   flies the least-energy transfer can (the Esc menu picks another \
+                                   craft, or a trip that lands)"
+            .into(),
     }
 }
 
@@ -362,7 +389,7 @@ pub fn span(seconds: f64) -> String {
     }
 }
 
-/// Bevy system: `G` selects the next spacecraft, and an `R` press picks the body nearest the
+/// Bevy system: an `R` press picks the body nearest the
 /// crosshair as the origin or destination, or cancels a plan that is still being searched for.
 ///
 /// Presses with nothing near the crosshair, or while a craft is flying, are dropped.
@@ -372,9 +399,6 @@ pub fn pick_route_system(
     camera: Query<&Transform, With<Camera3d>>,
     bodies: Query<(Entity, &Transform, &MirroredBody), With<CameraTarget>>,
 ) {
-    if request.take_engine_switch() {
-        mission.fleet.select_next();
-    }
     if !request.take() {
         return;
     }
@@ -428,7 +452,14 @@ pub fn mission_system(
             MissionPhase::Planning {
                 origin,
                 target,
-                task: spawn_plan(&scene, craft.clone(), origin, target, Arc::clone(&progress)),
+                task: spawn_plan(
+                    &scene,
+                    craft.clone(),
+                    origin,
+                    target,
+                    fleet.trip(),
+                    Arc::clone(&progress),
+                ),
                 progress,
                 craft,
             }
@@ -482,6 +513,21 @@ pub fn mission_system(
             restore(&mut clock, restore_scale);
             MissionPhase::Idle
         }
+        // A return trip that has swung round its destination needs its way back planned, on a
+        // held clock like a correction. It rides in the same `Correcting` phase: the task has
+        // the same shape, and the flight knows which of the two it asked for.
+        MissionPhase::Cruise(flight) if flight.needs_return_plan() => {
+            clock.hold();
+            MissionPhase::Correcting {
+                task: spawn_return(
+                    &scene,
+                    flight.voyage.craft,
+                    flight.voyage.target,
+                    flight.ends().0,
+                ),
+                flight,
+            }
+        }
         // A frame can step past the planned arrival while a correction is still due: at a fast
         // clock one frame is many hours, more than the last correction's lead. A correction then
         // has no time left to plan for, so the slot is skipped and the craft carries on.
@@ -514,7 +560,11 @@ pub fn mission_system(
             None => MissionPhase::Correcting { flight, task },
             Some(fix) => {
                 clock.release();
-                flight.apply_correction(&mut scene, fix, now);
+                if flight.needs_return_plan() {
+                    flight.begin_return(&scene, fix, now);
+                } else {
+                    flight.apply_correction(&mut scene, fix, now);
+                }
                 MissionPhase::Cruise(flight)
             }
         },
@@ -544,11 +594,19 @@ fn spawn_plan(
     craft: Spacecraft,
     origin: BodyId,
     target: BodyId,
+    trip: Trip,
     progress: Arc<PlanProgress>,
 ) -> PlanTask {
     let scene = scene.clone();
     AsyncComputeTaskPool::get()
-        .spawn(async move { plan_flight(&scene, origin, target, &craft, &progress) })
+        .spawn(async move { plan_trip(&scene, origin, target, &craft, trip, &progress) })
+}
+
+/// Plan a return trip's way back, from the body it has just swung round (`from`) to `home`.
+fn spawn_return(scene: &Scene, craft_id: BodyId, from: BodyId, home: BodyId) -> CorrectionTask {
+    let scene = scene.clone();
+    AsyncComputeTaskPool::get()
+        .spawn(async move { plan_return(&scene, craft_id, from, home, &PlanProgress::default()) })
 }
 
 fn spawn_correction(

@@ -152,3 +152,27 @@ fn an_idealised_craft_has_no_tank_rows() {
         assert!(!labels.contains(&tank_row), "{labels:?}");
     }
 }
+
+#[test]
+fn a_return_trip_reports_its_whole_route_and_how_close_it_passed() {
+    let mut report = FlightReport::new("Crewed transfer (3 g)", true);
+    report.pass_altitude_m = Some(1_784_734.7);
+    let (earth, mars, names) = earth_and_mars();
+    let rows = arrival_rows(&report, earth, mars, &names);
+    let value = |label: &str| {
+        rows.iter()
+            .find(|(l, _)| *l == label)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| panic!("no row {label}: {rows:?}"))
+    };
+    assert_eq!(value("Route"), "Earth → Mars → Earth");
+    assert_eq!(value("Closest pass"), "1,785 km above Mars");
+
+    // A landing has neither.
+    let landing = FlightReport::new("Crewed transfer (3 g)", true);
+    let rows = arrival_rows(&landing, earth, mars, &names);
+    assert!(rows
+        .iter()
+        .any(|(l, v)| *l == "Route" && v == "Earth → Mars"));
+    assert!(!rows.iter().any(|(l, _)| *l == "Closest pass"));
+}

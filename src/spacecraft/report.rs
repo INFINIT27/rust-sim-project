@@ -51,6 +51,9 @@ pub struct FlightReport {
     pub stages_dropped: usize,
     /// Whether the craft emptied its last tank in flight.
     pub ran_dry: bool,
+    /// For a return trip, how close the craft came to the surface of the body it swung round, in
+    /// metres. `None` for a landing.
+    pub pass_altitude_m: Option<f64>,
 }
 
 impl FlightReport {

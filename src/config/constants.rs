@@ -22,7 +22,7 @@ pub const CONFIG_DIR_VAR: &str = "RGA_CONFIG";
 /// **If you change it.** Rename the shipped directory to match, or the app silently runs on defaults.
 pub const CONFIG_DIR_NAME: &str = "config";
 
-/// The spacecraft file: the fleet `G` cycles through.
+/// The spacecraft file: the fleet, which craft `R` launches, and the kind of trip.
 ///
 /// **Used by.** [`crate::config::Config::load`].
 ///

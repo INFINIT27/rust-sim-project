@@ -143,8 +143,6 @@ pub enum Action {
     PickerPlace,
     /// Pick the body at the crosshair as a rocket's origin or destination.
     Launch,
-    /// Select the next spacecraft.
-    NextCraft,
     /// Switch the black hole's disc between its shaded light and a flat test pattern.
     ToggleBlackHoleView,
     /// Show or hide the stars round the black hole.
@@ -172,7 +170,7 @@ pub struct ActionInfo {
 
 impl Action {
     /// Every action, in the order of [`crate::constants::ACTIONS`].
-    pub const ALL: [Action; 28] = [
+    pub const ALL: [Action; 27] = [
         Action::MoveForward,
         Action::MoveBack,
         Action::MoveLeft,
@@ -196,7 +194,6 @@ impl Action {
         Action::PickerDown,
         Action::PickerPlace,
         Action::Launch,
-        Action::NextCraft,
         Action::ToggleBlackHoleView,
         Action::ToggleStars,
         Action::ToggleHud,
@@ -241,7 +238,7 @@ impl Action {
 /// ```
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub struct KeyMap {
-    keys: [KeyCode; 28],
+    keys: [KeyCode; 27],
 }
 
 impl Default for KeyMap {
