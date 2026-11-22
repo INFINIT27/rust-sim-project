@@ -82,6 +82,8 @@ pub enum ConfigTab {
     Interface,
     /// `trails.toml`.
     Trails,
+    /// `collision.toml`: how much detail impacts are simulated in.
+    Collisions,
     /// `spacecraft.toml`.
     Spacecraft,
 }

@@ -139,7 +139,7 @@ fn the_hole_body_is_the_black_hole_only_in_a_scene_with_a_disc() {
     assert!(prop.absorbs);
     assert_eq!(hole_body(&scene), Some(id));
     assert_eq!(
-        hole_body(&crate::projects::interstellar::catalog::two_body().scene),
+        hole_body(&crate::projects::interstellar::giant_impact::giant_impact().scene),
         None
     );
 }

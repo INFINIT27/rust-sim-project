@@ -21,7 +21,7 @@ use crate::time::simulation::SimulationClock;
 
 /// The spec, clock, and trail config for a default two-body run.
 fn shipped() -> (ExperimentSpec, SimulationClock, TrailConfig) {
-    let spec = ExperimentId::TwoBody.build_default().spec;
+    let spec = ExperimentId::GiantImpact.build_default().spec;
     let clock = SimulationClock::new(spec.time_scale);
     (spec, clock, TrailConfig::default())
 }

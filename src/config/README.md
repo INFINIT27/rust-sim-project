@@ -2,7 +2,7 @@
 
 > **Purpose:** Reads `config/*.toml` once at startup and turns each file into the resources the
 > other layers already run on (key bindings, fleet, camera tuning, crosshair, compass, arrival
-> pop-up, trails, performance switches), and writes a file back when the menu saves it.
+> pop-up, trails, collision detail, performance switches), and writes a file back when the menu saves it.
 > **Edit here to:** add a setting to a file, add a new file, change how a file is validated, or
 > change where the directory is looked for.
 > **Not here:** the settings' *defaults* are in each owning layer's `constants.rs`. The files
@@ -14,7 +14,7 @@
 | File | Job |
 | --- | --- |
 | `mod.rs` | `Config` (every configured resource), `Config::load`, `Config::insert_into`, `ConfigError`, the pure `parse`, and `config_dir`. `ConfigPlugin`, `ConfigDir`, `save_requested_system` and `write_file`: saving a page when the menu asks. |
-| `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `PerformanceFile`, `ControlsFile`): what the file may contain, its defaults, `into_runtime`, which checks the values and builds the runtime type, and `from_runtime`, which builds the file to save. |
+| `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `CollisionFile`, `PerformanceFile`, `ControlsFile`): what the file may contain, its defaults, `into_runtime`, which checks the values and builds the runtime type, and `from_runtime`, which builds the file to save. |
 | `constants.rs` | `CONFIG_DIR_VAR` (`RGA_CONFIG`), `CONFIG_DIR_NAME` (`config`), the six file names, and `SAVED_FILE_HEADER`. |
 
 ## Rules and invariants

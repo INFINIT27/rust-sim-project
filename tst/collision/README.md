@@ -18,7 +18,9 @@ module's private items (`apply_contact`, `pair_can_interact`, `separate`).
 | `trimesh_tests.rs` | `trimesh.rs` | Winding, closedness, and inside/outside — on meshes built **by hand**, so a tessellation bug cannot make them pass. 3 properties, 16 unit tests. |
 | `tessellate_tests.rs` | `tessellate.rs` | Every `Body` variant's hull is valid, closed, and outward-wound; the numbers the docs quote are pinned. 4 properties, 11 unit tests. |
 | `contact_tests.rs` | `contact.rs` | Whether a pair overlaps, and what normal and depth come back. 4 properties, 13 unit tests. |
-| `resolve_tests.rs` | `resolve.rs` | Conservation through a bounce, the three prop kinds, separation, substep counting, and the end-to-end scene check. 3 properties, 16 unit tests. |
+| `resolve_tests.rs` | `resolve.rs` | Conservation through a bounce, the three prop kinds, separation, substep counting, the broad phase, materials (restitution, friction, how two surfaces combine, and that the default material bounces bit for bit as contact did before materials), and two end-to-end scene checks. 5 properties, 32 unit tests. |
+| `collision_tests.rs` | `collision.rs` | 1 property + 22 unit tests. Friction slows a slide and never speeds it; friction spins a glancing contact and conserves angular momentum to `1e-9`; a hot contact keeps its energy as heat, to an error that falls with the step; hot neighbours push apart and cool doing it, exactly; rock that is not hot-capable gains no heat. The simulated contact: equal and opposite pushes only on overlap, rigid bodies untouched, simulated pairs neither merged nor bounced, the shortest contact found, and a collision through `Scene::step` rebounding at its restitution (`2.4%` at the damping cap for `e = 0`). The instant merge: which pairs merge and which are left to the bounce, a perfect merge below escape speed, the law's debris at twice escape speed, a fragment falling back making no more; and over detail, speed and mass ratio, every merge conserves mass, momentum and the centre of mass and adds no energy. |
+| `aggregate_tests.rs` | `aggregate.rs` | 1 property + 6 unit tests: (`impact_outcome` is tested through the experiments that use it) the face-centred cubic packing (neighbours exactly touching, none overlapping, every particle inside the body, the count near the target), a single particle the body's own size, the built body's mass, centre and motion, and clusters of piles largest first, with rigid props left out. |
 | `absorb_tests.rs` | `absorb.rs` | 19 unit tests: what a merge conserves (mass exactly, momentum to tolerance, energy **not**), the bookkeeping around removal, and the cases where "who absorbs whom" is a decision. |
 | `proptest-regressions/` | — | Counterexample seeds proptest has already paid for. Committed. |
 
@@ -56,6 +58,12 @@ shipped time scale) for 1.4× the free-fall time, and asserts that the spheres
 
 If a change to tessellation, contact, or response breaks the feature in a way the
 unit tests tolerate, this is the test that notices.
+
+Its counterpart for materials is
+`resolve_tests::a_ball_dropped_on_an_inelastic_floor_bounces_lower_each_time_and_settles`:
+a ball dropped through `Scene::step` onto a floor at `e = 0.5` must bounce three times,
+each apex `e² = 0.25` of the one before, within `0.01`. That is restitution, separation and
+the integrator agreeing over a whole sequence of contacts rather than one impulse.
 
 ## Adding a test file here
 

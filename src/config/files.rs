@@ -15,7 +15,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::bindings::{key_name, parse_key, Action, KeyMap};
 
-use crate::core::scene::Color;
+use crate::compute::constants::{MAX_OPENING_ANGLE, MIN_OPENING_ANGLE};
+use crate::compute::particles::{GpuSolver, GravitySolver, NeighbourSearch};
+use crate::core::constants::{
+    MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
+};
+use crate::core::scene::{CollisionSettings, Color};
 use crate::input::camera::CameraSettings;
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
@@ -321,6 +326,96 @@ impl TrailsFile {
             head_alpha: self.head_alpha,
             tail_alpha: self.tail_alpha,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// collision.toml
+// ---------------------------------------------------------------------------------------------
+
+/// `collision.toml`: how much detail collisions are simulated in.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct CollisionFile {
+    /// How many particles the larger planet of a particle-built scene is made of, `1` to `200000`.
+    /// Read when the scene is built, so it applies from the next launch.
+    pub particles_per_body: u32,
+    /// How many bodies the debris of one instant merge is split into, `0` to `512`. `0` makes every
+    /// instant merge perfect.
+    pub debris_fragments: u32,
+    /// How the GPU sums gravity between particles: `"direct"` (every pair) or `"barnes-hut"` (a
+    /// tree). Applies at once.
+    pub gravity: String,
+    /// How the GPU finds each particle's neighbours: `"all-pairs"` or `"tree"`. Applies at once.
+    pub neighbours: String,
+    /// Barnes–Hut's opening angle `θ`, `0.1` to `1.0`. Applies at once.
+    pub opening_angle: f32,
+}
+
+impl Default for CollisionFile {
+    fn default() -> Self {
+        Self::from_runtime(&CollisionSettings::default(), &GpuSolver::DEFAULT)
+    }
+}
+
+impl CollisionFile {
+    /// The file that describes `settings` and `solver`, for saving.
+    pub fn from_runtime(settings: &CollisionSettings, solver: &GpuSolver) -> Self {
+        Self {
+            particles_per_body: settings.particles_per_body,
+            debris_fragments: settings.debris_fragments,
+            gravity: solver.gravity.name().to_string(),
+            neighbours: solver.neighbours.name().to_string(),
+            opening_angle: solver.opening_angle,
+        }
+    }
+
+    /// The [`CollisionSettings`] and [`GpuSolver`] this file describes, or a message naming the bad
+    /// key.
+    pub fn into_runtime(self) -> Result<(CollisionSettings, GpuSolver), String> {
+        let Some(gravity) = GravitySolver::from_name(&self.gravity) else {
+            return Err(format!(
+                "`gravity` must be \"direct\" or \"barnes-hut\", got {:?}",
+                self.gravity
+            ));
+        };
+        let Some(neighbours) = NeighbourSearch::from_name(&self.neighbours) else {
+            return Err(format!(
+                "`neighbours` must be \"all-pairs\" or \"tree\", got {:?}",
+                self.neighbours
+            ));
+        };
+        let solver = GpuSolver {
+            gravity,
+            neighbours,
+            opening_angle: self.opening_angle,
+        };
+        if !solver.is_valid() {
+            return Err(format!(
+                "`opening_angle` must be from {MIN_OPENING_ANGLE} to {MAX_OPENING_ANGLE}, got {}",
+                self.opening_angle
+            ));
+        }
+        if !(MIN_PARTICLES_PER_BODY..=MAX_PARTICLES_PER_BODY).contains(&self.particles_per_body) {
+            return Err(format!(
+                "`particles_per_body` must be from {MIN_PARTICLES_PER_BODY} to \
+                 {MAX_PARTICLES_PER_BODY}, got {}",
+                self.particles_per_body
+            ));
+        }
+        if self.debris_fragments > MAX_DEBRIS_FRAGMENTS {
+            return Err(format!(
+                "`debris_fragments` must be at most {MAX_DEBRIS_FRAGMENTS}, got {}",
+                self.debris_fragments
+            ));
+        }
+        Ok((
+            CollisionSettings {
+                particles_per_body: self.particles_per_body,
+                debris_fragments: self.debris_fragments,
+            },
+            solver,
+        ))
     }
 }
 

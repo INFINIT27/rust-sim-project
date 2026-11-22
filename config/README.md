@@ -1,7 +1,7 @@
 # `config/` — settings read at startup
 
 > **Purpose:** The TOML files the app reads when it starts: the key bindings, the spacecraft fleet,
-> camera tuning, on-screen UI sizes, motion trails, and the performance switches.
+> camera tuning, on-screen UI sizes, motion trails, collision detail, and the performance switches.
 > **Edit here to:** change a setting without rebuilding. Edit a file and relaunch, or change it
 > in the menu (`Esc` > Settings or Configuration) and press Save there.
 > **Not here:** the code that reads these files is [`src/config/`](../src/config/README.md). The
@@ -21,11 +21,14 @@ make it stick).
 | `camera.toml` | Movement speed, the boost and precision multipliers, look sensitivity. |
 | `ui.toml` | `[crosshair]` size and colour, `[compass]` size and placement, `[arrival]` pop-up width. |
 | `trails.toml` | Whether trails show at launch, their length, sample spacing and count, and fade. |
+| `collision.toml` | How much detail collisions are simulated in: how many particles a planet built from particles is made of (`particles_per_body`, `1` to `200000`, applied at launch; above about `200` it wants the GPU), and how many bodies the debris of an instant merge is split into (`debris_fragments`, `0` to `512`). And how the GPU steps particles, applied at once: `gravity` (`"direct"` or `"barnes-hut"`), `neighbours` (`"all-pairs"` or `"tree"`), and Barnes–Hut's `opening_angle` (`0.1` to `1.0`); the default is the exact pair, fastest up to tens of thousands of particles. Also under `Esc` > Configuration > Collisions. |
 | `performance.toml` | Anti-aliasing, the floor's eclipse shadows, vsync, and the black hole's ray-marcher (on or off, its quality, its stars). The `RGA_AA`, `RGA_FLOOR_ECLIPSE`, `RGA_VSYNC`, `RGA_BLACK_HOLE`, `RGA_BLACK_HOLE_QUALITY` and `RGA_BLACK_HOLE_STARS` environment variables override them for one run. |
 | `controls.toml` | Which key each action is on (`pause = "KeyP"`). `Esc` and the mouse cannot be rebound. |
 
 - **A mistake stops the app** with the file, the key, and what is wrong, rather than running with
   a setting that silently did nothing. A misspelt key counts as a mistake.
+- **The GPU physics has no file:** it is on whenever there is a GPU, and `RGA_GPU_PHYSICS=off`
+  turns it off for one run. The menu's first page says where the physics runs.
 - **Where the app looks:** the directory named by `RGA_CONFIG` if set; otherwise this directory
   (found from the crate root, so `cargo run` and `target/release/physics-sandbox` both use it);
   otherwise `config/` in the working directory.

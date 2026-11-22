@@ -193,6 +193,7 @@ fn arbitrary_scene() -> impl Strategy<Value = Scene> {
             },
             softening_units: crate::core::constants::GRAVITY_SOFTENING_UNITS,
             gravity_model: GravityModel::Newtonian,
+            collision: CollisionSettings::DEFAULT,
             ids: Vec::new(),
             next_id: 0,
         };
@@ -1309,6 +1310,7 @@ fn get_with_unknown_body_id_returns_none() {
         },
         softening_units: crate::core::constants::GRAVITY_SOFTENING_UNITS,
         gravity_model: GravityModel::Newtonian,
+        collision: CollisionSettings::DEFAULT,
         ids: Vec::new(),
         next_id: 0,
     };
@@ -1584,4 +1586,89 @@ fn step_steered_does_nothing_for_a_zero_step() {
     );
     assert_eq!(calls, 0);
     assert_eq!(scene, before);
+}
+
+// --- Material ----------------------------------------------------------------------------------
+
+#[test]
+fn the_default_material_is_elastic_and_frictionless() {
+    assert_eq!(Material::default(), Material::ELASTIC);
+    assert_eq!(Material::ELASTIC.restitution, 1.0);
+    assert_eq!(Material::ELASTIC.friction, 0.0);
+    assert!(Material::ELASTIC.is_valid());
+}
+
+#[test]
+fn a_material_outside_its_physical_range_is_invalid() {
+    assert!(Material::new(0.0, 0.0).is_valid());
+    assert!(Material::new(1.0, 5.0).is_valid());
+    assert!(
+        !Material::new(1.01, 0.0).is_valid(),
+        "a bounce cannot add energy"
+    );
+    assert!(!Material::new(-0.1, 0.0).is_valid());
+    assert!(
+        !Material::new(0.5, -0.1).is_valid(),
+        "friction cannot push a slide along"
+    );
+    assert!(!Material::new(f32::NAN, 0.0).is_valid());
+    assert!(!Material::new(0.5, f32::INFINITY).is_valid());
+}
+
+#[test]
+fn a_prop_with_an_invalid_material_is_invalid() {
+    let prop = Prop::at_rest(
+        Body::Sphere {
+            pose: baseline_pose(),
+            radius: 1.0,
+            color: baseline_color(),
+        },
+        1.0,
+    );
+    assert!(prop.is_valid());
+    assert!(!prop.with_material(Material::new(2.0, 0.0)).is_valid());
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(REGRESSION_SEEDS))),
+        ..ProptestConfig::default()
+    })]
+
+    /// The contact material does not depend on which prop is `a`, takes the softer bounce,
+    /// and is valid whenever both inputs are.
+    #[test]
+    fn combining_materials_is_symmetric_and_stays_valid(
+        ea in 0.0_f32..=1.0, fa in 0.0_f32..5.0,
+        eb in 0.0_f32..=1.0, fb in 0.0_f32..5.0,
+    ) {
+        let (a, b) = (Material::new(ea, fa), Material::new(eb, fb));
+        let ab = a.combined_with(&b);
+        prop_assert_eq!(ab, b.combined_with(&a));
+        prop_assert!(ab.is_valid());
+        prop_assert_eq!(ab.restitution, ea.min(eb));
+        prop_assert!(ab.friction <= fa.max(fb) + 1.0e-6);
+        prop_assert!(ab.friction >= fa.min(fb) - 1.0e-6);
+    }
+}
+
+#[test]
+fn a_modulus_must_be_positive_and_combines_in_series_only_when_both_have_one() {
+    let soft = Material::new(0.0, 0.0).with_modulus(2.0e12);
+    assert!(soft.is_valid());
+    assert!(!Material::new(0.0, 0.0).with_modulus(0.0).is_valid());
+    assert!(!Material::new(0.0, 0.0).with_modulus(f32::NAN).is_valid());
+
+    let pair = soft.combined_with(&Material::new(0.0, 0.0).with_modulus(2.0e12));
+    assert_eq!(
+        pair.modulus_pa,
+        Some(1.0e12),
+        "two equal springs in series halve"
+    );
+    assert_eq!(soft.combined_with(&Material::ELASTIC).modulus_pa, None);
+    assert_eq!(
+        Material::ELASTIC.modulus_pa,
+        None,
+        "rigid unless told otherwise"
+    );
 }

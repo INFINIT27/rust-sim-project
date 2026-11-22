@@ -2,7 +2,10 @@
 //! defaults for anything left out, and an error naming the key for anything wrong.
 
 use super::*;
-use crate::config::files::{CameraFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile};
+use crate::compute::particles::{GravitySolver, NeighbourSearch};
+use crate::config::files::{
+    CameraFile, CollisionFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile,
+};
 use crate::performance::AntiAliasing;
 use crate::spacecraft::{Propulsion, Spacecraft, Trip};
 use bevy::input::keyboard::KeyCode;
@@ -34,6 +37,7 @@ fn the_shipped_files_are_the_built_in_configuration() {
     assert_eq!(config.compass, CompassConfig::default());
     assert_eq!(config.arrival, ArrivalPopupConfig::default());
     assert_eq!(config.trails, TrailConfig::default());
+    assert_eq!(config.collision, CollisionSettings::default());
     assert_eq!(config.performance, PerformanceSettings::default());
     assert_eq!(config.keymap, KeyMap::default());
 }
@@ -478,4 +482,61 @@ fn the_selected_craft_and_the_trip_save_and_load_back() {
     assert_eq!(reloaded.fleet, fleet);
     assert_eq!(reloaded.fleet.selected_index(), 3);
     assert_eq!(reloaded.fleet.trip(), Trip::Return);
+}
+
+#[test]
+fn the_collision_detail_loads_saves_and_refuses_too_many_fragments() {
+    let (settings, _) = parse("debris_fragments = 64", CollisionFile::into_runtime).unwrap();
+    assert_eq!(settings.debris_fragments, 64);
+    assert_eq!(
+        parse("", CollisionFile::into_runtime).unwrap(),
+        (CollisionSettings::default(), GpuSolver::DEFAULT)
+    );
+
+    let error = parse("debris_fragments = 513", CollisionFile::into_runtime).unwrap_err();
+    assert!(error.contains("debris_fragments"), "{error}");
+    let error = parse("debris_fragmnets = 4", CollisionFile::into_runtime).unwrap_err();
+    assert!(error.contains("debris_fragmnets"), "{error}");
+
+    let wanted = CollisionSettings {
+        debris_fragments: 0,
+        ..CollisionSettings::default()
+    };
+    let reloaded = save_and_reload(
+        COLLISION_FILE,
+        &CollisionFile::from_runtime(&wanted, &GpuSolver::SCALABLE),
+    );
+    assert_eq!(reloaded.collision, wanted);
+    assert_eq!(reloaded.solver, GpuSolver::SCALABLE);
+}
+
+#[test]
+fn the_particle_count_loads_and_out_of_range_is_an_error_naming_it() {
+    let (settings, _) = parse("particles_per_body = 800", CollisionFile::into_runtime).unwrap();
+    assert_eq!(settings.particles_per_body, 800);
+    for bad in ["particles_per_body = 0", "particles_per_body = 200001"] {
+        let error = parse(bad, CollisionFile::into_runtime).unwrap_err();
+        assert!(error.contains("particles_per_body"), "{error}");
+    }
+}
+
+#[test]
+fn the_gpu_algorithms_load_by_name_and_a_bad_name_or_angle_is_an_error_naming_it() {
+    let (_, solver) = parse(
+        "gravity = \"barnes-hut\"\nneighbours = \"tree\"\nopening_angle = 0.7",
+        CollisionFile::into_runtime,
+    )
+    .unwrap();
+    assert_eq!(solver.gravity, GravitySolver::BarnesHut);
+    assert_eq!(solver.neighbours, NeighbourSearch::Tree);
+    assert_eq!(solver.opening_angle, 0.7);
+    for (bad, key) in [
+        ("gravity = \"fmm\"", "gravity"),
+        ("neighbours = \"grid\"", "neighbours"),
+        ("opening_angle = 1.5", "opening_angle"),
+        ("opening_angle = 0.0", "opening_angle"),
+    ] {
+        let error = parse(bad, CollisionFile::into_runtime).unwrap_err();
+        assert!(error.contains(key), "{bad}: {error}");
+    }
 }

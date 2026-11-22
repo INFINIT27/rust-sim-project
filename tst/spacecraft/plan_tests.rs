@@ -4,6 +4,7 @@
 use super::*;
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::projects::interstellar::solar_system::solar_system;
+use crate::spacecraft::constants::CRAFT_MAX_TOUCHDOWN_SPEED_M_S;
 use crate::spacecraft::{Flight, Leg, Phase, Spacecraft, Trip};
 use crate::time::simulation::TimeStep;
 
@@ -94,7 +95,7 @@ fn fly_crewed(from: &str, to: &str) -> (Flight, f64) {
     assert!(flight.has_landed(), "{from} → {to} never landed");
     let touchdown = report.touchdown_speed_m_s.unwrap();
     assert!(
-        touchdown <= 11.0,
+        touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
         "{from} → {to}: landed at {touchdown:.1} m/s"
     );
     assert!(
@@ -319,7 +320,10 @@ fn fly_direct(from: &str, to: &str) -> (FlightPlan, Flight) {
 fn assert_landed_softly(plan: &FlightPlan, flight: &Flight) {
     let report = flight.report();
     let touchdown = report.touchdown_speed_m_s.expect("the rocket lands");
-    assert!(touchdown <= 11.0, "touched down at {touchdown:.1} m/s");
+    assert!(
+        touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
+        "touched down at {touchdown:.1} m/s"
+    );
     assert_eq!(
         report.corrections, 0,
         "a direct flight takes no corrections"
@@ -406,7 +410,7 @@ fn every_pair_in_the_solar_system_can_be_flown_at_full_thrust() {
             let touchdown = flight.report().touchdown_speed_m_s.unwrap_or(f64::INFINITY);
             // The Sun's 274 m/s² surface gravity adds a few m/s in the last instant.
             assert!(
-                touchdown <= 13.5,
+                touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
                 "{a} → {b}: touched down at {touchdown:.1} m/s"
             );
         }
@@ -588,7 +592,10 @@ fn the_saturn_lander_lands_softly_on_the_moon_with_propellant_to_spare() {
 
     assert!(flight.has_landed(), "never landed: {report:?}");
     let touchdown = report.touchdown_speed_m_s.unwrap();
-    assert!(touchdown <= 11.0, "landed at {touchdown:.1} m/s");
+    assert!(
+        touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
+        "landed at {touchdown:.1} m/s"
+    );
     assert!(!report.ran_dry);
 
     // About four and a half days, as planned to within 5%.
@@ -838,7 +845,10 @@ fn the_crewed_craft_loops_round_the_moon_and_lands_back_on_earth() {
     );
     assert_eq!(flight.ends(), (earth, moon));
     let touchdown = report.touchdown_speed_m_s.unwrap();
-    assert!(touchdown <= 11.0, "landed at {touchdown:.1} m/s");
+    assert!(
+        touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
+        "landed at {touchdown:.1} m/s"
+    );
 
     // It passed the Moon about one radius up (two radii from the centre) without touching it.
     let altitude = report.pass_altitude_m.unwrap();

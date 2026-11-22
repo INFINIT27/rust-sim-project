@@ -1,5 +1,6 @@
 //! What a flight cost and how it went: the numbers the arrival pop-up shows.
 
+use crate::spacecraft::constants::CRAFT_MAX_TOUCHDOWN_SPEED_M_S;
 use crate::spacecraft::rocket::Burn;
 
 /// A flight's running account, kept up to date substep by substep and complete on landing.
@@ -57,6 +58,30 @@ pub struct FlightReport {
 }
 
 impl FlightReport {
+    /// Did the craft's structure survive the touchdown? `None` before it touches down.
+    ///
+    /// `true` when it touched down at no more than
+    /// [`CRAFT_MAX_TOUCHDOWN_SPEED_M_S`],
+    /// what the landing gear takes. A judgement on the touchdown speed only: the craft is not
+    /// simulated breaking, and is drawn on the surface either way.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use physics_sandbox::FlightReport;
+    ///
+    /// let mut report = FlightReport::new("Lander", true);
+    /// assert_eq!(report.structure_held(), None);
+    /// report.touchdown_speed_m_s = Some(2.1);
+    /// assert_eq!(report.structure_held(), Some(true));
+    /// report.touchdown_speed_m_s = Some(8.8e3);
+    /// assert_eq!(report.structure_held(), Some(false));
+    /// ```
+    pub fn structure_held(&self) -> Option<bool> {
+        self.touchdown_speed_m_s
+            .map(|speed| speed <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S)
+    }
+
     /// A fresh report for `craft_name`, with a modelled engine (energy and propellant start at zero)
     /// or without one.
     pub fn new(craft_name: &str, has_engine: bool) -> Self {

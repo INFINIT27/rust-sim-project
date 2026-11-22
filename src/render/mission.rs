@@ -291,11 +291,14 @@ impl Mission {
             } => {
                 match flight.report().touchdown_speed_m_s {
                     Some(touchdown) if flight.craft.engine().is_some() => format!(
-                        "rocket {}: {} after {} at {:.0} m/s, Δv {:.2} km/s{}",
+                        "rocket {}: {} after {} at {:.1} m/s, Δv {:.2} km/s{}",
                         flight_route(flight),
-                        // A rocket that ran dry did not land: it fell the rest of the way.
+                        // A rocket that ran dry did not land: it fell the rest of the way. One
+                        // that came down faster than its landing gear takes crashed.
                         if flight.report().ran_dry {
                             "out of propellant, hit the surface"
+                        } else if flight.report().structure_held() == Some(false) {
+                            "crashed, too fast for the landing gear"
                         } else {
                             "landed"
                         },

@@ -13,7 +13,7 @@
 
 use super::*;
 use crate::core::scene::DVec3;
-use crate::projects::interstellar::catalog::two_body;
+use crate::projects::interstellar::giant_impact::giant_impact;
 use crate::render::constants::TRAIL_LINE_WIDTH_PX;
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
@@ -474,7 +474,7 @@ fn the_solar_systems_moons_are_matched_to_their_planets_and_nothing_else_is() {
 #[test]
 fn comparable_bodies_are_never_treated_as_moons() {
     for scene in [
-        two_body().scene,
+        giant_impact().scene,
         crate::projects::interstellar::catalog::three_body_ring(7).scene,
     ] {
         for (id, _) in scene.iter() {
@@ -798,9 +798,11 @@ fn app_with_trails(spec: Option<ExperimentSpec>) -> bevy::app::App {
 
 #[test]
 fn an_experiment_that_asks_for_nothing_keeps_the_shipped_trail() {
-    // The two- and three-body experiments both say `None`, so this is the common path and
+    // The three-body ring says `None`, so this is the common path and
     // the one that must not move: the default is the render layer's constant, full stop.
-    let app = app_with_trails(Some(two_body().spec));
+    let app = app_with_trails(Some(
+        crate::projects::interstellar::catalog::three_body_ring(1).spec,
+    ));
     let config = *app.world().resource::<TrailConfig>();
 
     assert_eq!(config.length_units, TRAIL_LENGTH_UNITS);
@@ -860,7 +862,7 @@ fn a_longer_trail_does_not_cost_more_samples() {
 fn a_short_requested_trail_cannot_sample_finer_than_the_default() {
     // The derived spacing is floored, so an experiment asking for a *shorter* trail than the
     // default cannot quietly multiply the per-frame cost.
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     spec.trail_length_units = Some(1.0);
 
     let app = app_with_trails(Some(spec));
@@ -876,7 +878,7 @@ fn a_nonsense_requested_length_is_ignored() {
     // which would take every trail with it. In debug this fires a `debug_assert!`.
     #[cfg(not(debug_assertions))]
     for bad in [0.0, -5.0, f32::NAN] {
-        let mut spec = two_body().spec;
+        let mut spec = giant_impact().spec;
         spec.trail_length_units = Some(bad);
 
         let app = app_with_trails(Some(spec));
@@ -892,7 +894,7 @@ fn a_nonsense_requested_length_is_ignored() {
 #[test]
 #[should_panic(expected = "trail length must be finite and positive")]
 fn a_nonsense_requested_length_panics_in_debug() {
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     spec.trail_length_units = Some(-1.0);
     let _ = app_with_trails(Some(spec));
 }

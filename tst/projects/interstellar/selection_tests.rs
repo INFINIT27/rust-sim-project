@@ -27,14 +27,14 @@ fn selection(args: &[&str]) -> Selection {
 fn no_arguments_runs_the_default_experiment() {
     let empty: [&str; 0] = [];
     assert_eq!(parse(&empty), Command::Run(Selection::default()));
-    assert_eq!(selection(&empty).id, ExperimentId::TwoBody);
+    assert_eq!(selection(&empty).id, ExperimentId::GiantImpact);
     assert_eq!(selection(&empty).seed, None, "no seed means a fresh one");
 }
 
 #[test]
 fn an_experiment_can_be_named_by_slug_number_or_alias() {
     for token in ["experiment_1", "1", "two-body", "two_body"] {
-        assert_eq!(selection(&[token]).id, ExperimentId::TwoBody, "{token}");
+        assert_eq!(selection(&[token]).id, ExperimentId::GiantImpact, "{token}");
     }
     for token in ["experiment_2", "2", "three-body", "three_body", "ring"] {
         assert_eq!(

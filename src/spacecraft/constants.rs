@@ -453,18 +453,35 @@ pub const CRUISE_STEP_FRACTION: f64 = 0.01;
 /// heavy bodies. Lower and every landing starts braking earlier and takes longer.
 pub const POWERED_BRAKE_FRACTION: f64 = 0.8;
 
-/// The speed a powered craft closes on the surface at touchdown, in m/s.
+/// The speed a powered craft aims to close on the surface at touchdown, in m/s.
 ///
-/// **Why this value.** `10 m/s`, a hard but survivable landing. It must be above zero: the braking
-/// curve alone reaches zero speed exactly at the surface, and a craft steered by it would approach
-/// ever more slowly without touching. Measured: the crewed transfer lands at `10.1` to `10.3 m/s` on
-/// every route from the Moon to Neptune, and the full-thrust craft at or under `13.5 m/s` on all 90
-/// pairs of the Sun, the planets, and the Moon, the Sun's `274 m/s²` pull adding the most.
+/// **Why this value.** `2 m/s`, two thirds of what the structure takes
+/// ([`CRAFT_MAX_TOUCHDOWN_SPEED_M_S`]), so the overshoot of the last steering step stays inside
+/// it; the Apollo landings touched down at about this. It was `10 m/s` until the structural
+/// limit was set, which no landing gear survives. It must be above zero: the braking curve alone
+/// reaches zero speed exactly at the surface, and a craft steered by it would approach ever more
+/// slowly without touching.
 ///
 /// **Used by.** [`crate::spacecraft::guidance`].
 ///
-/// **If you change it.** At zero the craft never lands. Higher only lands harder.
-pub const POWERED_TOUCHDOWN_SPEED_M_S: f64 = 10.0;
+/// **If you change it.** At zero the craft never lands. Above [`CRAFT_MAX_TOUCHDOWN_SPEED_M_S`]
+/// every landing breaks the craft. Lower only makes the last metres slower.
+pub const POWERED_TOUCHDOWN_SPEED_M_S: f64 = 2.0;
+
+/// The fastest a craft can touch down and have its structure hold, in m/s.
+///
+/// **Why this value.** `3 m/s`: the Apollo Lunar Module's landing gear was designed for touchdown
+/// at up to `10 ft/s` (`3.05 m/s`) vertically, its crushable struts taking the rest (NASA TN
+/// D-6850, *Apollo Experience Report: Lunar Module Landing Gear Subsystem*, 1972). A landing
+/// faster than this is reported as a crash. The craft is not simulated breaking: this is the line
+/// the report judges against, and the structure itself is left for later.
+///
+/// **Used by.** [`crate::spacecraft::FlightReport::structure_held`], and through it the status line
+/// and the arrival pop-up.
+///
+/// **If you change it.** Only the verdict on a landing changes, not the flight. Keep it above
+/// [`POWERED_TOUCHDOWN_SPEED_M_S`] or a perfect landing counts as a crash.
+pub const CRAFT_MAX_TOUCHDOWN_SPEED_M_S: f64 = 3.0;
 
 /// A powered craft's substep, as a fraction of the time it would take to reach the surface at its
 /// present closing speed.

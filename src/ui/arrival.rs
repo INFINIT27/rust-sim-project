@@ -19,6 +19,7 @@ use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::physics_utils::relativity::constants::SPEED_OF_LIGHT_M_S;
 use crate::projects::interstellar::catalog::BodyNames;
 use crate::render::mission::{Mission, MissionPhase};
+use crate::spacecraft::constants::CRAFT_MAX_TOUCHDOWN_SPEED_M_S;
 use crate::spacecraft::FlightReport;
 use crate::ui::constants::{
     ARRIVAL_HINT, ARRIVAL_LABEL_COLUMN_PX, ARRIVAL_POPUP_WIDTH_PX, JOULES_PER_TONNE_OF_TNT,
@@ -198,6 +199,14 @@ pub fn arrival_rows(
     }
     if let Some(touchdown) = report.touchdown_speed_m_s {
         rows.push(("Touchdown speed", format!("{touchdown:.1} m/s")));
+        rows.push((
+            "Structure",
+            if report.structure_held() == Some(true) {
+                format!("held (gear takes {CRAFT_MAX_TOUCHDOWN_SPEED_M_S:.0} m/s)")
+            } else {
+                format!("failed: over the {CRAFT_MAX_TOUCHDOWN_SPEED_M_S:.0} m/s the gear takes")
+            },
+        ));
     }
     rows.push(("Correction burns", report.corrections.to_string()));
     rows

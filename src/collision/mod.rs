@@ -5,7 +5,9 @@
 //! straight through one another — a `Body::Sphere`'s radius was a rendering
 //! detail with no physical meaning. This layer gives every prop a **physical
 //! border**: a closed triangle mesh separating the inside of the body from the
-//! outside, tested for overlap every substep and resolved elastically.
+//! outside, tested for overlap every substep and resolved with each prop's
+//! [`Material`](crate::core::scene::Material): restitution and friction, perfectly elastic and
+//! frictionless by default.
 //!
 //! # Why triangles
 //!
@@ -32,7 +34,8 @@
 //! | Broad phase | [`contact`] | AABB overlap of the hulls. |
 //! | Narrow phase | [`contact`] | A [`contact::Contact`]: normal, depth, point. |
 //! | Response | [`absorb`] | A prop that touches an absorber is merged into it and leaves. |
-//! | Response | [`resolve`] | Elastic velocity swap, then separation. |
+//! | Response | [`collision`] | Two planets that cannot escape each other become one body, and the debris the impact throws off. |
+//! | Response | [`resolve`] | Bounce with the pair's restitution, Coulomb friction, then separation. |
 //!
 //! There are **two** responses because there are two physically different things a
 //! contact can be. Two solid bodies bounce ([`resolve`]); anything that reaches a black
@@ -55,20 +58,29 @@
 //! # `f32` here, `f64` in `physics_utils`
 //!
 //! Geometry is `f32` because it is scene data and shares its numbers with glam
-//! and the render side. The one physical *law* this layer applies —
-//! [`elastic_collision_1d`](crate::physics_utils::conservation_laws::elastic_collision_1d)
-//! — is `f64`, so [`resolve`] converts at that call and back, exactly as
+//! and the render side. The physical *laws* this layer applies —
+//! [`restitution_collision_1d`](crate::physics_utils::conservation_laws::restitution_collision_1d)
+//! and
+//! [`coulomb_friction_speed_change`](crate::physics_utils::conservation_laws::coulomb_friction_speed_change)
+//! — are `f64`, so [`resolve`] converts at those calls and back, exactly as
 //! [`crate::core::integrator`] does for gravitation.
 //!
 //! # Deliberate simplifications
 //!
-//! Elastic (except for absorption, which is perfectly *in*elastic by construction),
-//! frictionless, non-rotating, one resolution pass, contact
-//! tested at substep boundaries rather than swept. Each is stated with its
+//! Non-rotating (so friction removes sliding rather than turning it into rolling), one
+//! resolution pass with no resting-contact solver, debris of equal fragments thrown evenly in
+//! every direction ([`collision`]), and contact tested at substep boundaries rather than swept.
+//! Each is stated with its
 //! consequence in [`resolve`], and `src/collision/README.md` collects them in one
-//! table.
+//! table, followed by the design for lifting them, one phase at a time.
 
 pub mod absorb;
+pub mod aggregate;
+// Named after the layer on purpose: it is where the behaviour between two bodies is worked out,
+// which is what the layer is for. Clippy flags a module named like its parent; here that is the
+// name asked for.
+#[allow(clippy::module_inception)]
+pub mod collision;
 pub mod constants;
 pub mod contact;
 pub mod resolve;

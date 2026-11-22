@@ -17,6 +17,7 @@
 use super::*;
 use crate::collision::contact::contact_between_props;
 use crate::projects::interstellar::constants::THREE_BODY_HEIGHT_UNITS;
+use crate::projects::interstellar::giant_impact::giant_impact;
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
@@ -80,10 +81,10 @@ fn no_two_experiments_answer_to_the_same_token() {
 
 #[test]
 fn the_slugs_are_the_numbered_ones_the_catalog_documents() {
-    assert_eq!(ExperimentId::TwoBody.slug(), "experiment_1");
+    assert_eq!(ExperimentId::GiantImpact.slug(), "experiment_1");
     assert_eq!(ExperimentId::ThreeBodyRing.slug(), "experiment_2");
     assert_eq!(ExperimentId::SolarSystem.slug(), "experiment_3");
-    assert_eq!(ExperimentId::default(), ExperimentId::TwoBody);
+    assert_eq!(ExperimentId::default(), ExperimentId::GiantImpact);
 }
 
 #[test]
@@ -209,19 +210,23 @@ fn the_catalog_listing_covers_every_experiment() {
 }
 
 // -----------------------------------------------------------------------
-// experiment_1: the two-body free fall.
+// experiment_1: the giant impact. Its own tests are in `giant_impact_tests.rs`.
 // -----------------------------------------------------------------------
 
 #[test]
-fn the_two_body_experiment_is_the_scene_core_builds() {
-    let experiment = two_body();
+fn experiment_1_is_the_giant_impact_and_ignores_the_seed() {
+    let experiment = ExperimentId::GiantImpact.build_default();
 
-    assert_eq!(experiment.scene, Scene::two_body_gravity());
-    assert_eq!(experiment.spec.time_scale, TWO_BODY_TIME_SCALE);
+    assert_eq!(experiment.scene, giant_impact().scene);
+    assert_eq!(ExperimentId::GiantImpact.name(), "Giant impact");
+    assert!(
+        ExperimentId::GiantImpact.matches("two-body"),
+        "the old alias still works"
+    );
     // Deterministic: the seed cannot change the scene, whatever it is.
     assert_eq!(
-        ExperimentId::TwoBody.build(1).scene,
-        ExperimentId::TwoBody.build(2).scene
+        ExperimentId::GiantImpact.build(1).scene,
+        ExperimentId::GiantImpact.build(2).scene
     );
 }
 
@@ -431,7 +436,7 @@ fn a_negative_ring_mass_panics_in_debug() {
 
 #[test]
 fn an_invalid_spec_is_rejected() {
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     assert!(spec.is_valid());
 
     // A camera sitting on its own target has no view direction, which renders as a
@@ -439,22 +444,22 @@ fn an_invalid_spec_is_rejected() {
     spec.camera_target_units = spec.camera_position_units;
     assert!(!spec.is_valid());
 
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     spec.time_scale = 0.0;
     assert!(!spec.is_valid());
 
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     spec.time_scale = f32::NAN;
     assert!(!spec.is_valid());
 
     // A zero framed radius would make the framing check vacuous — it would be satisfied by
     // any camera anywhere.
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     spec.framed_radius_units = 0.0;
     assert!(!spec.is_valid());
 
     // `None` is the normal answer for a trail length; a present-but-nonsense one is not.
-    let mut spec = two_body().spec;
+    let mut spec = giant_impact().spec;
     spec.trail_length_units = None;
     assert!(spec.is_valid());
 
@@ -470,8 +475,9 @@ fn only_the_experiments_that_need_one_ask_for_a_trail_length() {
     // `None` means "the render layer's default is right", which is the answer for any scene
     // of the size the default was chosen for. An experiment overriding it should be doing so
     // because its paths are a different order of magnitude — as the solar system's are.
-    assert_eq!(two_body().spec.trail_length_units, None);
     assert_eq!(three_body_ring(1).spec.trail_length_units, None);
+    // The giant impact is a tenth of a unit across, a hundredth of the default.
+    assert!(giant_impact().spec.trail_length_units.unwrap() < 1.0);
 
     let solar = ExperimentId::SolarSystem.build_default().spec;
     let length = solar

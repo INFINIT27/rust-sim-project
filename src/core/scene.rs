@@ -25,9 +25,10 @@ use crate::time::simulation::TimeStep;
 pub use crate::core::integrator::GravityModel;
 
 use crate::core::constants::{
+    DEFAULT_DEBRIS_FRAGMENTS, DEFAULT_FRICTION, DEFAULT_PARTICLES_PER_BODY, DEFAULT_RESTITUTION,
     DEMO_BOUNDS_MAX_UNITS, DEMO_BOUNDS_MIN_UNITS, DEMO_FLOOR_COLOR, DEMO_FLOOR_HALF_SIZE_UNITS,
-    GRAVITY_SOFTENING_UNITS, MOON_MAX_MASS_RATIO, ROTATION_UNIT_TOLERANCE, TWO_BODY_LEFT_COLOR,
-    TWO_BODY_RIGHT_COLOR,
+    GRAVITY_SOFTENING_UNITS, MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
+    MOON_MAX_MASS_RATIO, ROTATION_UNIT_TOLERANCE, TWO_BODY_LEFT_COLOR, TWO_BODY_RIGHT_COLOR,
 };
 
 /// A rigid-body pose: a position plus a unit-quaternion rotation.
@@ -105,7 +106,7 @@ impl Aabb {
 ///
 /// Monotonically increasing, handed out by `Scene::add` (task 3.2). See
 /// Requirement 6.6.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct BodyId(pub u64);
 
 /// The tagged union of drawable primitives. See Requirement 6.1.
@@ -246,13 +247,258 @@ impl Body {
     }
 }
 
+/// What a prop's surface does in a contact: how much it bounces and how much it grips.
+///
+/// Two numbers, both dimensionless:
+///
+/// - [`restitution`](Self::restitution) — the coefficient of restitution `e`, in `[0, 1]`.
+///   The fraction of the approach speed along the contact normal that comes back as
+///   separation speed. `1` is a perfect bounce, `0` is the pair moving off together.
+/// - [`friction`](Self::friction) — Coulomb's coefficient `μ`, `≥ 0`. The impulse along the
+///   surface is at most `μ` times the impulse along the normal, so a glancing hit loses
+///   some of its sliding speed.
+///
+/// # A pair, not a body
+///
+/// Restitution and friction are properties of *two* surfaces meeting, not of one. A
+/// contact uses [`Material::combined_with`]: the **lower** restitution (the softer body
+/// takes up the energy, so a steel ball on sand barely bounces) and the **geometric mean**
+/// of the frictions (so a frictionless surface makes the contact frictionless).
+///
+/// # The default changes nothing
+///
+/// Every [`Prop`] constructor sets [`Material::ELASTIC`] — `e = 1`, `μ = 0` — which is the
+/// behaviour contact had before materials existed. A scene opts in with
+/// [`Prop::with_material`].
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::Material;
+///
+/// let rock = Material::new(0.5, 0.6);
+/// let ice = Material::new(0.8, 0.05);
+/// assert!(rock.is_valid() && ice.is_valid());
+///
+/// let contact = rock.combined_with(&ice);
+/// assert_eq!(contact.restitution, 0.5);
+/// assert!((contact.friction - (0.6_f32 * 0.05).sqrt()).abs() < 1e-6);
+///
+/// assert!(!Material::new(1.5, 0.0).is_valid(), "a bounce cannot create energy");
+/// ```
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Material {
+    /// Coefficient of restitution, dimensionless, in `[0, 1]`.
+    pub restitution: f32,
+    /// Coefficient of friction, dimensionless, finite and `≥ 0`.
+    pub friction: f32,
+    /// The effective elastic modulus of the material, in pascals, when its contacts are
+    /// **simulated** rather than resolved in one instant. `None`, the default, is a rigid body.
+    ///
+    /// Two props that both have a modulus touch through a force, not an impulse: a damped spring
+    /// whose stiffness comes from the modulus and the particles' size, acting over every substep
+    /// they overlap (see [`crate::collision::collision::apply_contact_forces`]). That is what the
+    /// particles of a planet built from particles use, so that two planets meeting deform, flow and
+    /// merge over the course of the contact. Must be finite and positive when `Some`.
+    pub modulus_pa: Option<f32>,
+    /// How the material pushes back when it is **hot**: the Tillotson parameters of its thermal
+    /// pressure. `None`, the default, is a material that heat does not push.
+    ///
+    /// Only particles in simulated contact use it. With it, the energy their contacts dissipate
+    /// becomes heat in the particles ([`Prop::heat_j_kg`]) rather than leaving the simulation, and
+    /// hot neighbours push each other apart (see [`crate::collision::collision::apply_contact_forces`]).
+    /// That is what lets a giant impact throw material off. Read per particle, never combined.
+    pub thermal: Option<Tillotson>,
+}
+
+/// The thermal part of the Tillotson equation of state for a material: what
+/// [`crate::physics_utils::thermal::tillotson_thermal_pressure`] needs besides the density and the
+/// heat.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Tillotson {
+    /// The Grüneisen parameter of rock heated far past `reference_energy_j_kg`. Dimensionless.
+    pub a: f32,
+    /// Added to `a`, the Grüneisen parameter of cool rock. Dimensionless.
+    pub b: f32,
+    /// `E₀`: the heat over which the Grüneisen parameter falls from `a + b` to `a`, in joules per
+    /// kilogram.
+    pub reference_energy_j_kg: f32,
+}
+
+impl Tillotson {
+    /// All three finite, `a` and `b` non-negative, and `E₀` positive.
+    pub fn is_valid(&self) -> bool {
+        self.a.is_finite()
+            && self.b.is_finite()
+            && self.a >= 0.0
+            && self.b >= 0.0
+            && self.reference_energy_j_kg.is_finite()
+            && self.reference_energy_j_kg > 0.0
+    }
+}
+
+impl Material {
+    /// Perfectly elastic and frictionless: what every prop is until it is told otherwise.
+    /// See [`DEFAULT_RESTITUTION`].
+    pub const ELASTIC: Self = Self {
+        restitution: DEFAULT_RESTITUTION,
+        friction: DEFAULT_FRICTION,
+        modulus_pa: None,
+        thermal: None,
+    };
+
+    /// A rigid material with the given restitution and friction. Not validated here; see
+    /// [`Material::is_valid`].
+    #[inline]
+    pub const fn new(restitution: f32, friction: f32) -> Self {
+        Self {
+            restitution,
+            friction,
+            modulus_pa: None,
+            thermal: None,
+        }
+    }
+
+    /// The same material, its contacts simulated as a force with an effective modulus of
+    /// `modulus_pa` pascals. See [`modulus_pa`](Self::modulus_pa).
+    #[inline]
+    pub const fn with_modulus(mut self, modulus_pa: f32) -> Self {
+        self.modulus_pa = Some(modulus_pa);
+        self
+    }
+
+    /// The same material, pushing back when hot with the Tillotson parameters `thermal`. See
+    /// [`thermal`](Self::thermal).
+    #[inline]
+    pub const fn with_thermal(mut self, thermal: Tillotson) -> Self {
+        self.thermal = Some(thermal);
+        self
+    }
+
+    /// Restitution finite and in `[0, 1]`, friction finite and non-negative, and a modulus, if
+    /// any, finite and positive.
+    ///
+    /// Above `1` a bounce would create energy; below `0` the bodies would pass into each
+    /// other. A negative friction would accelerate sliding.
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        let modulus_ok = self
+            .modulus_pa
+            .is_none_or(|modulus| modulus.is_finite() && modulus > 0.0);
+        (0.0..=1.0).contains(&self.restitution)
+            && self.friction.is_finite()
+            && self.friction >= 0.0
+            && modulus_ok
+            && self.thermal.is_none_or(|thermal| thermal.is_valid())
+    }
+
+    /// The material of the **contact** between this surface and `other`.
+    ///
+    /// The lower restitution and the geometric mean of the frictions. Symmetric, so the
+    /// result does not depend on which prop is `a`. Of two valid materials it is valid.
+    ///
+    /// **Why the minimum for restitution.** The energy a contact loses goes into
+    /// deforming whichever body gives way, so the softer surface sets it: a rubber ball
+    /// on concrete bounces like rubber, a steel ball on sand like sand. The minimum is the
+    /// simplest rule with that property, and it keeps two elastic props exactly elastic.
+    ///
+    /// **Why the geometric mean for friction.** It goes to zero when either surface is
+    /// frictionless, which the arithmetic mean does not, and it is the convention in most
+    /// rigid-body engines (Box2D, Bullet), so tuned values carry over.
+    ///
+    /// **Why the series sum for the modulus.** Two bodies pressed together compress like two
+    /// springs in series, so the contact's modulus is `E₁E₂ / (E₁ + E₂)` (the Hertz contact
+    /// modulus, without Poisson's ratio). It is `Some` only when both are, because a contact is
+    /// simulated as a force only between two bodies that both deform.
+    #[inline]
+    pub fn combined_with(&self, other: &Material) -> Material {
+        Material {
+            restitution: self.restitution.min(other.restitution),
+            friction: (self.friction * other.friction).sqrt(),
+            modulus_pa: match (self.modulus_pa, other.modulus_pa) {
+                (Some(a), Some(b)) => Some(a * b / (a + b)),
+                _ => None,
+            },
+            // Heat belongs to each particle, not to the contact: never combined.
+            thermal: None,
+        }
+    }
+}
+
+impl Default for Material {
+    #[inline]
+    fn default() -> Self {
+        Self::ELASTIC
+    }
+}
+
+/// How much detail a scene simulates its collisions in.
+///
+/// Two dials, both counts of bodies, because every body costs gravity and contact against every
+/// other, so the cost grows as the square of the count:
+///
+/// - [`particles_per_body`](Self::particles_per_body): how many particles a planet built from
+///   particles is made of. The contact between two such planets is simulated particle by particle
+///   (see [`crate::collision::collision`]), so this is the resolution of the deformation, the merge
+///   and the debris. It is read when a scene is **built**, so a change applies from the next launch.
+/// - [`debris_fragments`](Self::debris_fragments): for two planets that are single spheres, which
+///   merge in one instant, how many bodies the debris the scaling law gives is split into. Read at
+///   every impact.
+///
+/// Set from `config/collision.toml` and the menu (Configuration > Collisions). The scene carries
+/// it, rather than the collision layer reading the configuration, because the collision layer
+/// sees nothing but the scene.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::{CollisionSettings, DEFAULT_DEBRIS_FRAGMENTS, MAX_DEBRIS_FRAGMENTS};
+///
+/// let settings = CollisionSettings::default();
+/// assert_eq!(settings.debris_fragments, DEFAULT_DEBRIS_FRAGMENTS);
+/// assert!(CollisionSettings { debris_fragments: 0, ..settings }.is_valid(), "a perfect merge");
+/// assert!(!CollisionSettings { debris_fragments: MAX_DEBRIS_FRAGMENTS + 1, ..settings }.is_valid());
+/// ```
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct CollisionSettings {
+    /// How many particles the larger planet of a particle-built scene is made of, from
+    /// [`MIN_PARTICLES_PER_BODY`] to [`MAX_PARTICLES_PER_BODY`]. A smaller planet gets fewer, of
+    /// the same size, in proportion to its volume.
+    pub particles_per_body: u32,
+    /// How many bodies the debris of one instant merge is split into. `0` keeps all the mass in the
+    /// merged body, which is a perfect merge. At most [`MAX_DEBRIS_FRAGMENTS`].
+    pub debris_fragments: u32,
+}
+
+impl CollisionSettings {
+    /// [`DEFAULT_PARTICLES_PER_BODY`] particles and [`DEFAULT_DEBRIS_FRAGMENTS`] fragments.
+    pub const DEFAULT: Self = Self {
+        particles_per_body: DEFAULT_PARTICLES_PER_BODY,
+        debris_fragments: DEFAULT_DEBRIS_FRAGMENTS,
+    };
+
+    /// Both counts inside their ranges.
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        self.debris_fragments <= MAX_DEBRIS_FRAGMENTS
+            && (MIN_PARTICLES_PER_BODY..=MAX_PARTICLES_PER_BODY).contains(&self.particles_per_body)
+    }
+}
+
+impl Default for CollisionSettings {
+    #[inline]
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 /// A thing in the scene: a shape, how it is moving, and how much it weighs.
 ///
 /// `Body` describes only what a prop *looks like* — geometry and colour. `Prop`
-/// adds what it *does*: a velocity and a mass. Keeping them apart means the
-/// render bridge still takes a `&Body` and knows nothing about dynamics, and
-/// there is exactly one place to extend when angular velocity, restitution, or
-/// friction arrive.
+/// adds what it *does*: a velocity, a mass, and the [`Material`] its surface is made of.
+/// Keeping them apart means the render bridge still takes a `&Body` and knows nothing
+/// about dynamics, and there is exactly one place to extend when angular velocity
+/// arrives.
 ///
 /// # The velocity vector carries both direction and speed
 ///
@@ -404,6 +650,31 @@ pub struct Prop {
     ///
     /// Must be finite and non-negative.
     pub luminosity_solar: f32,
+    /// What the prop's surface does in a contact: its restitution and friction. See
+    /// [`Material`].
+    ///
+    /// [`Material::ELASTIC`] from every constructor, which is how contact behaved before this
+    /// field existed; set another with [`with_material`](Self::with_material). Read only by
+    /// [`crate::collision::resolve`]. Absorption ignores it, since nothing bounces off a black
+    /// hole whatever it is made of.
+    ///
+    /// Must satisfy [`Material::is_valid`].
+    pub material: Material,
+    /// How fast the prop spins, as an angular velocity in radians per second (the axis is the
+    /// direction, the rate the length).
+    ///
+    /// Zero from every constructor. Only particles in simulated contact spin: friction at a contact
+    /// turns sliding into rotation, so that friction conserves angular momentum (see
+    /// [`crate::collision::collision::apply_contact_forces`]). The spin is not drawn: a particle is
+    /// a uniform sphere, and its pose does not turn.
+    pub spin_rad_s: DVec3,
+    /// The heat the prop holds, as specific internal energy above its starting state, in joules per
+    /// kilogram.
+    ///
+    /// Zero from every constructor. Only particles in simulated contact whose material has a
+    /// [`thermal`](Material::thermal) part gain heat: the energy their contacts dissipate goes here,
+    /// and it is what their thermal pressure is worked out from. Must be finite and non-negative.
+    pub heat_j_kg: f64,
 }
 
 impl Prop {
@@ -420,6 +691,9 @@ impl Prop {
             absorbs: false,
             contact_radius_units: None,
             luminosity_solar: 0.0,
+            material: Material::ELASTIC,
+            spin_rad_s: DVec3::ZERO,
+            heat_j_kg: 0.0,
         }
     }
 
@@ -438,6 +712,9 @@ impl Prop {
             absorbs: true,
             contact_radius_units: None,
             luminosity_solar: 0.0,
+            material: Material::ELASTIC,
+            spin_rad_s: DVec3::ZERO,
+            heat_j_kg: 0.0,
         }
     }
 
@@ -469,6 +746,9 @@ impl Prop {
             absorbs: false,
             contact_radius_units: None,
             luminosity_solar: 0.0,
+            material: Material::ELASTIC,
+            spin_rad_s: DVec3::ZERO,
+            heat_j_kg: 0.0,
         }
     }
 
@@ -487,6 +767,9 @@ impl Prop {
             absorbs: false,
             contact_radius_units: None,
             luminosity_solar: 0.0,
+            material: Material::ELASTIC,
+            spin_rad_s: DVec3::ZERO,
+            heat_j_kg: 0.0,
         }
     }
 
@@ -547,6 +830,31 @@ impl Prop {
         self
     }
 
+    /// The same prop, with its surface made of `material`.
+    ///
+    /// How a scene opts out of perfectly elastic, frictionless contact. See [`Material`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use physics_sandbox::{Body, Color, Material, Pose, Prop, Quat, DVec3};
+    ///
+    /// let ball = Body::Sphere {
+    ///     pose: Pose { position: DVec3::ZERO, rotation: Quat::IDENTITY },
+    ///     radius: 1.0,
+    ///     color: Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
+    /// };
+    ///
+    /// let prop = Prop::at_rest(ball, 1.0).with_material(Material::new(0.5, 0.3));
+    /// assert!(prop.is_valid());
+    /// assert_eq!(prop.material.restitution, 0.5);
+    /// ```
+    #[inline]
+    pub fn with_material(mut self, material: Material) -> Self {
+        self.material = material;
+        self
+    }
+
     /// Does this body emit light of its own?
     #[inline]
     pub fn is_luminous(&self) -> bool {
@@ -556,9 +864,9 @@ impl Prop {
     /// Does this prop satisfy the Validation_Rules?
     ///
     /// True when the [`body`](Self::body) is valid, `velocity_units_s` is finite,
-    /// `mass_kg` is finite and non-negative, and — if
-    /// [`immovable`](Self::immovable) is set — the velocity is exactly
-    /// `Vec3::ZERO`.
+    /// `mass_kg` is finite and non-negative, the [`material`](Self::material) is valid, the spin is
+    /// finite and the heat finite and non-negative, and
+    /// — if [`immovable`](Self::immovable) is set — the velocity is exactly `Vec3::ZERO`.
     #[inline]
     pub fn is_valid(&self) -> bool {
         let contact_radius_ok = match self.contact_radius_units {
@@ -574,6 +882,10 @@ impl Prop {
             && contact_radius_ok
             && self.luminosity_solar.is_finite()
             && self.luminosity_solar >= 0.0
+            && self.material.is_valid()
+            && self.spin_rad_s.is_finite()
+            && self.heat_j_kg.is_finite()
+            && self.heat_j_kg >= 0.0
     }
 
     /// Speed in world units per second: the magnitude of the velocity vector.
@@ -691,6 +1003,10 @@ pub struct Scene {
     /// except the black-hole experiment, which sets [`GravityModel::Schwarzschild`]. See
     /// [`crate::core::integrator::GravityModel`].
     pub gravity_model: GravityModel,
+    /// How much detail collisions are simulated in: how many debris bodies an impact breaks off.
+    /// See [`CollisionSettings`]. The app copies it from `config/collision.toml` (and the menu's
+    /// Configuration > Collisions page) every frame, so a change applies to the next impact.
+    pub collision: CollisionSettings,
     /// `BodyId` for each entry in `props`, kept in lockstep (same length, same
     /// order). Private so callers cannot desynchronize the two vectors.
     ids: Vec<BodyId>,
@@ -745,6 +1061,7 @@ impl Scene {
             bounds,
             softening_units: GRAVITY_SOFTENING_UNITS,
             gravity_model: GravityModel::Newtonian,
+            collision: CollisionSettings::DEFAULT,
             ids: Vec::new(),
             next_id: 0,
         }
@@ -798,6 +1115,7 @@ impl Scene {
             bounds,
             softening_units: GRAVITY_SOFTENING_UNITS,
             gravity_model: GravityModel::Newtonian,
+            collision: CollisionSettings::DEFAULT,
             ids: Vec::new(),
             next_id: 0,
         };
@@ -975,6 +1293,8 @@ impl Scene {
         // large enough that overflow is not a practical concern.
         self.next_id += 1;
         self.props.push(prop);
+        // `get` binary-searches `ids`, which this keeps sorted.
+        debug_assert!(self.ids.last().is_none_or(|last| *last < id));
         self.ids.push(id);
         id
     }
@@ -985,14 +1305,20 @@ impl Scene {
     /// `add` on this `Scene` and the prop has not been removed; otherwise
     /// `None`. Never mutates `self` (Requirements 4.5, 4.6).
     ///
-    /// Linear search over `ids` is O(n); for the handful of props in this
-    /// app that's cheaper than carrying a hash map.
+    /// A binary search over `ids`, O(log n). `ids` is always sorted: [`add`](Self::add) hands out
+    /// ids in increasing order and appends them, and [`remove`](Self::remove) keeps the order of
+    /// what is left. It was a linear search, which was cheaper for a handful of props and became
+    /// the frame's cost once a planet was built from thousands of particles: the render bridge
+    /// looks every body up once a frame, which made the frame O(n²).
     #[inline]
     pub fn get(&self, id: BodyId) -> Option<&Prop> {
-        self.ids
-            .iter()
-            .position(|&existing| existing == id)
-            .map(|idx| &self.props[idx])
+        self.index_of(id).map(|index| &self.props[index])
+    }
+
+    /// Where `id` sits in `props`, by binary search over the sorted `ids`.
+    #[inline]
+    fn index_of(&self, id: BodyId) -> Option<usize> {
+        self.ids.binary_search(&id).ok()
     }
 
     /// Yield every `(BodyId, &Prop)` pair currently in the scene.
@@ -1041,7 +1367,7 @@ impl Scene {
     /// assert_eq!(scene.props.len(), 2);
     /// ```
     pub fn remove(&mut self, id: BodyId) -> Option<Prop> {
-        let index = self.ids.iter().position(|candidate| *candidate == id)?;
+        let index = self.index_of(id)?;
 
         // `remove` rather than `swap_remove`: order is part of what callers see, both in
         // the overlay's listing and in the `(i, j)` pair order the contact pass walks.
@@ -1192,18 +1518,30 @@ impl Scene {
         }
     }
 
-    /// One substep: gravity, then absorption, then contact.
+    /// One substep: simulated contact, gravity, then absorption, then merging, then the bounce.
     fn substep(&mut self, substep: TimeStep) {
         // Read once: `integrate_gravity` takes `&mut self.props`, so the field cannot be
         // borrowed from `self` inside the call.
         let softening = self.softening_units;
         let model = self.gravity_model;
+        // The simulated contacts push first, from the positions the substep starts at, and then
+        // gravity kicks and drifts: together one symplectic Euler step. Only particles of bodies
+        // built from particles are touched; in any other scene this is one pass that finds none.
+        let contacts = crate::collision::collision::push_contacts(&mut self.props, substep);
         crate::core::integrator::integrate_gravity_with(&mut self.props, substep, softening, model);
+        // The heat the contacts made, now that the substep's velocities are final: see
+        // `push_contacts` for why it waits for gravity.
+        contacts.heat(&mut self.props, substep);
         // Absorption first, and that ordering is load-bearing: a prop swallowed by a
         // black hole is gone before the elastic pass can see it, so nothing bounces off
         // an event horizon on its way in. Both passes use the same overlap test, so
         // there is no window in which one runs and the other does not.
         crate::collision::absorb::absorb_contacts(self);
+        // Then merging, for the same reason: two planets that cannot escape each other become
+        // one body (and debris) before the bounce could send them apart. It acts only on pairs
+        // whose contact loses energy, so a scene whose props all keep the default elastic
+        // material is untouched by it.
+        crate::collision::collision::merge_contacts(self);
         crate::collision::resolve::resolve_contacts(&mut self.props);
     }
 }

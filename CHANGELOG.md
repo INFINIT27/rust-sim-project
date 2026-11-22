@@ -7,6 +7,250 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-22
+
+### Added
+
+- **GPU physics for scenes made of particles: a new layer, `src/compute/`.**
+  - **What it does.** A scene whose every prop is a particle in simulated contact
+    (`can_step_on_gpu`) is stepped on the GPU through `wgpu`: gravity, the contact force, friction
+    and spin, the thermal pressure and the heat, for every substep of a frame. The scene is
+    uploaded once and read back once per frame (`GpuParticles`, kernels in `particles.wgsl`).
+  - **Switchable algorithms** (`GpuSolver`), in `Esc` > Configuration > Collisions and
+    `collision.toml` (`gravity`, `neighbours`, `opening_angle`), applied at once:
+    - gravity `direct` (every pair, tiled through workgroup memory) or `barnes-hut` (a tree,
+      within the opening angle `θ`);
+    - neighbours `all-pairs` or `tree`, exact either way.
+
+    The tree is laid over the particles in Morton order (`morton_order`), with buckets of `16`
+    particles a leaf (`GPU_LEAF_SIZE`), and refitted on the GPU every substep.
+  - **Measured** on an RTX 4070 SUPER, one frame of `experiment_1` at `2,000` particles a planet:
+    `3.8 ms` exact against `371 ms` on the CPU. The exact pair is fastest up to some tens of
+    thousands of particles and is the default; the trees win beyond (`0.85 s` against `2.2 s` at
+    `114,000` bodies) and reach `228,000` at `2.3 s` a frame. Full table in `src/compute/README.md`.
+  - **Same physics as the CPU.** All four algorithm combinations reproduce `experiment_1` as the
+    CPU does: the planets meet at `14.00 h`, nothing escapes, energy within `0.06%` of the binding
+    energy.
+  - **Robust to the GPU going away.** `GpuDevice` logs a `wgpu` error or a lost device instead of
+    letting it panic, `GpuParticles::step_in` catches the panic a submission to a lost device
+    raises, and the app carries on on the CPU. Each substep is its own submission, so no piece of
+    work comes near Windows' two-second GPU watchdog (a whole frame at `200,000` particles did).
+  - **New dependency.** `wgpu = "0.20.1"`, the version Bevy already renders with. The lock file
+    gains one line.
+- **`GpuPhysicsPlugin`, `PhysicsBackend` and the `GpuSolver` resource** (`src/render/plugin.rs`).
+  The plugin, added by `main.rs`, finds a GPU at startup; `step_scene_system` copies the algorithms
+  into the stepper, hands particle scenes to it, and steps everything else on the CPU. The menu's
+  first page shows where the physics runs.
+- **Heat, pressure and spin for particles in simulated contact** (`collision::collision`).
+  - **Heat.** With a thermal material (`Material::thermal`, a `Tillotson`), what the contacts
+    dissipate becomes heat in the particles (`Prop::heat_j_kg`) instead of leaving the simulation.
+    It is booked after gravity, at the mean of each particle's start and end velocity
+    (`push_contacts`, then `ContactPass::heat`), which is exactly what the kick took.
+  - **Pressure.** Hot neighbours push apart by their Tillotson thermal pressure through the
+    symmetric force of smoothed-particle hydrodynamics, and the work comes out of the heat
+    (`physics_utils::thermal`: `tillotson_thermal_pressure`, `cubic_spline_kernel`,
+    `cubic_spline_gradient`, `particle_density`, `sphere_moment_of_inertia`; basalt's parameters
+    and `FCC_PACKING_FRACTION` in `physics_constants`; `SPH_SMOOTHING_FACTOR`).
+  - **Spin.** Friction acts on the slip of the two surfaces at the contact and torques each
+    particle (`Prop::spin_rad_s`), with arms that conserve angular momentum exactly.
+  - **The books.** `particle_energy` / `ParticleEnergy`: kinetic, spin, gravity, spring and heat.
+    The whole of `experiment_1` keeps their sum to `0.04%` of the binding energy.
+- **`impact_outcome` / `ImpactOutcome`** (`collision::aggregate`): a collision's mass sorted into
+  the largest body, the disk (bound, on orbits that clear the surface), what falls back, and what
+  escapes. `largest_remnant` is Leinhardt & Stewart's quantity.
+- **`experiment_8`, the Moon-forming impact** (`moon-forming`, `oblique`). The same particle planets
+  as `experiment_1` meeting at their mutual escape speed and at `45°`, with `1.1` times the
+  Earth–Moon system's angular momentum (`moon_forming_impact_with`, `moon_forming_impact_seconds`
+  by Barker's equation). On the GPU after a day, `1.6` to `2.0%` of the mass is in the disk from
+  `2,000` to `20,000` particles a planet, `1.5` lunar masses, inside the one to two Canup (2004)
+  finds. Angular momentum is kept to `1e-9` on the CPU.
+- **`giant_impact_at_speed`**: `experiment_1`'s planets fired together at a chosen speed, for the
+  check against the debris law. At twice the escape speed the hot model loses `3.6` to `4.9%` of
+  the mass across detail levels; Leinhardt & Stewart's law gives `2.4%` with its central constant
+  and `1.7` to `4.1%` across its fit. The cold model lost nothing.
+- **`TRAIL_MAX_BODIES`** (`1000`). A scene with more bodies keeps no trails.
+- **Shared particle assets** (`render::plugin::ParticleAssets`). Particles of one colour share one
+  low-polygon mesh (`PARTICLE_MESH_SUBDIVISIONS`) and one material, so Bevy batches them.
+- **CI installs `mesa-vulkan-drivers`** (lavapipe), so the GPU tests run on a runner with no GPU.
+  Without a GPU they skip, unless `RGA_REQUIRE_GPU` is set.
+
+### Changed
+
+- **The planets' particles have friction and heat.** `PLANETARY_PARTICLE_MATERIAL` is now
+  restitution `0`, friction `0.6` (Byerlee's law), modulus `1e13 Pa` and basalt's Tillotson
+  parameters. In `experiment_1` a tenth of the binding energy becomes heat, the merged body is
+  puffed up by it, and `4%` of the mass is lofted and falls back; nothing escapes, as before.
+- **`SOFT_CONTACT_MAX_DAMPING_RATIO` is `1.5`** (was `3`): restitution `0` now rebounds `7.6%`
+  (was `2.4%`). See Fixed.
+- **`MAX_PARTICLES_PER_BODY` is `200,000`** (was `2,000`), which the GPU trees can step. In the app,
+  `experiment_1` keeps up with its clock to about `5,000` particles a planet with the exact solver
+  (`68` frames a second); on the CPU, `200` is the practical limit.
+- **The orbital substep criterion is O(n) in a scene made only of particles**
+  (`collision::resolve`): each particle's dynamical time with a copy of itself bounds every pair.
+- **`contact_clusters` uses a grid**, O(n), instead of testing every pair.
+- **`Scene::get` and `Scene::remove` find a body by binary search, O(log n).** `ids` is always
+  sorted, and `BodyId` gains `PartialOrd` and `Ord`.
+- **The render mirror's sync keeps its live ids in a `HashSet`**, not a `Vec`.
+- **`CollisionFile::into_runtime` returns the `GpuSolver` too**, and `Config` gains `solver`.
+
+### Fixed
+
+- **Simulated contact friction now opposes sliding.** The force had the wrong sign and sped every
+  slide up; no shipped scene had friction on its particles, so nothing showed it.
+- **Packed particles no longer flip their velocity every substep.** The damping cap of `ζ = 3` was
+  sized for one pair; a particle in a pile feels about four contacts' damping along any direction,
+  which halves the stable limit, and a settled pile kept particles flipping at `±160 m/s` for ever.
+  Found when the heat books would not balance.
+- **Friction no longer overshoots in a pile.** Its viscous part now undoes at most a twelfth of a
+  slip per step (`SOFT_CONTACT_MAX_NEIGHBOURS`); with twelve contacts each undoing all of it, a
+  pile churned at `150 m/s` dissipating nothing.
+
+## 2026-11-21
+
+### Added
+
+- **Contact materials: restitution and friction per prop** (`Material` in
+  `src/core/scene.rs`, the `Prop::material` field, `Prop::with_material`). This is the first
+  phase of making collisions realistic. Until now every solid contact in the crate was
+  perfectly elastic and frictionless. A `Material` has a coefficient of restitution `e` in
+  `[0, 1]` and a Coulomb coefficient `μ ≥ 0`. A contact uses `Material::combined_with`, the
+  lower restitution and the geometric mean of the frictions. `Prop::is_valid` now checks the
+  material. Every constructor sets `Material::ELASTIC` (`e = 1`, `μ = 0`), and a test pins that
+  it reproduces the old response **bit for bit**, so no shipped scene changes until it is given
+  materials. New constants in `src/core/constants.rs`: `DEFAULT_RESTITUTION` and
+  `DEFAULT_FRICTION`.
+- **Three collision laws** in `src/physics_utils/conservation_laws.rs`:
+  - `restitution_collision_1d`, the general 1-D bounce. It is bit-identical to
+    `elastic_collision_1d` at `e = 1` and equal to `perfectly_inelastic_collision_1d` at
+    `e = 0`.
+  - `collision_energy_loss`, the `½·μ·(1 − e²)·v²` a bounce dissipates.
+  - `coulomb_friction_speed_change`, the most an impact's friction can slow a slide.
+- **The design for realistic contact**, in the last section of `src/collision/README.md`.
+  - Phase 1 is materials (this change).
+  - Phase 2 decides each contact's outcome first: merge when the pair cannot escape each other
+    after the bounce, absorb, bounce, or hit-and-run. This generalises today's
+    black-hole-only absorption.
+  - Phase 3 is rotation and resting contact.
+  - Phase 4 is break-up, after Leinhardt & Stewart (2012).
+  - Phase 5 applies all of it to every scenario.
+- **The contact between planets is simulated: planets built from particles** (`src/collision/collision.rs`:
+  `apply_contact_forces`, `contact_is_simulated`, `shortest_contact_seconds`;
+  `src/collision/aggregate.rs`).
+  - **The particles.** A planet can be built as a face-centred cubic pile of equal particles held
+    together by their own gravity: `particle_body`, `ParticleBody`, `lattice_spacing_m`,
+    `lattice_points` and `particle_radius_m`. `contact_clusters` groups touching particles into
+    bodies afterwards.
+  - **The contact force.** Particles whose material has a modulus (`Material::modulus_pa`,
+    `Material::with_modulus`) touch through a force, not an impulse. It is a damped spring applied
+    on every substep they overlap, at the start of the substep, before gravity. Its stiffness
+    comes from the modulus and the particles' size, and its damping from the restitution. It
+    never pulls, and the forces are equal and opposite, so momentum is conserved exactly.
+  - **The merge is not scripted.** When two such planets meet they deform, flow into each other
+    and settle into one body, with the impact energy going into the damping. Simulated pairs are
+    never merged in an instant or bounced.
+  - **The substep count** gains a third criterion: at least `SOFT_CONTACT_SUBSTEPS` (`20`) substeps
+    per contact.
+  - New constants: `SOFT_CONTACT_SUBSTEPS`, `SOFT_CONTACT_MAX_DAMPING_RATIO` (`3`),
+    `CLUSTER_CONTACT_TOLERANCE`, and `PLANETARY_PARTICLE_MATERIAL` (`1e13 Pa`, restitution `0`).
+- **The soft-contact laws** (`src/physics_utils/soft_contact.rs`): `contact_stiffness`,
+  `contact_duration`, `spring_dashpot_force`, and `restitution_for_damping_ratio` with its inverse
+  `damping_ratio_for_restitution`. The restitution of a contact that never pulls is Schwager &
+  Pöschel's (2007) exact relation, not the textbook one. A critically damped contact returns
+  `exp(−2) = 13.5%` of the approach speed, and `e = 0` would need infinite damping, so the collision
+  layer caps it at `ζ = 3` (`2.4%`). Tests integrate a contact finely and match the relation in
+  every damping regime.
+- **Planets that are single spheres merge in an instant** (`merge_contacts`, `CollisionEvent`,
+  `gravity_dominated`, in the same file). This is phase 2 of the design, and phase 4 in a first
+  form. A new pass runs in every substep between absorption and the bounce. A touching, closing
+  pair of gravity-dominated bodies (`G·M/R` over `GRAVITY_DOMINATED_SPECIFIC_ENERGY_J_KG`, a rocky
+  body about a kilometre across) merges when its contact loses energy and it would part slower
+  than its mutual escape speed.
+  - The merged body sits at the centre of mass and takes its radius from the combined volume.
+  - A grazing or fast pair parts faster than escape speed and is bounced: hit-and-run, with no
+    rule of its own.
+  - Elastic pairs, rigid bodies (spacecraft) and simulated pairs never merge in an instant, so no
+    scene without materials changes.
+  - **Debris only above the mutual escape speed.** Below it Leinhardt & Stewart (2012) find a
+    perfect merge. Above it the debris share follows their law and is split into
+    `Scene::collision.debris_fragments` equal bodies, which start clear of everything and leave
+    at `0.7` to `1.3` times the escape speed. Mass, momentum and the centre of mass are
+    conserved exactly, and the debris never carries more kinetic energy than the impact brought.
+  - New constants in `src/collision/constants.rs`: `GRAVITY_DOMINATED_SPECIFIC_ENERGY_J_KG`,
+    `DEBRIS_MIN_MASS_FRACTION`, `DEBRIS_MIN_SPEED_FACTOR`, `DEBRIS_MAX_SPEED_FACTOR` and
+    `DEBRIS_SPAWN_CLEARANCE`.
+- **The impact laws** (`src/physics_utils/impacts.rs`): `mutual_escape_speed`,
+  `specific_impact_energy`, `catastrophic_disruption_threshold` and `largest_remnant_fraction`.
+  Their fitted constants are in `physics_constants.rs`, with sources: `DISRUPTION_COEFFICIENT`
+  and `DISRUPTION_VELOCITY_EXPONENT` (planet-sized values, Stewart & Leinhardt 2012),
+  `DISRUPTION_REFERENCE_DENSITY_KG_M3`, `SUPERCATASTROPHIC_ONSET` and
+  `SUPERCATASTROPHIC_EXPONENT`.
+- **The collision detail settings**:
+  - `CollisionSettings { particles_per_body, debris_fragments }`, carried on `Scene::collision`.
+  - Particles per planet: `DEFAULT_PARTICLES_PER_BODY` (`200`), from `MIN_PARTICLES_PER_BODY`
+    (`1`) to `MAX_PARTICLES_PER_BODY` (`2000`). It is read when a scene is built: `ScenePlugin`
+    builds with the configured value, through the new `ExperimentId::build_with`.
+  - Debris fragments per instant merge: `DEFAULT_DEBRIS_FRAGMENTS` (`8`) and
+    `MAX_DEBRIS_FRAGMENTS` (`512`), copied into the scene every frame.
+  - Both are in `config/collision.toml` (`CollisionFile`, `COLLISION_FILE`) and on a
+    Configuration > Collisions page in the `Esc` menu, with Reset and Save.
+- **`CRAFT_MAX_TOUCHDOWN_SPEED_M_S`** (`3 m/s`, the Apollo LM landing gear's design limit) and
+  `FlightReport::structure_held`. A craft that touches down faster is reported as a crash, on the
+  status line and with a Structure row in the arrival pop-up. The structure itself is not
+  simulated yet.
+
+### Changed
+
+- **`experiment_1` is the giant impact, simulated particle by particle**
+  (`src/projects/interstellar/giant_impact.rs`, `ExperimentId::GiantImpact`). It was the two-body
+  free fall: two Earth masses drawn `235×` too large that bounced elastically forever.
+  - The scene: the Earth and a Mars-mass body (Theia), at true size, each a pile of particles of
+    `PLANETARY_PARTICLE_MATERIAL`: at the default detail, `201` and `19` particles about
+    `1,700 km` across. They are released from rest `10` contact distances apart.
+  - What happens, measured:
+    - Each pile settles `3–4%` under its own weight in the first hour.
+    - They meet at `14.0` hours (the free-fall law gives `13.96`).
+    - The impactor flattens into the Earth, and `17%` of the system's binding energy goes into
+      the contact's damping.
+    - By `24` hours there is one body at rest, holding every particle.
+  - That perfect merge is what Leinhardt & Stewart find below escape speed. Above it, their law's
+    debris is not reproduced at these resolutions (see `src/collision/README.md`).
+  - `R` does not launch a spacecraft here.
+  - The slug stays `experiment_1`, and `two-body` still selects it. New aliases: `giant-impact`,
+    `impact` and `theia`.
+  - The old scene stays as `Scene::two_body_gravity`, a fixture the `core` tests use.
+  - New constants: `GIANT_IMPACT_START_CONTACTS`, `GIANT_IMPACT_TIME_SCALE`,
+    `GIANT_IMPACT_CAMERA_POSITION_UNITS`, `GIANT_IMPACT_FRAMED_RADIUS_UNITS`,
+    `GIANT_IMPACT_TRAIL_LENGTH_UNITS`, `GIANT_IMPACT_SOFTENING_UNITS`,
+    `GIANT_IMPACT_BOUNDS_MARGIN_UNITS`, `PLANETARY_MATERIAL` and `PLANETARY_PARTICLE_MATERIAL`.
+- **Powered craft aim to touch down at `2 m/s`, not `10`** (`POWERED_TOUCHDOWN_SPEED_M_S`). At
+  `10 m/s` no landing gear survives. Every landing in the tests now comes in under the `3 m/s`
+  limit: all 90 pairs of the Sun, the planets and the Moon, and the crewed transfers to Neptune.
+  The tests that allowed `11`, `13.5` and `15 m/s` now assert the limit. The Saturn V lander still
+  reaches the Moon, at `2.03 m/s` with `1,425 kg` of propellant left (`18.55 km/s` spent).
+
+- **`resolve_contacts` bounces with the pair's material** (`src/collision/resolve.rs`).
+  - The normal velocities go through `restitution_collision_1d`.
+  - Friction then acts along the surface. Between two movable props it is shared by inverse
+    mass, so momentum is conserved.
+  - A wall returns `e` of the approach speed.
+  - Friction removes sliding rather than turning it into rolling, since props still do not
+    rotate. The README's not-modelled table says so.
+
+### Removed
+
+- **`collision::constants::RESTITUTION`** (and its crate-root re-export). Restitution is now a
+  property of each prop's material. The old value lives on as `DEFAULT_RESTITUTION`.
+- **`catalog::two_body`, `TWO_BODY_CAMERA_POSITION_UNITS` and `TWO_BODY_FRAMED_RADIUS_UNITS`**,
+  the old `experiment_1`'s builder and framing. They went with the experiment.
+
+### Fixed
+
+- **`\` resets the clock to the running experiment's own scale** (`src/input/controls.rs`). It
+  always set the old two-body scale of `5e6`, whatever was running, though `src/input/README.md`
+  said it went back to the experiment's own. In the giant impact that would have been `2,500×`
+  too fast, ending the fall in a blink. It now reads the `ExperimentSpec`, and falls back to
+  `TWO_BODY_TIME_SCALE` only in an app with no experiment.
+
 ## 2026-11-16
 
 ### Added

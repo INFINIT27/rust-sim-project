@@ -391,6 +391,20 @@ pub const TRAIL_MIN_SPACING_FRACTION: f32 = 1.0 / 16.0;
 /// segment budget is fixed. Below about `16` a loop turns into a visible polygon.
 pub const TRAIL_MOON_SAMPLES_PER_ORBIT: usize = 64;
 
+/// The most bodies a scene may have and still get trails. Above it none are recorded or drawn.
+///
+/// **Why this value.** `1000`. Trails are for following a few bodies through space: a planet of
+/// thousands of particles drawn with a trail each is a smear. They also cost: recording asks
+/// [`crate::core::scene::moon_primary`] about every body, which looks at every other, so the
+/// recording is O(n²), and at `2,000` particles it was most of the frame. Every experiment but
+/// `experiment_1` at a high detail has under `30` bodies, far below it.
+///
+/// **Used by.** [`crate::render::trail::Trails::record_from`].
+///
+/// **If you change it.** Higher brings the trails back to bigger particle scenes and costs the
+/// frame quadratically.
+pub const TRAIL_MAX_BODIES: usize = 1000;
+
 /// Near clip distance of the scene camera, in world units.
 ///
 /// **Why this value.** Bodies are drawn at their true size, so inspecting one means getting very
@@ -1148,3 +1162,15 @@ pub const BLACK_HOLE_OUTLINE_COLOUR: [f32; 3] = [1.0, 0.45, 0.1];
 /// **If you change it.** Change `OUTLINE_WIDTH_PX` in `assets/shaders/black_hole.wgsl` too; a test
 /// checks they agree.
 pub const BLACK_HOLE_OUTLINE_WIDTH_PX: f32 = 2.0;
+
+/// How finely the shared mesh of a particle of a body built from particles is subdivided: an
+/// icosahedron split this many times. Dimensionless.
+///
+/// **Why this value.** `2`: `320` triangles, round to the eye at the few dozen pixels a particle
+/// covers even close up, against the `1,152` of the default sphere mesh. At `20,000` particles that
+/// is `6` million triangles a frame instead of `23` million.
+///
+/// **Used by.** [`crate::render::plugin`], for the mesh every particle shares.
+///
+/// **If you change it.** Each step quadruples the triangles. `1` (`80`) looks faceted close up.
+pub const PARTICLE_MESH_SUBDIVISIONS: usize = 2;

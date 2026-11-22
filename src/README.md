@@ -1,12 +1,12 @@
 # `src/` — crate sources
 
 > **Purpose:** The crate root (`lib.rs`, `main.rs`), the files shared by every layer
-> (`constants.rs`, `bindings.rs`), and the map of the ten layer directories.
+> (`constants.rs`, `bindings.rs`), and the map of the eleven layer directories.
 > **Edit here to:** add a layer, change the window or app wiring, add a key binding, add a
 > constant two layers read, or re-export a new public item.
 > **Not here:** anything a single layer owns. Find the layer in the table below.
 
-The `physics-sandbox` crate root and its ten layer directories. Every layer is a
+The `physics-sandbox` crate root and its eleven layer directories. Every layer is a
 module directory with its own `README.md`; this file explains how they relate
 and where a new one would go.
 
@@ -14,12 +14,13 @@ and where a new one would go.
 
 | Path | Job |
 | --- | --- |
-| `lib.rs` | Crate root. Declares the ten layers and re-exports every public item at the crate root. |
+| `lib.rs` | Crate root. Declares the eleven layers and re-exports every public item at the crate root. |
 | `constants.rs` | Constants read by **more than one layer** — the unit scale, the shipped scene's configuration, the key-binding table — plus the window values `main.rs` owns. |
 | `bindings.rs` | The key bindings as *data*: `Action`, the `KeyMap` resource every input system reads keys through, `BindingGroup`, `KeyBinding`, key names, and the rows `--help` and the `Esc` menu both draw. Above every layer because several layers need it and none may import another. |
 | `main.rs` | Binary entry point. Builds the `App`, loads `config/*.toml` (see `config/`) and inserts it before any plugin, configures the window, adds the plugins, calls `run()`. The window is **full-screen and borderless** (`WINDOW_MODE` in `constants.rs`, amendment A12), so it has no close button: quit with `Cmd`-`Q`, `Alt`-`F4`, or `Ctrl`-`C`. Set `WINDOW_MODE` to `WindowMode::Windowed` for an 800×600 window. |
 | `core/` | GUI-free world model. Bevy-free apart from `bevy::math`. |
-| `collision/` | Body physics: the triangle hull that bounds each prop, the contact test over those hulls, and the elastic response. |
+| `collision/` | Body physics: the triangle hull that bounds each prop, the contact test over those hulls, the bounce, simulated contact between particles, merging, and absorption. |
+| `compute/` | GPU physics: steps a scene made only of particles on the GPU through `wgpu`, the same laws as `collision/` and `core/` in `f32`. May import `wgpu` and `bevy::tasks`, not `bevy::ecs`. |
 | `render/` | The boundary that mirrors the model onto Bevy's ECS. |
 | `input/` | Keyboard and mouse → camera motion, the clock keys, and the menu's input mode. |
 | `ui/` | The `bevy_egui` overlay, crosshair, compass, and the `Esc` menu panel. |
@@ -36,7 +37,7 @@ and where a new one would go.
   refer to another layer by its real path (`crate::core::scene::Body`), not via
   the `lib.rs` re-export. The re-exports exist for consumers, and routing
   internal references through them hides the real dependency graph.
-- **`time/` imports no Bevy at all**, and `core/`, `collision/`, and
+- **`time/` imports no Bevy at all**, `compute/` only `wgpu` and `bevy::tasks`, and `core/`, `collision/`, and
   `physics_utils/` may import `bevy::math` and nothing else from Bevy — no
   `bevy::ecs`, no `bevy_egui`, no `wgpu` (Requirements 4.2 and 15.3). This is
   enforced by review, not by a lint; see `core/README.md`.

@@ -641,3 +641,143 @@ fn precondition_violations_return_documented_fallbacks_in_release() {
     // The inelastic solver has no such fallback available.
     assert_eq!(perfectly_inelastic_collision_1d(0.0, 7.0, 1.0, -3.0), 0.0);
 }
+
+// --- Restitution and friction ------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(REGRESSION_SEEDS))),
+        ..ProptestConfig::default()
+    })]
+
+    /// At `e = 1` the restitution solver is the elastic solver, to the bit — the property the
+    /// collision layer leans on to leave every scene without materials untouched.
+    #[test]
+    fn restitution_one_is_bit_identical_to_the_elastic_solver(
+        mass_a in valid_mass(),
+        velocity_a in valid_velocity(),
+        mass_b in valid_mass(),
+        velocity_b in valid_velocity(),
+    ) {
+        prop_assert_eq!(
+            restitution_collision_1d(mass_a, velocity_a, mass_b, velocity_b, 1.0),
+            elastic_collision_1d(mass_a, velocity_a, mass_b, velocity_b)
+        );
+    }
+
+    /// Momentum is conserved whatever the restitution.
+    #[test]
+    fn a_collision_of_any_restitution_conserves_momentum(
+        mass_a in valid_mass(),
+        velocity_a in valid_velocity(),
+        mass_b in valid_mass(),
+        velocity_b in valid_velocity(),
+        restitution in 0.0..=1.0_f64,
+    ) {
+        let before = [(mass_a, velocity_a), (mass_b, velocity_b)];
+        let (out_a, out_b) =
+            restitution_collision_1d(mass_a, velocity_a, mass_b, velocity_b, restitution);
+        prop_assert!(momentum_is_conserved(&before, &[(mass_a, out_a), (mass_b, out_b)], 1.0e-12));
+    }
+
+    /// Newton's experimental law: they part at `e` times the speed they closed at.
+    #[test]
+    fn the_pair_parts_at_restitution_times_the_closing_speed(
+        mass_a in valid_mass(),
+        velocity_a in valid_velocity(),
+        mass_b in valid_mass(),
+        velocity_b in valid_velocity(),
+        restitution in 0.0..=1.0_f64,
+    ) {
+        let (out_a, out_b) =
+            restitution_collision_1d(mass_a, velocity_a, mass_b, velocity_b, restitution);
+        let closing = velocity_a - velocity_b;
+        let parting = out_b - out_a;
+        let scale = velocity_a.abs().max(velocity_b.abs()).max(1.0);
+        prop_assert!(
+            (parting - restitution * closing).abs() <= 1.0e-9 * scale,
+            "closing {closing:e}, parting {parting:e}, e {restitution}"
+        );
+    }
+
+    /// The kinetic energy the solver loses is exactly what `collision_energy_loss` says.
+    #[test]
+    fn the_solver_loses_the_energy_the_loss_law_predicts(
+        mass_a in valid_mass(),
+        velocity_a in -1.0e3..1.0e3_f64,
+        mass_b in valid_mass(),
+        velocity_b in -1.0e3..1.0e3_f64,
+        restitution in 0.0..=1.0_f64,
+    ) {
+        let before = total_kinetic_energy(&[(mass_a, velocity_a), (mass_b, velocity_b)]);
+        let (out_a, out_b) =
+            restitution_collision_1d(mass_a, velocity_a, mass_b, velocity_b, restitution);
+        let after = total_kinetic_energy(&[(mass_a, out_a), (mass_b, out_b)]);
+        let predicted = collision_energy_loss(mass_a, mass_b, velocity_a - velocity_b, restitution);
+        prop_assert!(predicted >= 0.0);
+        prop_assert!(
+            ((before - after) - predicted).abs() <= 1.0e-9 * before.max(1.0),
+            "lost {:e}, predicted {predicted:e}", before - after
+        );
+    }
+
+    /// Friction slows sliding, never reverses it, and never exceeds `μ` times the normal change.
+    #[test]
+    fn friction_is_bounded_by_the_slide_and_by_coulomb(
+        sliding in 0.0..1.0e3_f64,
+        normal_change in 0.0..1.0e3_f64,
+        friction in 0.0..3.0_f64,
+    ) {
+        let slowed = coulomb_friction_speed_change(sliding, normal_change, friction);
+        prop_assert!(slowed >= 0.0);
+        prop_assert!(slowed <= sliding);
+        prop_assert!(slowed <= friction * normal_change * (1.0 + 1.0e-12));
+    }
+}
+
+#[test]
+fn restitution_zero_is_the_perfectly_inelastic_solver() {
+    let merged = perfectly_inelastic_collision_1d(1.0, 8.0, 3.0, -2.0);
+    let (a, b) = restitution_collision_1d(1.0, 8.0, 3.0, -2.0, 0.0);
+    assert_close(a, merged, 1.0e-12, "a");
+    assert_close(b, merged, 1.0e-12, "b");
+}
+
+#[test]
+fn energy_loss_is_the_relative_energy_times_one_minus_e_squared() {
+    // μ = 2·2/4 = 1 kg, v_rel = 10 m/s: 50 J of relative energy, 75% of it lost at e = 0.5.
+    assert_close(
+        collision_energy_loss(2.0, 2.0, 10.0, 0.5),
+        37.5,
+        1.0e-12,
+        "loss",
+    );
+    assert_eq!(collision_energy_loss(2.0, 2.0, 10.0, 1.0), 0.0);
+    // Sign of the approach speed does not matter.
+    assert_eq!(
+        collision_energy_loss(2.0, 2.0, -10.0, 0.5),
+        collision_energy_loss(2.0, 2.0, 10.0, 0.5)
+    );
+}
+
+#[test]
+fn energy_loss_does_not_overflow_at_astronomical_masses() {
+    let loss = collision_energy_loss(1.0e30, 1.0e30, 1.0e3, 0.0);
+    assert!(loss.is_finite());
+    assert_close(loss, 0.25e36, 1.0e-12, "μ = 5e29 kg at 1 km/s, all lost");
+}
+
+#[cfg(not(debug_assertions))]
+#[test]
+fn the_new_laws_decline_invalid_input_in_release() {
+    assert_eq!(
+        restitution_collision_1d(1.0, 7.0, 1.0, -3.0, 1.5),
+        (7.0, -3.0)
+    );
+    assert_eq!(
+        restitution_collision_1d(0.0, 7.0, 1.0, -3.0, 0.5),
+        (7.0, -3.0)
+    );
+    assert_eq!(collision_energy_loss(1.0, 1.0, 1.0, -0.5), 0.0);
+    assert_eq!(coulomb_friction_speed_change(1.0, 1.0, -1.0), 0.0);
+}

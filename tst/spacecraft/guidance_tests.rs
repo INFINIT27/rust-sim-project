@@ -97,11 +97,13 @@ fn a_craft_faster_than_it_can_stop_from_brakes_at_full_thrust() {
 }
 
 #[test]
-fn on_its_braking_curve_the_craft_coasts_and_it_touches_down_at_ten_m_s() {
+fn on_its_braking_curve_the_craft_coasts_and_it_touches_down_at_the_touchdown_speed() {
     let radius = 1.0e6;
     let law = direct();
-    // 5 km up, the curve's speed is √(2 · a_brake · 5,000 + 10²).
-    let on_curve = (2.0 * law.braking_m_s2 * 5_000.0 + 100.0_f64).sqrt();
+    // 5 km up, the curve's speed is √(2 · a_brake · 5,000 + v_touch²).
+    let on_curve = (2.0 * law.braking_m_s2 * 5_000.0
+        + POWERED_TOUCHDOWN_SPEED_M_S * POWERED_TOUCHDOWN_SPEED_M_S)
+        .sqrt();
     let target = still(DVec3::new(radius + 5_000.0, 0.0, 0.0), radius);
     let s = steer(
         DVec3::ZERO,

@@ -319,7 +319,7 @@ fn ecliptic_position(longitude_deg: f64, radius_units: f64) -> DVec3 {
 ///
 /// Deterministic: the seed plays no part, since every initial condition is a measurement.
 /// It is recorded in the spec as [`DEFAULT_RANDOM_SEED`] so the overlay has something
-/// honest to print, the same way [`two_body`](crate::projects::interstellar::catalog::two_body) does.
+/// honest to print, the same way [`giant_impact`](crate::projects::interstellar::giant_impact::giant_impact) does.
 ///
 /// # What it builds
 ///

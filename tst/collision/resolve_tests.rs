@@ -18,7 +18,10 @@ use crate::collision::contact::contact_between_props;
 use crate::constants::{TWO_BODY_TIME_SCALE, TWO_BODY_VISUAL_RADIUS_UNITS};
 use crate::core::constants::DEMO_FLOOR_HALF_SIZE_UNITS;
 use crate::core::scene::{Body, Color, Pose, Quat, Scene};
-use crate::physics_utils::conservation_laws::{kinetic_energy_is_conserved, momentum_is_conserved};
+use crate::physics_utils::conservation_laws::{
+    collision_energy_loss, kinetic_energy_is_conserved, momentum_is_conserved,
+    total_kinetic_energy, total_momentum,
+};
 use crate::time::constants::MAX_REAL_STEP_SECONDS;
 use crate::time::simulation::{SimulationClock, TimeStep};
 use proptest::prelude::*;
@@ -822,4 +825,392 @@ proptest! {
             prop_assert!(may_touch(&boxed, &other));
         }
     }
+}
+
+// --- Materials: restitution and friction -------------------------------------------------------
+
+/// Two balls overlapping along X, `a` at `vel_a` and `b` at `vel_b`, both made of `material`.
+fn pair_of(material: Material, vel_a: DVec3, mass_a: f32, vel_b: DVec3, mass_b: f32) -> Vec<Prop> {
+    vec![
+        Prop::new(ball(Vec3::ZERO, 1.0), vel_a, mass_a).with_material(material),
+        Prop::new(ball(Vec3::new(1.5, 0.0, 0.0), 1.0), vel_b, mass_b).with_material(material),
+    ]
+}
+
+#[test]
+fn every_constructor_starts_elastic_and_frictionless() {
+    for prop in [
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::ZERO, 1.0),
+        Prop::at_rest(ball(Vec3::ZERO, 1.0), 1.0),
+        Prop::absorbing(ball(Vec3::ZERO, 1.0), DVec3::ZERO, 1.0),
+        Prop::immovable(floor()),
+        Prop::immovable_with_mass(floor(), 1.0),
+    ] {
+        assert_eq!(prop.material, Material::ELASTIC);
+    }
+}
+
+#[test]
+fn the_default_material_bounces_exactly_as_before_materials_existed() {
+    // The pre-material response was `elastic_collision_1d` along the normal. The default
+    // material must reproduce it to the bit, or every shipped scene would drift.
+    let mut props = pair_of(
+        Material::ELASTIC,
+        DVec3::new(3.0, 0.0, 0.5),
+        2.0,
+        DVec3::new(-1.0, 0.0, 0.0),
+        7.0,
+    );
+    let normal = contact_between_props(&props[0], &props[1])
+        .expect("overlapping")
+        .normal
+        .as_dvec3();
+    let (na, nb) = (
+        props[0].velocity_units_s.dot(normal),
+        props[1].velocity_units_s.dot(normal),
+    );
+    let (oa, ob) = crate::physics_utils::conservation_laws::elastic_collision_1d(2.0, na, 7.0, nb);
+    let expected_a = props[0].velocity_units_s + (oa - na) * normal;
+    let expected_b = props[1].velocity_units_s + (ob - nb) * normal;
+
+    resolve_contacts(&mut props);
+
+    assert_eq!(props[0].velocity_units_s, expected_a);
+    assert_eq!(props[1].velocity_units_s, expected_b);
+}
+
+#[test]
+fn half_restitution_parts_the_pair_at_half_the_closing_speed() {
+    let mut props = pair_of(
+        Material::new(0.5, 0.0),
+        DVec3::new(3.0, 0.0, 0.0),
+        2.0,
+        DVec3::new(-1.0, 0.0, 0.0),
+        7.0,
+    );
+    let before = axis_bodies(&props, 0);
+
+    resolve_contacts(&mut props);
+
+    let parting = props[1].velocity_units_s.x - props[0].velocity_units_s.x;
+    assert!(
+        (parting - 2.0).abs() < 1.0e-4,
+        "closing at 4, they must part at 2, got {parting}"
+    );
+    let after = axis_bodies(&props, 0);
+    assert!(momentum_is_conserved(&before, &after, 1.0e-6));
+}
+
+#[test]
+fn the_energy_an_inelastic_bounce_loses_is_the_law_s_figure() {
+    let restitution = 0.3;
+    let mut props = pair_of(
+        Material::new(restitution, 0.0),
+        DVec3::new(3.0, 0.0, 0.0),
+        2.0,
+        DVec3::new(-1.0, 0.0, 0.0),
+        7.0,
+    );
+    let before = total_kinetic_energy(&axis_bodies(&props, 0));
+
+    resolve_contacts(&mut props);
+
+    let after = total_kinetic_energy(&axis_bodies(&props, 0));
+    let expected = collision_energy_loss(2.0, 7.0, 4.0, f64::from(restitution));
+    assert!(
+        ((before - after) - expected).abs() < 1.0e-4 * expected,
+        "lost {}, the law says {expected}",
+        before - after
+    );
+}
+
+#[test]
+fn zero_restitution_leaves_the_pair_moving_together() {
+    let mut props = pair_of(
+        Material::new(0.0, 0.0),
+        DVec3::new(8.0, 0.0, 0.0),
+        1.0,
+        DVec3::ZERO,
+        3.0,
+    );
+
+    resolve_contacts(&mut props);
+
+    // 8 kg·m/s over 4 kg.
+    for prop in &props {
+        assert!((prop.velocity_units_s.x - 2.0).abs() < 1.0e-4);
+    }
+}
+
+#[test]
+fn the_softer_surface_sets_the_bounce() {
+    // One elastic ball, one dead one: the contact is dead.
+    let mut props = vec![
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 0.0), 1.0),
+        Prop::new(
+            ball(Vec3::new(1.5, 0.0, 0.0), 1.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            1.0,
+        )
+        .with_material(Material::new(0.0, 0.0)),
+    ];
+
+    resolve_contacts(&mut props);
+
+    assert!(props[0].velocity_units_s.x.abs() < 1.0e-4);
+    assert!(props[1].velocity_units_s.x.abs() < 1.0e-4);
+}
+
+#[test]
+fn a_wall_returns_only_the_restitution_s_share_of_a_fall() {
+    let mut props = vec![
+        Prop::new(
+            ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
+            DVec3::new(0.0, -2.0, 0.0),
+            4.0,
+        )
+        .with_material(Material::new(0.25, 0.0)),
+        Prop::immovable(floor()),
+    ];
+
+    resolve_contacts(&mut props);
+
+    assert!(
+        (props[0].velocity_units_s.y - 0.5).abs() < 1.0e-4,
+        "a 2 unit/s fall at e = 0.25 comes back at 0.5, got {}",
+        props[0].velocity_units_s.y
+    );
+    assert_eq!(props[1].velocity_units_s, DVec3::ZERO);
+}
+
+#[test]
+fn friction_on_a_hard_landing_stops_the_slide() {
+    // Falling at 2, sliding at 0.5, μ = 1 on both: the cap is μ·(1 + e)·2 = 2 > 0.5.
+    let grippy = Material::new(0.0, 1.0);
+    let mut props = vec![
+        Prop::new(
+            ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
+            DVec3::new(0.5, -2.0, 0.0),
+            4.0,
+        )
+        .with_material(grippy),
+        Prop::immovable(floor()).with_material(grippy),
+    ];
+
+    resolve_contacts(&mut props);
+
+    assert!(
+        props[0].velocity_units_s.length() < 1.0e-4,
+        "{:?}",
+        props[0].velocity_units_s
+    );
+}
+
+#[test]
+fn friction_on_a_glancing_hit_only_slows_the_slide() {
+    // Falling at 1, sliding at 4, μ = 0.5, e = 1: the cap is 0.5 · 2 · 1 = 1.
+    let material = Material::new(1.0, 0.5);
+    let mut props = vec![
+        Prop::new(
+            ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
+            DVec3::new(4.0, -1.0, 0.0),
+            4.0,
+        )
+        .with_material(material),
+        Prop::immovable(floor()).with_material(material),
+    ];
+
+    resolve_contacts(&mut props);
+
+    assert!((props[0].velocity_units_s.x - 3.0).abs() < 1.0e-4);
+    assert!((props[0].velocity_units_s.y - 1.0).abs() < 1.0e-4);
+}
+
+#[test]
+fn a_frictionless_floor_makes_the_contact_frictionless() {
+    let mut props = vec![
+        Prop::new(
+            ball(Vec3::new(0.0, 0.9, 0.0), 1.0),
+            DVec3::new(4.0, -1.0, 0.0),
+            4.0,
+        )
+        .with_material(Material::new(1.0, 0.9)),
+        Prop::immovable(floor()),
+    ];
+
+    resolve_contacts(&mut props);
+
+    assert_eq!(props[0].velocity_units_s.x, 4.0);
+}
+
+#[test]
+fn friction_between_two_movable_props_conserves_momentum_and_drags_them_together() {
+    // Closing along X, sliding past each other along Z.
+    let mut props = pair_of(
+        Material::new(0.5, 0.8),
+        DVec3::new(1.0, 0.0, 2.0),
+        2.0,
+        DVec3::new(-1.0, 0.0, -1.0),
+        5.0,
+    );
+    let sliding_before = props[1].velocity_units_s.z - props[0].velocity_units_s.z;
+    let (before_x, before_z) = (axis_bodies(&props, 0), axis_bodies(&props, 2));
+
+    resolve_contacts(&mut props);
+
+    let sliding_after = props[1].velocity_units_s.z - props[0].velocity_units_s.z;
+    assert!(
+        sliding_after.abs() < sliding_before.abs(),
+        "{sliding_before} -> {sliding_after}"
+    );
+    assert!(
+        sliding_after * sliding_before >= 0.0,
+        "friction must never reverse a slide"
+    );
+    assert!(momentum_is_conserved(
+        &before_x,
+        &axis_bodies(&props, 0),
+        1.0e-6
+    ));
+    assert!(momentum_is_conserved(
+        &before_z,
+        &axis_bodies(&props, 2),
+        1.0e-6
+    ));
+}
+
+#[test]
+fn a_ball_dropped_on_an_inelastic_floor_bounces_lower_each_time_and_settles() {
+    // End to end through `Scene::step`, with the demo's floor and a falling ball pulled
+    // down by a heavy immovable body far below. Each bounce returns `e` of the impact
+    // speed, so each apex is `e²` of the one before.
+    let restitution = 0.5_f32;
+    let material = Material::new(restitution, 0.0);
+    let mut scene = Scene::empty(crate::core::scene::Aabb {
+        min: Vec3::splat(-100.0),
+        max: Vec3::splat(100.0),
+    });
+    scene.softening_units = 0.0;
+    scene.add(Prop::immovable(floor()).with_material(material));
+    // A point of pull 1000 units down: near-uniform gravity over the bounce, `6.7e-14`
+    // units/s², so a 4-unit fall takes about four months of simulated time.
+    scene.add(Prop::immovable_with_mass(
+        ball(Vec3::new(0.0, -1000.0, 0.0), 0.1),
+        1.0e30,
+    ));
+    let id =
+        scene.add(Prop::at_rest(ball(Vec3::new(0.0, 5.0, 0.0), 1.0), 1.0).with_material(material));
+
+    let mut apexes = Vec::new();
+    let mut rising = false;
+    let mut last_y = 5.0_f64;
+    for _ in 0..200_000 {
+        scene.step(seconds(1.0e4));
+        let y = scene.get(id).unwrap().body.center().y;
+        if rising && y < last_y {
+            apexes.push(last_y);
+            if apexes.len() == 3 {
+                break;
+            }
+        }
+        rising = y > last_y;
+        last_y = y;
+    }
+
+    assert_eq!(
+        apexes.len(),
+        3,
+        "the ball must bounce three times, apexes {apexes:?}"
+    );
+    // Heights above the ball's resting centre (radius 1 above the floor).
+    let heights: Vec<f64> = std::iter::once(4.0)
+        .chain(apexes.iter().map(|y| y - 1.0))
+        .collect();
+    let expected_ratio = f64::from(restitution * restitution);
+    for pair in heights.windows(2) {
+        let ratio = pair[1] / pair[0];
+        assert!(
+            (ratio - expected_ratio).abs() < 0.01,
+            "each apex should be e² = {expected_ratio} of the last, got {ratio} ({heights:?})"
+        );
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(REGRESSION_SEEDS))),
+        ..ProptestConfig::default()
+    })]
+
+    /// Whatever the materials, a contact conserves momentum on every axis and never adds
+    /// kinetic energy.
+    #[test]
+    fn a_contact_with_any_material_conserves_momentum_and_never_adds_energy(
+        restitution in 0.0_f32..=1.0,
+        friction in 0.0_f32..2.0,
+        mass_a in 0.1_f32..100.0,
+        mass_b in 0.1_f32..100.0,
+        va in prop::array::uniform3(-5.0_f64..5.0),
+        vb in prop::array::uniform3(-5.0_f64..5.0),
+    ) {
+        let mut props = pair_of(
+            Material::new(restitution, friction),
+            DVec3::from_array(va),
+            mass_a,
+            DVec3::from_array(vb),
+            mass_b,
+        );
+        let before: Vec<Vec<(f64, f64)>> = (0..3).map(|axis| axis_bodies(&props, axis)).collect();
+        let energy = |props: &[Prop]| -> f64 {
+            props.iter().map(|p| 0.5 * f64::from(p.mass_kg) * p.velocity_units_s.length_squared()).sum()
+        };
+        let energy_before = energy(&props);
+
+        resolve_contacts(&mut props);
+
+        for (axis, before_axis) in before.iter().enumerate() {
+            let after = axis_bodies(&props, axis);
+            let scale: f64 = before_axis.iter().map(|(m, v)| (m * v).abs()).sum::<f64>().max(1.0);
+            let drift = (total_momentum(&after) - total_momentum(before_axis)).abs();
+            prop_assert!(drift <= 1.0e-9 * scale, "axis {axis}: drift {drift:e}");
+        }
+        prop_assert!(energy(&props) <= energy_before * (1.0 + 1.0e-9) + 1.0e-12);
+    }
+}
+
+#[test]
+fn a_simulated_contact_sets_the_substep_count_and_a_rigid_one_does_not() {
+    // Two 1 m, 1 t particles at rest, 1 GPa: a contact of π·√2 ms. A 10 ms step must be cut into
+    // at least 20 per contact, 46 substeps; the same props rigid need one.
+    let soft = Material::new(0.0, 0.0).with_modulus(1.0e9);
+    let particle = |x: f32, material: Material| {
+        Prop::at_rest(ball(Vec3::new(x * 1.0e-9, 0.0, 0.0), 1.0e-9), 1000.0).with_material(material)
+    };
+    let step = seconds(0.01);
+    let simulated = [particle(0.0, soft), particle(10.0, soft)];
+    let contact = std::f64::consts::PI * std::f64::consts::SQRT_2 * 1.0e-3;
+    let wanted = (0.01 * SOFT_CONTACT_SUBSTEPS / contact).ceil() as u32;
+    assert_eq!(substep_count(&simulated, step), wanted);
+    let rigid = [
+        particle(0.0, Material::ELASTIC),
+        particle(10.0, Material::ELASTIC),
+    ];
+    assert_eq!(substep_count(&rigid, step), 1);
+}
+
+#[test]
+fn two_particles_in_simulated_contact_are_not_bounced() {
+    let soft = Material::new(0.0, 0.0).with_modulus(1.0e9);
+    let mut props = vec![
+        Prop::new(ball(Vec3::ZERO, 1.0), DVec3::new(1.0, 0.0, 0.0), 5.0).with_material(soft),
+        Prop::new(
+            ball(Vec3::new(1.6, 0.0, 0.0), 1.0),
+            DVec3::new(-1.0, 0.0, 0.0),
+            5.0,
+        )
+        .with_material(soft),
+    ];
+    let before = props.clone();
+    assert_eq!(resolve_contacts(&mut props), 0);
+    assert_eq!(props, before);
 }

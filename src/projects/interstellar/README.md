@@ -1,6 +1,6 @@
 # `src/projects/interstellar/` — the interstellar experiments
 
-> **Purpose:** The catalog of runnable simulations (two-body, three-body ring, solar system,
+> **Purpose:** The catalog of runnable simulations (giant impact, three-body ring, solar system,
 > Jovian moons, size ruler, black hole, Earth and Moon), each one's clock scale and starting camera, the command-line
 > parsing, and the objects the `B` key places.
 > **Edit here to:** add or change an experiment, change planet or moon data, starting camera
@@ -26,24 +26,27 @@ description of a world, not a renderer.
 | `catalog.rs` | `ExperimentId`, `ExperimentSpec`, `launches` on `ExperimentSpec` (whether `R` flies a spacecraft here; which one is the fleet's, in `src/spacecraft/`), `BodyNames`, `Experiment`, the builder for each experiment, `ring_circular_speed_units_s`, `catalog_lines`. |
 | `selection.rs` | `parse_args` → `Command`, `Selection`, `ParseError`, `help_text`. The command-line surface. |
 | `random.rs` | `Rng`: a deterministic SplitMix64, for randomised initial conditions. |
+| `giant_impact.rs` | `experiment_1`: the Earth and a Mars-mass body, each built from particles, falling together from rest and merging through the simulated contact. `giant_impact`, `giant_impact_with` (at a given particle count), `giant_impact_target`, `giant_impact_impactor`, `giant_impact_contact_m`, `giant_impact_seconds` (the free-fall time to contact), `giant_impact_speed_m_s`. Both planets are made of `PLANETARY_PARTICLE_MATERIAL`. |
 | `solar_system.rs` | `experiment_3`: `Planet`, `MoonSystem`, `radius_units`, `circular_orbit_speed_units_s`, `circular_orbit_period_seconds`, and the builder. |
 | `objects.rs` | `StellarObject` and `stellar_object`: the dwarfs, neutron star, and black holes the `B` key places into a running experiment. |
 | `jovian.rs` | `experiment_4`: Jupiter and the Galilean moons. `jovian_primary`, `jovian_orbit_speed_units_s`, `jovian_orbit_period_seconds`. |
 | `scale_check.rs` | `experiment_5`: a static size-comparison row. `ScaleRow`, `scale_rows`, `scale_check_layout`. A ruler, not a simulation. |
 | `black_hole.rs` | `experiment_6`: Sgr A*, spinning, with an accretion disc and six real S-stars on their measured orbits. `black_hole`, `SStar` and `s_star_state` (a measured orbit to a position and velocity), `spinning_horizon_units`, `BlackHoleRadii` and `black_hole_radii` (the non-spinning radii, for comparison), `black_hole_centre_units`, `SGR_A_STAR_NAME`. |
 | `earth_moon.rs` | `experiment_7`: the Earth and the Moon alone, at true size and distance, both orbiting their barycentre. `earth_moon_system`, `earth_moon_primary`, `earth_moon_satellite`, `earth_moon_mass_fraction`, `earth_moon_orbit_speed_units_s`, `earth_moon_orbit_period_seconds`. |
+| `moon_forming.rs` | `experiment_8`: the Moon-forming impact, the same planets as `experiment_1` meeting at escape speed and `45°`. `moon_forming_impact_with`, `moon_forming_impact_seconds` (Barker's equation for the parabolic approach), `moon_forming_impact_speed_m_s`, `moon_forming_angular_momentum`. |
 
-## The seven experiments
+## The eight experiments
 
 | Slug | Also | What it is |
 | --- | --- | --- |
-| `experiment_1` | `1`, `two-body` | Two Earth masses `30` units apart, released from rest: they fall together, bounce elastically, and oscillate. |
+| `experiment_1` | `1`, `giant-impact`, `impact`, `theia`, `two-body` | The Earth and a Mars-mass body (Theia) at true size, each a pile of particles held together by its own gravity, released from rest `10` contact distances apart: they fall together for `14` hours, collide head-on at about `9 km/s`, flatten and flow into each other through the simulated contact, and settle into one body. The impact's heat puffs the merged body up and lofts a few percent of it, all of which is bound and falls back: a perfect merge, as Leinhardt & Stewart find below escape speed. The particle count is Configuration > Collisions > Particles per planet (`200` by default), applied at launch. Replaced the two-body free fall (two Earth masses drawn `235×` too large, bouncing elastically forever). |
 | `experiment_2` | `2`, `three-body`, `ring` | Three Earth masses at 120° on a `12`-unit circle, each given a **tangential** velocity of random magnitude, then released. |
 | `experiment_3` | `3`, `solar-system`, `planets` | The Sun, the eight planets, Earth's Moon, and Jupiter's four moons — everything at true scale with nothing compensating for it. Deterministic. |
 | `experiment_4` | `4`, `jovian`, `jupiter`, `moons` | Jupiter and the four Galilean moons, with the 1:2:4 Laplace resonance. The one system that is **visible** at true scale. |
 | `experiment_5` | `5`, `scale`, `sizes`, `ruler` | The Sun and eight planets in a static row at true size, bottoms aligned. Nothing moves — it is a ruler. |
 | `experiment_6` | `6`, `black-hole`, `sgr-a` | Sgr A*, spinning at `a = 0.9`, with a glowing accretion disc dragged round it. |
 | `experiment_7` | `7`, `earth-moon`, `earth`, `moon`, `luna` | The Earth and the Moon alone, at true size and true distance, both orbiting their barycentre every `27.3` days. |
+| `experiment_8` | `8`, `moon-forming`, `oblique`, `canonical` | The Moon-forming impact: the same particle planets meeting at their mutual escape speed (`9.25 km/s`) and at `45°` after `1.5` hours, with `1.1` times the Earth–Moon system's angular momentum. They merge into one hot, spinning body and throw material onto orbits that clear its surface. The particles spin, so angular momentum is kept exactly. Measured on the GPU after a day: `1.6%` to `2.0%` of the mass in the disk from `2,000` to `20,000` particles per planet, `1.5` lunar masses, inside the one to two Canup (2004) finds. |
 
 ```bash
 cargo run --release                          # experiment_1
@@ -54,6 +57,7 @@ cargo run --release -- moons                 # Jupiter and the Galilean moons
 cargo run --release -- scale                 # the size-comparison row
 cargo run --release -- black-hole            # Sgr A*, spinning, with its disc
 cargo run --release -- earth-moon            # the Earth and the Moon
+cargo run --release -- moon-forming          # the Moon-forming impact
 cargo run --release -- --list                # the catalog
 ```
 

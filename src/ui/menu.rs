@@ -12,7 +12,8 @@
 //!   a rebindable one is a button, and clicking it waits for the next key. *Video* has the
 //!   anti-aliasing mode, vsync, and the floor's eclipse shadows.
 //! - **Configuration**, one tab per configuration file: camera, interface (crosshair, compass,
-//!   arrival pop-up), trails, and the spacecraft fleet.
+//!   arrival pop-up), trails, collisions (how many debris bodies an impact makes), and the
+//!   spacecraft fleet.
 //!
 //! Every editing page has **Reset**, which puts that page's settings back to the built-in
 //! defaults, and **Save**, which writes that page's file in `config/`. Changes apply as they are
@@ -45,13 +46,20 @@ use bevy::ecs::system::{Res, ResMut, Resource, SystemParam};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::bindings::{binding_rows, BindingGroup, KeyMap};
+use crate::compute::constants::{MAX_OPENING_ANGLE, MIN_OPENING_ANGLE};
+use crate::compute::particles::{GpuSolver, GravitySolver, NeighbourSearch};
 use crate::constants::METRES_PER_UNIT;
+use crate::core::constants::{
+    MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
+};
+use crate::core::scene::CollisionSettings;
 use crate::input::camera::CameraSettings;
 use crate::input::menu::{ConfigTab, MenuPage, MenuState, SettingsTab};
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::projects::interstellar::catalog::ExperimentSpec;
 use crate::render::mission::Mission;
+use crate::render::plugin::PhysicsBackend;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::{Fleet, Propulsion, Trip};
 use crate::time::simulation::SimulationClock;
@@ -93,7 +101,7 @@ pub struct SettingsRow {
 /// ```
 /// use physics_sandbox::{settings_rows, ExperimentId, SimulationClock, TrailConfig};
 ///
-/// let spec = ExperimentId::TwoBody.build_default().spec;
+/// let spec = ExperimentId::GiantImpact.build_default().spec;
 /// let clock = SimulationClock::new(spec.time_scale);
 /// let rows = settings_rows(&spec, &clock, &TrailConfig::default());
 ///
@@ -156,6 +164,8 @@ pub enum SaveTarget {
     Interface,
     /// `trails.toml`.
     Trails,
+    /// `collision.toml`.
+    Collisions,
     /// `spacecraft.toml`.
     Spacecraft,
 }
@@ -227,12 +237,15 @@ pub struct MenuResources<'w> {
     clock: Res<'w, SimulationClock>,
     keymap: ResMut<'w, KeyMap>,
     trails: ResMut<'w, TrailConfig>,
+    collision: ResMut<'w, CollisionSettings>,
+    solver: ResMut<'w, GpuSolver>,
     camera: ResMut<'w, CameraSettings>,
     crosshair: ResMut<'w, CrosshairConfig>,
     compass: ResMut<'w, CompassConfig>,
     arrival: ResMut<'w, ArrivalPopupConfig>,
     performance: Option<ResMut<'w, PerformanceSettings>>,
     mission: Option<ResMut<'w, Mission>>,
+    physics: Option<Res<'w, PhysicsBackend>>,
     requests: ResMut<'w, MenuRequests>,
 }
 
@@ -308,6 +321,7 @@ pub fn menu_system(
                         ("Camera", MenuPage::Configuration(ConfigTab::Camera)),
                         ("Interface", MenuPage::Configuration(ConfigTab::Interface)),
                         ("Trails", MenuPage::Configuration(ConfigTab::Trails)),
+                        ("Collisions", MenuPage::Configuration(ConfigTab::Collisions)),
                         ("Spacecraft", MenuPage::Configuration(ConfigTab::Spacecraft)),
                     ],
                     page,
@@ -316,6 +330,7 @@ pub fn menu_system(
                     ConfigTab::Camera => camera_tab(ui, &mut resources),
                     ConfigTab::Interface => interface_tab(ui, &mut resources),
                     ConfigTab::Trails => trails_tab(ui, &mut resources),
+                    ConfigTab::Collisions => collisions_tab(ui, &mut resources),
                     ConfigTab::Spacecraft => spacecraft_tab(ui, &mut resources),
                 });
                 footer(ui, &mut resources.requests);
@@ -360,7 +375,14 @@ fn main_page(
         .num_columns(2)
         .min_col_width(MENU_KEY_COLUMN_PX)
         .show(ui, |ui| {
-            let rows = settings_rows(&resources.spec, &resources.clock, &resources.trails);
+            let mut rows = settings_rows(&resources.spec, &resources.clock, &resources.trails);
+            // Where the physics runs, when the app looked for a GPU at all.
+            if let Some(backend) = resources.physics.as_deref() {
+                rows.push(SettingsRow {
+                    label: "Physics",
+                    value: backend.label(),
+                });
+            }
             for row in rows {
                 ui.label(row.label);
                 ui.label(row.value);
@@ -760,6 +782,99 @@ fn trails_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     }
 }
 
+/// Configuration > Collisions: `collision.toml`.
+fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
+    edit_copy(&mut resources.collision, |collision| {
+        settings_grid(ui, "menu_collisions", |ui| {
+            number_row(
+                ui,
+                "Particles per planet",
+                &mut collision.particles_per_body,
+                MIN_PARTICLES_PER_BODY..=MAX_PARTICLES_PER_BODY,
+                1.0,
+            );
+            number_row(
+                ui,
+                "Debris fragments per instant merge",
+                &mut collision.debris_fragments,
+                0..=MAX_DEBRIS_FRAGMENTS,
+                1.0,
+            );
+        });
+    });
+    ui.add_space(MENU_SECTION_GAP_PX);
+    ui.label(egui::RichText::new("GPU algorithms").strong());
+    edit_copy(&mut resources.solver, |solver| {
+        settings_grid(ui, "menu_gpu_solver", |ui| {
+            ui.label("Gravity");
+            egui::ComboBox::from_id_source("menu_gpu_gravity")
+                .selected_text(solver.gravity.label())
+                .show_ui(ui, |ui| {
+                    for choice in GravitySolver::ALL {
+                        ui.selectable_value(&mut solver.gravity, choice, choice.label());
+                    }
+                });
+            ui.end_row();
+            ui.label("Neighbours");
+            egui::ComboBox::from_id_source("menu_gpu_neighbours")
+                .selected_text(solver.neighbours.label())
+                .show_ui(ui, |ui| {
+                    for choice in NeighbourSearch::ALL {
+                        ui.selectable_value(&mut solver.neighbours, choice, choice.label());
+                    }
+                });
+            ui.end_row();
+            ui.label("Opening angle θ");
+            ui.add_enabled(
+                solver.gravity == GravitySolver::BarnesHut,
+                egui::Slider::new(
+                    &mut solver.opening_angle,
+                    MIN_OPENING_ANGLE..=MAX_OPENING_ANGLE,
+                ),
+            );
+            ui.end_row();
+        });
+    });
+    ui.label(
+        egui::RichText::new(
+            "Particles per planet: how many particles the larger planet of the giant impact is \
+             made of; the contact between the planets is simulated particle by particle, so this \
+             is how finely the deformation, the merge and the debris are followed. It costs as \
+             the square of the count on the CPU, which manages about 200; with a GPU (see Physics \
+             on the first page) the algorithms below set the cost. Save, then relaunch: the scene \
+             is built at launch.",
+        )
+        .weak(),
+    );
+    ui.label(
+        egui::RichText::new(
+            "Debris fragments: for planets that are single spheres, which merge in one instant, \
+             how many bodies the debris the scaling law gives is split into. 0 merges with no \
+             debris. Applies to the next impact.",
+        )
+        .weak(),
+    );
+    ui.label(
+        egui::RichText::new(
+            "GPU algorithms, applied at once: Direct and All pairs are exact and fastest up to \
+             tens of thousands of particles; the trees cost N log N rather than N² and win beyond \
+             (measured on an RTX 4070 SUPER: 4x faster at 114,000). A smaller opening angle is \
+             more exact and slower. The CPU always sums every pair.",
+        )
+        .weak(),
+    );
+    let (reset, save) = reset_and_save(ui);
+    if reset {
+        edit_copy(&mut resources.collision, |c| {
+            *c = CollisionSettings::default()
+        });
+        edit_copy(&mut resources.solver, |s| *s = GpuSolver::DEFAULT);
+    }
+    if save {
+        resources.requests.request_save(SaveTarget::Collisions);
+    }
+}
+
 /// Configuration > Spacecraft: `spacecraft.toml`.
 fn spacecraft_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     let Some(mission) = resources.mission.as_mut() else {
@@ -996,6 +1111,8 @@ impl Plugin for MenuPanelPlugin {
             .init_resource::<MenuRequests>()
             .init_resource::<KeyMap>()
             .init_resource::<TrailConfig>()
+            .init_resource::<CollisionSettings>()
+            .init_resource::<GpuSolver>()
             .init_resource::<CameraSettings>()
             .init_resource::<CrosshairConfig>()
             .init_resource::<CompassConfig>()

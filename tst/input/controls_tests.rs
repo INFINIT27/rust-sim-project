@@ -130,6 +130,25 @@ fn backslash_resets_the_scale_to_the_shipped_value() {
 }
 
 #[test]
+fn backslash_resets_to_the_running_experiments_own_scale() {
+    use crate::projects::interstellar::giant_impact::giant_impact;
+
+    let spec = giant_impact().spec;
+    let mut app = app_with_controls(spec.time_scale);
+    app.insert_resource(spec);
+
+    press(&mut app, KeyCode::BracketRight);
+    assert_ne!(clock(&app).scale(), spec.time_scale);
+
+    press(&mut app, KeyCode::Backslash);
+    assert_eq!(
+        clock(&app).scale(),
+        spec.time_scale,
+        "not the old two-body clock"
+    );
+}
+
+#[test]
 fn the_controls_never_touch_elapsed_simulated_time() {
     // These keys change *when and how fast* the experiment advances. They must never
     // advance it themselves — only `advance_clocks_system` may do that.

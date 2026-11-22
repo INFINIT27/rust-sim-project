@@ -12,9 +12,10 @@
 //! depend on.
 
 use super::*;
-use crate::constants::TWO_BODY_TIME_SCALE;
 use crate::core::scene::{BodyId, DVec3};
 use crate::projects::interstellar::catalog::{ExperimentId, ExperimentSpec};
+use crate::projects::interstellar::constants::GIANT_IMPACT_TIME_SCALE;
+use crate::projects::interstellar::giant_impact::{giant_impact, giant_impact_seconds};
 use crate::render::eclipse::BodyMaterial;
 use bevy::app::App;
 use proptest::prelude::*;
@@ -36,8 +37,8 @@ fn the_default_clock_caps_at_point_one_and_runs_real_time() {
 
 /// `ScenePlugin` must insert the *tuned* time scale, not the default.
 ///
-/// The two-body scene is unwatchable at real time — the spheres take about 6.5
-/// years to fall together — so the plugin deliberately overrides `time_scale`.
+/// The giant impact is unwatchable at real time — the planets take 14 hours to
+/// fall together — so the plugin deliberately overrides `time_scale`.
 /// Pinned because a regression here would look like a physics bug: the pair would
 /// appear frozen rather than falling.
 ///
@@ -52,7 +53,7 @@ fn scene_plugin_inserts_the_tuned_time_scale() {
     app.add_plugins(ScenePlugin::default());
 
     let clock = *app.world().resource::<SimulationClock>();
-    assert_eq!(clock.scale(), TWO_BODY_TIME_SCALE);
+    assert_eq!(clock.scale(), GIANT_IMPACT_TIME_SCALE);
     assert_ne!(
         clock.scale(),
         SimulationClock::default().scale(),
@@ -60,10 +61,10 @@ fn scene_plugin_inserts_the_tuned_time_scale() {
     );
 
     // One real frame must advance simulated time by a meaningful fraction of the
-    // free-fall time: enough to see, few enough steps to stay stable. 40 seconds of
-    // watching at 60 fps is ~2400 steps.
+    // free-fall time: enough to see, few enough steps to stay stable. 25 seconds of
+    // watching at 60 fps is ~1500 steps.
     let frame_dt = 1.0 / 60.0;
-    let steps = Scene::two_body_free_fall_seconds() / f64::from(frame_dt * clock.scale());
+    let steps = giant_impact_seconds() / f64::from(frame_dt * clock.scale());
     assert!(
         (1000.0..10_000.0).contains(&steps),
         "the shipped scale gives {} steps over the approach; aim for a few thousand",
@@ -71,18 +72,32 @@ fn scene_plugin_inserts_the_tuned_time_scale() {
     );
 }
 
-/// The shipped scene is the two-body gravitation scene: floor plus two spheres.
+/// The shipped scene is the giant impact: two planets of particles, no floor, at the collision
+/// detail the configuration inserted before the plugin.
 #[test]
-fn scene_plugin_inserts_the_two_body_scene() {
+fn scene_plugin_inserts_the_giant_impact_at_the_configured_detail() {
     let mut app = App::new();
     app.add_plugins(ScenePlugin::default());
-
-    let scene = app.world().resource::<Scene>();
-    assert_eq!(scene.props.len(), 3, "container plane plus two spheres");
-    assert!(scene.props[0].immovable, "the first prop is the floor");
+    let default_count = app.world().resource::<Scene>().props.len();
     assert!(
-        scene.props[1..].iter().all(|p| p.responds_to_forces()),
-        "both spheres must be movable and massive"
+        app.world()
+            .resource::<Scene>()
+            .props
+            .iter()
+            .all(|p| p.responds_to_forces() && p.material.modulus_pa.is_some()),
+        "every particle movable, massive, and in simulated contact"
+    );
+
+    let mut coarse = App::new();
+    coarse.insert_resource(CollisionSettings {
+        particles_per_body: 50,
+        ..CollisionSettings::default()
+    });
+    coarse.add_plugins(ScenePlugin::default());
+    let coarse_count = coarse.world().resource::<Scene>().props.len();
+    assert!(
+        coarse_count < default_count / 3,
+        "{coarse_count} particles at detail 50 against {default_count} at the default"
     );
 }
 
@@ -268,7 +283,8 @@ fn render_bridge_does_not_mutate_scene() {
     // test can add to that. What is asserted here instead is everything the
     // *structure* of the scene guarantees across a tick, which sync would break if
     // it ever gained write access: the prop count, the id set, the bounds, the
-    // immovable floor, and every prop's validity.
+    // bodies' masses and materials, and every prop's validity. (Five ticks of the
+    // giant impact are far from the collision, so no prop is merged away.)
     let scene_after = app.world().resource::<Scene>();
 
     assert_eq!(
@@ -285,10 +301,13 @@ fn render_bridge_does_not_mutate_scene() {
         scene_after.bounds, scene_before.bounds,
         "sync_scene_to_ecs_system must not mutate Scene::bounds"
     );
-    assert_eq!(
-        scene_after.props[0], scene_before.props[0],
-        "the immovable container plane must be untouched"
-    );
+    for (after, before) in scene_after.props.iter().zip(&scene_before.props) {
+        assert_eq!(
+            after.mass_kg, before.mass_kg,
+            "a tick must not change a mass"
+        );
+        assert_eq!(after.material, before.material);
+    }
     for prop in &scene_after.props {
         assert!(
             prop.is_valid(),
@@ -912,7 +931,7 @@ fn a_star_lights_its_own_scene_and_a_starless_one_falls_back() {
 
     // These have no star, so they keep the fixed light or they would be silhouettes.
     for id in [
-        ExperimentId::TwoBody,
+        ExperimentId::GiantImpact,
         ExperimentId::ThreeBodyRing,
         ExperimentId::Jovian,
         ExperimentId::ScaleCheck,
@@ -954,7 +973,7 @@ fn the_black_hole_has_no_ambient_light() {
 
     assert_eq!(ambient(ExperimentId::BlackHole), Some(0.0));
     assert_ne!(
-        ambient(ExperimentId::TwoBody),
+        ambient(ExperimentId::GiantImpact),
         Some(0.0),
         "the others keep Bevy's default fill (or none at all headless)"
     );
@@ -1088,32 +1107,39 @@ fn removing_a_star_removes_its_light() {
 
 /// The startup camera must actually frame the pair it is placed for.
 ///
-/// Pins the arithmetic in [`CAMERA_START_POSITION_UNITS`]'s docs against the scene
-/// constants it was derived from, so widening
-/// [`crate::constants::TWO_BODY_SEPARATION_UNITS`] — or moving the camera in — fails
-/// here rather than silently pushing the spheres off screen, which no headless test
-/// would otherwise notice.
+/// Pins the arithmetic in
+/// [`GIANT_IMPACT_CAMERA_POSITION_UNITS`](crate::projects::interstellar::constants::GIANT_IMPACT_CAMERA_POSITION_UNITS)'s
+/// docs against the scene it frames, so moving the planets apart — or the camera in — fails
+/// here rather than silently pushing a planet off screen, which no headless test would
+/// otherwise notice.
 #[test]
-fn the_startup_camera_frames_the_two_body_pair() {
-    use crate::constants::{
-        TWO_BODY_HEIGHT_UNITS, TWO_BODY_SEPARATION_UNITS, TWO_BODY_VISUAL_RADIUS_UNITS,
-    };
-    use crate::projects::interstellar::catalog::two_body;
+fn the_startup_camera_frames_the_giant_impact() {
+    let experiment = giant_impact();
 
     // Bevy's default perspective projection is a 45-degree *vertical* field of view.
     let half_fov = 45.0_f32.to_radians() / 2.0;
 
-    // The widest thing that has to fit: half the separation plus one sphere.
-    let half_extent = 0.5 * TWO_BODY_SEPARATION_UNITS + TWO_BODY_VISUAL_RADIUS_UNITS;
+    // The widest thing that has to fit: the furthest planet's far edge from the target.
+    let target = experiment.spec.camera_target_units;
+    let half_extent = experiment
+        .scene
+        .props
+        .iter()
+        .map(|prop| {
+            let Body::Sphere { pose, radius, .. } = &prop.body else {
+                panic!("the planets are spheres")
+            };
+            (pose.position.as_vec3() - target).length() + radius
+        })
+        .fold(0.0_f32, f32::max);
     let minimum_distance = half_extent / half_fov.tan();
 
-    let target = Vec3::new(0.0, TWO_BODY_HEIGHT_UNITS, 0.0);
-    let actual_distance = (two_body().spec.camera_position_units - target).length();
+    let actual_distance = (experiment.spec.camera_position_units - target).length();
 
     assert!(
         actual_distance >= minimum_distance,
         "camera is {actual_distance} units from the scene but needs at least \
-         {minimum_distance} to frame a {TWO_BODY_SEPARATION_UNITS}-unit separation"
+         {minimum_distance} to frame both planets"
     );
 }
 
@@ -1182,4 +1208,54 @@ fn the_floor_eclipse_switch_silences_only_the_floor() {
         !spheres.is_empty() && spheres.iter().all(|w| *w > 0.0),
         "off: spheres are still shadowed"
     );
+}
+
+/// The collision detail the menu edits reaches the scene on the next step, which is what lets a
+/// change apply to the next impact without rebuilding anything.
+#[test]
+fn the_step_copies_the_collision_detail_into_the_scene() {
+    use bevy::time::TimePlugin;
+
+    let mut app = App::new();
+    app.add_plugins(TimePlugin);
+    app.insert_resource(Scene::demo());
+    app.init_resource::<SimulationClock>();
+    app.insert_resource(CollisionSettings {
+        debris_fragments: 3,
+        ..CollisionSettings::default()
+    });
+    app.add_systems(bevy::app::Update, step_scene_system);
+
+    assert_eq!(
+        app.world().resource::<Scene>().collision,
+        CollisionSettings::default()
+    );
+    app.update();
+    assert_eq!(
+        app.world().resource::<Scene>().collision.debris_fragments,
+        3
+    );
+}
+
+/// The GPU plugin always says where the physics runs, and inserts a stepper exactly when it found
+/// a GPU. An app without the plugin never touches a GPU.
+#[test]
+fn the_gpu_plugin_says_where_the_physics_runs() {
+    let mut app = App::new();
+    app.add_plugins(GpuPhysicsPlugin);
+    let backend = app.world().resource::<PhysicsBackend>().clone();
+    match &backend {
+        PhysicsBackend::Gpu(name) => {
+            assert!(app.world().contains_resource::<GpuParticles>());
+            assert!(backend.label().contains(name.as_str()));
+        }
+        PhysicsBackend::Cpu(_) => {
+            assert!(!app.world().contains_resource::<GpuParticles>());
+            assert!(backend.label().starts_with("CPU"));
+        }
+    }
+
+    let mut without = App::new();
+    without.add_plugins(ScenePlugin::default());
+    assert!(!without.world().contains_resource::<GpuParticles>());
 }

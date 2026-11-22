@@ -13,6 +13,7 @@
 //! | `camera.toml` | [`CameraSettings`] |
 //! | `ui.toml` | [`CrosshairConfig`], [`CompassConfig`], [`ArrivalPopupConfig`] |
 //! | `trails.toml` | [`TrailConfig`] |
+//! | `collision.toml` | [`CollisionSettings`], copied into the scene every frame |
 //! | `performance.toml` | [`PerformanceSettings`], which the `RGA_*` variables override |
 //! | `controls.toml` | [`KeyMap`] |
 //!
@@ -35,13 +36,15 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::bindings::KeyMap;
+use crate::compute::particles::GpuSolver;
 use crate::config::constants::{
-    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
+    CAMERA_FILE, COLLISION_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
     SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE,
 };
 use crate::config::files::{
-    CameraFile, ControlsFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile,
+    CameraFile, CollisionFile, ControlsFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile,
 };
+use crate::core::scene::CollisionSettings;
 use crate::input::camera::CameraSettings;
 use crate::performance::PerformanceSettings;
 use crate::render::mission::Mission;
@@ -94,6 +97,10 @@ pub struct Config {
     pub compass: CompassConfig,
     /// From `ui.toml`'s `[arrival]`.
     pub arrival: ArrivalPopupConfig,
+    /// From `collision.toml`.
+    pub collision: CollisionSettings,
+    /// From `collision.toml`: the GPU's algorithms.
+    pub solver: GpuSolver,
     /// From `trails.toml`.
     pub trails: TrailConfig,
     /// From `performance.toml`, before the environment overrides it.
@@ -108,6 +115,8 @@ impl Config {
         let file = |name: &str| dir.join(name);
         let (crosshair, compass, arrival) =
             read::<UiFile, _>(&file(UI_FILE), UiFile::into_runtime)?;
+        let (collision, solver) =
+            read::<CollisionFile, _>(&file(COLLISION_FILE), CollisionFile::into_runtime)?;
         Ok(Self {
             fleet: read::<SpacecraftFile, _>(&file(SPACECRAFT_FILE), SpacecraftFile::into_runtime)?,
             camera: read::<CameraFile, _>(&file(CAMERA_FILE), CameraFile::into_runtime)?,
@@ -115,6 +124,8 @@ impl Config {
             compass,
             arrival,
             trails: read::<TrailsFile, _>(&file(TRAILS_FILE), TrailsFile::into_runtime)?,
+            collision,
+            solver,
             performance: read::<PerformanceFile, _>(
                 &file(PERFORMANCE_FILE),
                 PerformanceFile::into_runtime,
@@ -133,6 +144,8 @@ impl Config {
             .insert_resource(self.compass)
             .insert_resource(self.arrival)
             .insert_resource(self.trails)
+            .insert_resource(self.collision)
+            .insert_resource(self.solver)
             .insert_resource(self.keymap);
     }
 }
@@ -174,6 +187,8 @@ pub struct Configured<'w> {
     compass: Option<Res<'w, CompassConfig>>,
     arrival: Option<Res<'w, ArrivalPopupConfig>>,
     trails: Option<Res<'w, TrailConfig>>,
+    collision: Option<Res<'w, CollisionSettings>>,
+    solver: Option<Res<'w, GpuSolver>>,
     mission: Option<Res<'w, Mission>>,
 }
 
@@ -223,6 +238,11 @@ pub fn save_requested_system(
             dir,
             TRAILS_FILE,
             &TrailsFile::from_runtime(&or_default(&c.trails)),
+        ),
+        SaveTarget::Collisions => write_file(
+            dir,
+            COLLISION_FILE,
+            &CollisionFile::from_runtime(&or_default(&c.collision), &or_default(&c.solver)),
         ),
         SaveTarget::Spacecraft => {
             let fleet = c

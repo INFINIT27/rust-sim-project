@@ -219,7 +219,7 @@ pub const WINDOW_MODE: WindowMode = WindowMode::BorderlessFullscreen;
 /// **If you change it.** The camera's framing depends on the *aspect ratio*, not the pixel
 /// count: Bevy's default projection has a fixed vertical field of view, so a window
 /// narrower than 4:3 crops the scene horizontally. See
-/// [`crate::projects::interstellar::constants::TWO_BODY_CAMERA_POSITION_UNITS`] for the framing that
+/// [`crate::projects::interstellar::constants::GIANT_IMPACT_CAMERA_POSITION_UNITS`] for framing that
 /// assumes it.
 pub const WINDOW_WIDTH_PX: f32 = 800.0;
 

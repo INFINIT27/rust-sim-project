@@ -14,8 +14,14 @@
 //!   [`MIN_AXIS_LENGTH`]: how a contact is found.
 //! - **Broad phase** — [`BROAD_PHASE_RELATIVE_SLACK`]: how a pair is ruled out
 //!   before any hull is built.
-//! - **Response** — [`RESTITUTION`], [`MAX_SUBSTEP_DISPLACEMENT_UNITS`],
+//! - **Response** — [`MAX_SUBSTEP_DISPLACEMENT_UNITS`],
 //!   [`MAX_SUBSTEP_DYNAMICAL_FRACTION`], [`MAX_SUBSTEPS`]: what happens once it is.
+//! - **Merging and debris** — [`GRAVITY_DOMINATED_SPECIFIC_ENERGY_J_KG`],
+//!   [`DEBRIS_MIN_MASS_FRACTION`], [`DEBRIS_MIN_SPEED_FACTOR`], [`DEBRIS_MAX_SPEED_FACTOR`],
+//!   [`DEBRIS_SPAWN_CLEARANCE`]: when two bodies become one, and what flies off.
+//! - **Simulated contact** — [`SOFT_CONTACT_SUBSTEPS`], [`SOFT_CONTACT_MAX_DAMPING_RATIO`],
+//!   [`CLUSTER_CONTACT_TOLERANCE`]: how finely
+//!   a contact between particles is followed, and which particles count as one body.
 //!
 //! # Two of these constrain each other
 //!
@@ -192,33 +198,6 @@ pub const MIN_AXIS_LENGTH: f32 = 1.0e-6;
 /// tessellation. At `1e-5` the 5000-unit floor reaches about `0.1` units above itself.
 pub const BROAD_PHASE_RELATIVE_SLACK: f32 = 1.0e-5;
 
-/// Coefficient of restitution for every contact: `1.0`, perfectly elastic.
-/// Dimensionless.
-///
-/// The fraction of the normal approach speed that comes back out as separation
-/// speed. `1.0` conserves kinetic energy exactly, `0.0` is a perfectly inelastic
-/// stick, and real materials sit between.
-///
-/// **Why this value.** Perfectly elastic contact is the behaviour body physics was
-/// introduced with (amendment A2), and it is the case with a closed-form solution
-/// already available in [`crate::physics_utils::conservation_laws`]. It is a crate
-/// constant rather than a `Prop` field because per-material restitution is a
-/// modelling decision the scene has not needed, and one honestly documented value
-/// beats a field every caller sets identically.
-///
-/// **Used by.** [`crate::collision::resolve::resolve_contacts`], via the
-/// wall-reflection path. The two-movable-props path goes through
-/// [`crate::physics_utils::conservation_laws::elastic_collision_1d`], which *is* the
-/// `1.0` case — so a value other than `1.0` would apply to walls only until that
-/// path is generalised.
-///
-/// **If you change it.** Below `1.0` the crate becomes inconsistent until the
-/// movable-pair path is rewritten to take restitution, since that path is elastic by
-/// construction. `perfectly_inelastic_collision_1d` is already available as the
-/// other end of the range. Above `1.0` a bounce creates energy and the shipped
-/// scene's oscillation grows without bound.
-pub const RESTITUTION: f32 = 1.0;
-
 /// Furthest any prop may travel within one collision substep, in world units.
 ///
 /// **Why this value.** Contact is tested at substep boundaries, so a prop that moves
@@ -307,3 +286,171 @@ pub const MAX_SUBSTEPS: u32 = 256;
 /// Larger values are cheaper and coarser; smaller ones hit [`MAX_SUBSTEPS`] sooner, at which point
 /// accuracy silently stops improving.
 pub const MAX_SUBSTEP_DYNAMICAL_FRACTION: f32 = 0.007;
+
+/// The specific gravitational binding, `G·M/R`, above which a body counts as **held together by
+/// its gravity** rather than by the strength of its material, in J/kg.
+///
+/// Only two such bodies can merge (see [`crate::collision::collision`]). A rigid body keeps its shape
+/// and bounces, or rests, whatever it lands on: a spacecraft touching down on the Moon is not
+/// absorbed into it.
+///
+/// **Why this value.** `1 J/kg` is a rocky body about `1.1 km` in radius at `3000 kg/m³`, which is
+/// where collision studies put the change from strength to gravity (Benz & Asphaug 1999, Icarus
+/// 142:5: the disruption threshold is lowest near `100 m` to `1 km`, and gravity controls it above).
+/// Every moon, planet and star in the crate is many orders of magnitude above it (the Moon is
+/// `2.8e6 J/kg`), and every spacecraft many orders below (the `2,900 t` Saturn V stack on a
+/// `50 m` radius is `4e-6`).
+///
+/// **Used by.** `collision::collision::gravity_dominated`.
+///
+/// **If you change it.** Nothing in the shipped scenes is anywhere near it, so moderate changes do
+/// nothing. Raised past a planet's `G·M/R`, planets stop merging and bounce.
+pub const GRAVITY_DOMINATED_SPECIFIC_ENERGY_J_KG: f64 = 1.0;
+
+/// The smallest share of the colliding mass worth breaking off as debris. Dimensionless.
+///
+/// **Why this value.** `1e-4`. A merge whose debris would be a smaller share than this is made a
+/// perfect merge instead. Without a floor every fragment that falls back onto the body it came from
+/// would itself make debris (a few parts in ten million of the mass, for a `1/1000`-mass fragment
+/// landing at escape speed), and the cloud would never settle. The Earth struck by a Mars-mass body
+/// throws off `0.55%`, fifty times this.
+///
+/// **Used by.** `collision::collision`.
+///
+/// **If you change it.** Lower lets small impacts spray debris too, and lets debris re-make debris.
+/// Higher turns gentle giant impacts into perfect merges.
+pub const DEBRIS_MIN_MASS_FRACTION: f64 = 1.0e-4;
+
+/// The slowest a debris fragment leaves the merged body, as a fraction of the escape speed from
+/// where it starts. Dimensionless.
+///
+/// **Why this value.** In simulations of giant impacts the debris leaves at speeds spread around
+/// the escape speed: some falls back, some goes into orbit, some escapes (Canup 2004, Icarus
+/// 168:433). `0.7` to [`DEBRIS_MAX_SPEED_FACTOR`]'s `1.3` gives that spread: the slowest
+/// fragments rise to about a body radius and fall back, the fastest leave for good.
+///
+/// **Used by.** `collision::collision`.
+///
+/// **If you change it.** Lower makes more of the debris fall straight back. At or above `1`
+/// nothing falls back.
+pub const DEBRIS_MIN_SPEED_FACTOR: f64 = 0.7;
+
+/// The fastest a debris fragment leaves the merged body, as a fraction of the escape speed from
+/// where it starts. Dimensionless.
+///
+/// **Why this value.** See [`DEBRIS_MIN_SPEED_FACTOR`].
+///
+/// **Used by.** `collision::collision`.
+///
+/// **If you change it.** Higher sends more debris away for good, and is capped in any case by the
+/// energy the impact brought: the fragments' speeds are scaled down if their kinetic energy would
+/// exceed it.
+pub const DEBRIS_MAX_SPEED_FACTOR: f64 = 1.3;
+
+/// The gap left between debris fragments, and between them and the merged body, when they are
+/// created, as a fraction of the distances involved. Dimensionless.
+///
+/// **Why this value.** `0.05`. Fragments are placed on a shell round the merged body, and must not
+/// start touching it or each other: a touching pair would be resolved on the very next substep,
+/// which is a collision that never happened. Five percent is clear of the hulls' facets and of the
+/// small shift the merged body makes to keep the centre of mass where it was.
+///
+/// **Used by.** `collision::collision`.
+///
+/// **If you change it.** At zero, fragments start touching. Larger values start the debris further
+/// out, which is only less faithful to where it came from.
+pub const DEBRIS_SPAWN_CLEARANCE: f64 = 0.05;
+
+/// How many substeps a simulated contact is followed over, at the least. Dimensionless.
+///
+/// A contact between two particles is a damped spring, integrated step by step, and lasts
+/// `π·√(m*/k)` (see [`crate::physics_utils::soft_contact::contact_duration`]). The substep is kept
+/// to at most this fraction of the shortest such time in the scene.
+///
+/// **Why this value.** `20`. An explicit spring is stable only for a step under `2/ω` of its
+/// natural frequency `ω`, which is `0.64` of the contact time; twenty steps per contact is a factor
+/// of thirteen inside that, so the damping and the rebound come out right to within a percent
+/// (`soft_contact_tests` measures the restitution against it at `2,000` steps, and the collision
+/// tests the pile at this value). Discrete-element codes use `20` to `50`.
+///
+/// **Used by.** [`crate::collision::resolve::substep_count`], for scenes with particle bodies. It
+/// costs nothing where nothing has a modulus.
+///
+/// **If you change it.** Fewer than about `5` and contacts gain energy step by step until the
+/// particles fly apart. More only costs time. When [`MAX_SUBSTEPS`] caps the count first (the clock
+/// sped up far past the experiment's own) contacts are under-resolved, so slow the clock with `-`.
+pub const SOFT_CONTACT_SUBSTEPS: f64 = 20.0;
+
+/// How far apart two particles may be and still count as one body, as a fraction of their summed
+/// radii. Dimensionless.
+///
+/// **Why this value.** `0.05`. Particles resting under their own weight touch with a slight overlap,
+/// but in a body that is flowing or settling some neighbours are momentarily a hair apart; five
+/// percent keeps those in their body while a fragment that has left at any speed is out within
+/// seconds.
+///
+/// **Used by.** [`crate::collision::aggregate::contact_clusters`].
+///
+/// **If you change it.** Zero splits flowing bodies into many clusters. Large values count debris
+/// that is still near the body as part of it.
+pub const CLUSTER_CONTACT_TOLERANCE: f64 = 0.05;
+
+/// The most damping a simulated contact is given, as a damping ratio `ζ`. Dimensionless.
+///
+/// A contact that only pushes returns `13.5%` of the approach speed even when critically damped
+/// (`ζ = 1`), and needs infinite damping to return none (see
+/// [`crate::physics_utils::soft_contact::restitution_for_damping_ratio`]). A material asking for
+/// restitution `0` is given this much instead.
+///
+/// **Why this value.** `1.5`, which returns `7.6%` of the approach speed: still all but plastic
+/// (`99.4%` of the approach energy dissipated). It is half as heavy as the step allows a particle
+/// packed among neighbours. An explicit dashpot is stable while the damping a particle feels along
+/// one direction, times `dt` over its mass, stays under `2`. One pair alone allows `2·ζ·ω·dt < 2`,
+/// but in a packed lattice a particle feels about four contacts' worth along any direction (the
+/// `cos²` weights of its twelve neighbours sum to `4`), which halves that to `2·ζ·ω·dt < 1`. At
+/// [`SOFT_CONTACT_SUBSTEPS`] steps per contact `ω·dt = π/20`, so `ζ = 1.5` uses `0.47` of the `1`.
+///
+/// It was `3`, sized for one pair: `0.94` of the lattice's limit. Measured, particles in a settled
+/// pile then flipped their velocity every substep, `±160 m/s` for ever, with the contact's refusal
+/// to pull keeping the flip-flop from either growing or dying.
+///
+/// **Used by.** [`crate::collision::collision::apply_contact_forces`] and its GPU twin.
+///
+/// **If you change it.** Above about `3` the flip-flop comes back in packed piles; raise
+/// [`SOFT_CONTACT_SUBSTEPS`] with it. Lower and `e = 0` rebounds more: `ζ = 1` returns `13.5%`.
+pub const SOFT_CONTACT_MAX_DAMPING_RATIO: f64 = 1.5;
+
+/// The smoothing length of a hot particle's pressure, as a multiple of the particle spacing
+/// `(m/ρ)^(1/3)`. Dimensionless.
+///
+/// **Why this value.** `1.3`, the usual choice in smoothed-particle hydrodynamics (Monaghan 2005,
+/// Rep. Prog. Phys. 68:1703, recommends `1.2` to `1.5`): the kernel then reaches `2.6` spacings,
+/// about `55` neighbours in a face-centred cubic lattice, enough for a smooth pressure gradient.
+/// For the lattice's particles that is a smoothing length of `2.32` radii.
+///
+/// **Used by.** [`crate::collision::collision::smoothing_length_m`], and so by the thermal pressure
+/// in [`crate::collision::collision::apply_contact_forces`] and its GPU twin.
+///
+/// **If you change it.** Smaller and the pressure is felt by fewer neighbours and turns noisy; below
+/// `0.9` hot particles feel only those they touch. Larger costs more pairs per particle.
+pub const SPH_SMOOTHING_FACTOR: f64 = 1.3;
+
+/// The most neighbours a simulated particle touches at once: the coordination number of a
+/// face-centred cubic packing. Dimensionless.
+///
+/// Friction is modelled as a viscous drag capped by its Coulomb limit,
+/// and a drag with no spring behind it is stable in an explicit step only while it undoes less than
+/// all of a slip per step. A particle feels every one of its contacts' drags at once, so each
+/// contact may undo at most this fraction of a slip per step. With the normal damping's strength
+/// instead, twelve contacts overshot together, the slip flipped direction every substep, and a
+/// settled pile churned at `150 m/s` for ever with no energy dissipated, because the flip-flop's
+/// mean is zero.
+///
+/// **Why this value.** `12`, exact for equal spheres (Kepler's packing): no contact arrangement of
+/// equal spheres has more.
+///
+/// **Used by.** [`crate::collision::collision::apply_contact_forces`] and its GPU twin.
+///
+/// **If you change it.** Lower and the flip-flop comes back for particles with that many contacts.
+/// Higher only weakens the drag below its Coulomb limit for slow slips.
+pub const SOFT_CONTACT_MAX_NEIGHBOURS: f64 = 12.0;

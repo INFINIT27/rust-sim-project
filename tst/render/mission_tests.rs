@@ -2,9 +2,11 @@
 //! to a rocket flying in the scene is driven through a real `App`.
 
 use super::*;
-use crate::projects::interstellar::catalog::{two_body, Experiment};
+use crate::projects::interstellar::catalog::Experiment;
+use crate::projects::interstellar::giant_impact::giant_impact;
 use crate::projects::interstellar::solar_system::solar_system;
 use crate::render::plugin::step_scene_system;
+use crate::spacecraft::constants::CRAFT_MAX_TOUCHDOWN_SPEED_M_S;
 use bevy::app::App;
 use bevy::MinimalPlugins;
 
@@ -265,7 +267,7 @@ fn r_with_nothing_at_the_crosshair_picks_nothing() {
 
 #[test]
 fn an_experiment_without_a_craft_never_launches() {
-    let mut experiment = two_body();
+    let mut experiment = giant_impact();
     experiment.spec.launches = false;
     let mut app = app_for(experiment);
     app.world_mut().resource_mut::<Mission>().phase = MissionPhase::Requested {
@@ -306,7 +308,10 @@ fn a_rocket_flown_through_the_app_lands_where_it_was_aimed() {
                 assert_eq!(flight.voyage.target, moon);
                 let report = flight.report();
                 let touchdown = report.touchdown_speed_m_s.expect("it touched down");
-                assert!(touchdown <= 15.0, "landed at {touchdown:.1} m/s");
+                assert!(
+                    touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
+                    "landed at {touchdown:.1} m/s"
+                );
                 assert!(
                     report.travel_time_s.is_some(),
                     "the report has the flight time"
@@ -464,7 +469,10 @@ fn a_return_trip_flown_through_the_app_loops_round_the_moon_and_lands_on_earth()
                 assert_eq!(flight.ends(), (earth, moon));
                 let report = flight.report();
                 let touchdown = report.touchdown_speed_m_s.expect("it touched down");
-                assert!(touchdown <= 15.0, "landed at {touchdown:.1} m/s");
+                assert!(
+                    touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
+                    "landed at {touchdown:.1} m/s"
+                );
                 let altitude = report.pass_altitude_m.expect("it passed the Moon");
                 assert!(altitude > 0.0, "it did not touch the Moon: {altitude}");
                 let status = mission.status_line(0.0, &names).unwrap();
@@ -567,7 +575,10 @@ fn a_full_thrust_craft_flies_mercury_to_jupiter_and_lands_softly() {
             } => {
                 assert_eq!(flight.voyage.target, jupiter);
                 let touchdown = flight.report().touchdown_speed_m_s.unwrap();
-                assert!(touchdown <= 11.0, "landed at {touchdown:.1} m/s");
+                assert!(
+                    touchdown <= CRAFT_MAX_TOUCHDOWN_SPEED_M_S,
+                    "landed at {touchdown:.1} m/s"
+                );
                 assert!(
                     (11.0 * 3_600.0..15.0 * 3_600.0).contains(landed_after_s),
                     "landed after {:.2} h",

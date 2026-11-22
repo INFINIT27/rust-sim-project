@@ -16,7 +16,7 @@
 //! | `]` | Faster: multiply the clock scale by [`TIME_SCALE_KEY_FACTOR`] |
 //! | `-` | Ten times slower: divide the clock scale by [`TIME_SCALE_DECADE_FACTOR`] |
 //! | `[` | Slower: divide it by the same factor |
-//! | `\` | Reset the scale to the shipped [`TWO_BODY_TIME_SCALE`] |
+//! | `\` | Reset the scale to the running experiment's own (its spec's `time_scale`) |
 //!
 //! None of these collide with the camera, which owns `WASD`, `Space`, `Left Ctrl`,
 //! `Left Shift`, `Esc`, and the mouse. `P` rather than `Space` for pause precisely
@@ -41,6 +41,7 @@ use crate::bindings::{keymap_or_default, Action, KeyMap};
 use crate::constants::TWO_BODY_TIME_SCALE;
 use crate::input::constants::{TIME_SCALE_DECADE_FACTOR, TIME_SCALE_KEY_FACTOR};
 use crate::input::menu::MenuState;
+use crate::projects::interstellar::catalog::ExperimentSpec;
 use crate::time::simulation::SimulationClock;
 
 /// Plugin that registers [`simulation_controls_system`] on `Update`.
@@ -79,6 +80,7 @@ pub fn simulation_controls_system(
     keymap: Option<Res<KeyMap>>,
     menu: Option<Res<MenuState>>,
     mut clock: ResMut<SimulationClock>,
+    spec: Option<Res<ExperimentSpec>>,
 ) {
     // While the menu is open, only `Esc` is bound (amendment A13). Returning early rather
     // than filtering key by key keeps that one rule true of the whole layer: a menu in
@@ -126,7 +128,10 @@ pub fn simulation_controls_system(
     }
 
     if keymap_or_default(&keymap).just_pressed(&keys, Action::TimeReset) {
-        clock.set_scale(TWO_BODY_TIME_SCALE);
+        // The running experiment's own clock: each one has the scale that makes it watchable, and
+        // resetting the giant impact to the solar system's would end it in a blink. The two-body
+        // scale is only the fallback for an app with no experiment.
+        clock.set_scale(spec.map_or(TWO_BODY_TIME_SCALE, |spec| spec.time_scale));
     }
 
     debug_assert!(

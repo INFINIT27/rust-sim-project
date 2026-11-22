@@ -31,6 +31,11 @@ bevy = "0.14"
 # The `bevy_egui` line that targets Bevy 0.14. `src/ui/` is the only module that imports it.
 bevy_egui = "0.28"
 serde = { version = "1.0.229", features = ["derive"] }
+# The GPU physics in `src/compute/`. The same wgpu Bevy 0.14 renders with (it is already in the
+# lock file), named directly because Bevy re-exports only some of its types and not the
+# `Instance` a headless compute device starts from. The features are the native ones Bevy turns
+# on; Vulkan needs none.
+wgpu = { version = "0.20.1", default-features = false, features = ["wgsl", "dx12", "metal"] }
 toml = "1.2.1"
 
 [dev-dependencies]

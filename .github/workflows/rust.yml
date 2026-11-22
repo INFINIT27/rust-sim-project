@@ -28,12 +28,16 @@ jobs:
     - uses: actions/checkout@v4
 
     # Bevy links against the system's audio (ALSA), input (udev), and windowing (Wayland,
-    # xkbcommon) libraries, which a fresh Ubuntu runner lacks.
+    # xkbcommon) libraries, which a fresh Ubuntu runner lacks. `mesa-vulkan-drivers` brings
+    # lavapipe, a Vulkan driver that runs on the CPU: the runner has no GPU, and with it the GPU
+    # physics tests in `tst/compute/` run instead of skipping. Setting `RGA_REQUIRE_GPU` would make
+    # a missing GPU fail them rather than skip.
     - name: Install Bevy's system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
-          pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+          pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
+          mesa-vulkan-drivers
 
     # The version pinned in rust-toolchain.toml, with its rustfmt and clippy, so CI lints with the
     # same clippy as the local checks listed in CONTRIBUTING.md. The runner ships rustup.

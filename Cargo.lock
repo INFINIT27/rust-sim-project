@@ -3468,6 +3468,7 @@ dependencies = [
  "proptest",
  "serde",
  "toml",
+ "wgpu",
 ]
 
 [[package]]

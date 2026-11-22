@@ -19,6 +19,9 @@ rule these tests enforce.
 | `physics_formulas_tests.rs` | 5 proptest properties + 13 unit tests for `gravitational_constant_calculator`. |
 | `newtons_laws_tests.rs` | 10 proptest properties + 10 unit tests for Newton's three laws. |
 | `conservation_laws_tests.rs` | 13 proptest properties + 19 unit tests for momentum, energy, and the collision solvers. |
+| `soft_contact_tests.rs` | 2 proptest properties + 5 unit tests: the stiffness, contact time and one-sided force against their closed forms; and, by integrating a two-body contact finely, that an undamped contact returns everything, a critically damped one `exp(−2)`, that Schwager & Pöschel's relation matches the integration in every damping regime, and that the damping set from any restitution gives it back. |
+| `thermal_tests.rs` | 7 unit tests: cool rock has a Grüneisen parameter of `2` and hot rock `0.5`, heat never pulls, the kernel integrates to one and is continuous at its seams, its slope is its derivative, a planet's particles have its mean density, and a sphere's moment of inertia. |
+| `impacts_tests.rs` | 2 proptest properties + 7 unit tests: the escape speed pays the binding energy exactly, the disruption threshold is the bare law for equal masses and higher for unequal ones, the remnant law passes through its defining points and only shrinks as the impact grows, every law is symmetric in the two bodies, and the Earth struck from rest by a Mars-mass body loses `0.4` to `0.7%`. |
 | `kinematics_tests.rs` | 16 proptest properties + 22 unit tests for the constant-acceleration relations and `MotionState`. |
 | `proptest-regressions/` | Committed proptest failure seeds. Tool-owned; no `README.md` required. |
 
@@ -56,7 +59,12 @@ potential energy is bit-exactly symmetric, non-positive, and rises toward zero
 with separation; and the private `compensated_sum` agrees with a naive sum. Unit
 tests pin equal-mass velocity exchange, the heavy-body wall limit, a strict
 energy loss in an inelastic merge, Earth–Sun potential energy at `−5.30e33 J`, and
-the sign of total mechanical energy as the bound/unbound criterion.
+the sign of total mechanical energy as the bound/unbound criterion. For the
+restitution solver: bit-identical to the elastic solver at `e = 1`, equal to the
+inelastic one at `e = 0`, momentum conserved and the pair parting at `e` times the
+closing speed for every `e`, and the energy lost exactly what
+`collision_energy_loss` predicts; friction never exceeds the slide or `μ` times the
+normal change.
 
 **Kinematics.** The seven relations are interdependent, so the properties are
 mostly cross-checks rather than restatements of each formula: `average_velocity`

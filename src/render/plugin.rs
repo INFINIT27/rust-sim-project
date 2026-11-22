@@ -39,6 +39,8 @@
 //!   directional light, and one `PbrBundle` per body in `Scene`
 //!   (Requirement 3.5).
 
+use std::collections::{HashMap, HashSet};
+
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::asset::{AssetApp, AssetServer, Assets, Handle};
 use bevy::color::{Color as BevyColor, LinearRgba};
@@ -46,7 +48,7 @@ use bevy::core_pipeline::core_3d::Camera3dBundle;
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
 use bevy::ecs::schedule::IntoSystemConfigs;
-use bevy::ecs::system::{Commands, Query, Res, ResMut, Resource};
+use bevy::ecs::system::{Commands, Local, Query, Res, ResMut, Resource};
 use bevy::hierarchy::{BuildChildren, DespawnRecursiveExt};
 use bevy::math::primitives::{Cuboid, Plane3d, Sphere};
 use bevy::math::{UVec4, Vec3, Vec4};
@@ -60,7 +62,10 @@ use bevy::render::mesh::{Mesh, Meshable};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
 
-use crate::core::scene::{Body, BodyId, Color, Prop, Scene};
+use crate::collision::collision::contact_is_simulated;
+use crate::compute::device::gpu_physics_enabled;
+use crate::compute::particles::{can_step_on_gpu, GpuParticles, GpuSolver};
+use crate::core::scene::{Body, BodyId, CollisionSettings, Color, Prop, Scene};
 use crate::input::camera::{CameraLock, CameraSettings, CameraTarget};
 use crate::performance::PerformanceSettings;
 use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentSpec};
@@ -68,8 +73,8 @@ use crate::projects::interstellar::selection::Selection;
 use crate::render::bridge::{sync_scene_to_ecs_system, transform_from};
 use crate::render::constants::{
     BACKGROUND_COLOR, CAMERA_FAR_UNITS, CAMERA_NEAR_UNITS, LIGHT_POSITION_UNITS,
-    LINE_VISUAL_THICKNESS_UNITS, MAX_ECLIPSE_OCCLUDERS, STAR_EMISSIVE_SCALE,
-    STAR_LIGHT_RANGE_UNITS, STAR_LUMENS_PER_SOLAR_LUMINOSITY,
+    LINE_VISUAL_THICKNESS_UNITS, MAX_ECLIPSE_OCCLUDERS, PARTICLE_MESH_SUBDIVISIONS,
+    STAR_EMISSIVE_SCALE, STAR_LIGHT_RANGE_UNITS, STAR_LUMENS_PER_SOLAR_LUMINOSITY,
 };
 use crate::render::eclipse::{BodyMaterial, EclipseExtension, EclipseUniform};
 use crate::render::mission::Mission;
@@ -89,6 +94,64 @@ use crate::time::simulation::{clamp_real_step, SimulationClock};
 /// of which require `Scene: Resource`, so the impl has to live
 /// somewhere — right here, on the Bevy side, is the natural home.
 impl Resource for Scene {}
+
+/// [`CollisionSettings`] as a resource, for the same reason as `Scene`: `core` knows no Bevy. The
+/// configuration inserts it and the menu edits it; [`step_scene_system`] copies it into the scene
+/// before every step, so a change applies to the next impact.
+impl Resource for CollisionSettings {}
+
+/// The GPU particle stepper as a resource, for the same reason as `Scene`: `compute` knows no
+/// Bevy. Present only when [`GpuPhysicsPlugin`] found a GPU; [`step_scene_system`] uses it for
+/// scenes made only of particles.
+impl Resource for GpuParticles {}
+
+/// The algorithms the GPU steps particles with, as a resource: set from `collision.toml` and the
+/// menu, and copied into the [`GpuParticles`] stepper every frame by [`step_scene_system`].
+impl Resource for GpuSolver {}
+
+/// Where the physics runs, for the menu: the GPU's name, or why it is the CPU.
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+pub enum PhysicsBackend {
+    /// Scenes made only of particles step on this GPU; every other scene on the CPU.
+    Gpu(String),
+    /// Everything steps on the CPU, for the reason given.
+    Cpu(&'static str),
+}
+
+impl PhysicsBackend {
+    /// One line for the menu's summary.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Gpu(name) => format!("GPU for particles: {name}"),
+            Self::Cpu(reason) => format!("CPU ({reason})"),
+        }
+    }
+}
+
+/// Finds a GPU at startup and, if there is one and `RGA_GPU_PHYSICS` does not say `off`, inserts
+/// the [`GpuParticles`] stepper that [`step_scene_system`] hands particle scenes to. Always inserts
+/// a [`PhysicsBackend`] saying which it is.
+///
+/// Its own plugin, added by `main.rs`, so that an app (or a test) without it steps on the CPU and
+/// never touches a GPU.
+pub struct GpuPhysicsPlugin;
+
+impl Plugin for GpuPhysicsPlugin {
+    fn build(&self, app: &mut App) {
+        let backend = if !gpu_physics_enabled() {
+            PhysicsBackend::Cpu("RGA_GPU_PHYSICS is off")
+        } else if let Some(gpu) = GpuParticles::request() {
+            let name = gpu.describe();
+            bevy::log::info!("physics: particle scenes step on the GPU, {name}");
+            app.insert_resource(gpu);
+            PhysicsBackend::Gpu(name)
+        } else {
+            bevy::log::info!("physics: no GPU found, every scene steps on the CPU");
+            PhysicsBackend::Cpu("no GPU found")
+        };
+        app.insert_resource(backend);
+    }
+}
 
 /// ECS component that marks an entity as a render-time mirror of a body
 /// in the pure-Rust `Scene`.
@@ -187,8 +250,18 @@ impl Plugin for ScenePlugin {
     /// scene steps by what they produced, and the scene must step before the ECS is
     /// synced to it.
     fn build(&self, app: &mut App) {
-        let Experiment { scene, spec, names } =
-            self.selection.id.build(self.selection.resolve_seed());
+        // The collision detail from `config/collision.toml`, when the configuration has already
+        // inserted it (it is inserted before the plugins): a scene built from particles is built
+        // at that detail.
+        let collision = app
+            .world()
+            .get_resource::<CollisionSettings>()
+            .copied()
+            .unwrap_or_default();
+        let Experiment { scene, spec, names } = self
+            .selection
+            .id
+            .build_with(self.selection.resolve_seed(), &collision);
 
         debug_assert!(
             spec.is_valid(),
@@ -201,6 +274,8 @@ impl Plugin for ScenePlugin {
         app.insert_resource(ObserverClock::new());
         app.insert_resource(spec);
         app.insert_resource(names);
+        // Kept if the configuration already inserted one.
+        app.init_resource::<CollisionSettings>();
         // The colour of empty space. Bevy's default is a mid grey, which a 4.6-px Sun has almost
         // no contrast against — and since amendment A17 that is what `experiment_3` opens with.
         app.insert_resource(ClearColor(to_bevy_color(BACKGROUND_COLOR)));
@@ -305,6 +380,7 @@ pub fn spawn_scene_entities(
     camera_settings: Option<Res<CameraSettings>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BodyMaterial>>,
+    mut shared: Local<ParticleAssets>,
 ) {
     // Camera: framed on the two-body pair, which now starts 30 units apart.
     //
@@ -379,7 +455,52 @@ pub fn spawn_scene_entities(
     // Only `prop.body` is read here: a prop's velocity and mass are simulation
     // state with no visual representation, so the render world never sees them.
     for (id, prop) in scene.iter() {
-        spawn_mirror(&mut commands, &mut meshes, &mut materials, id, prop);
+        spawn_mirror(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &mut shared,
+            id,
+            prop,
+        );
+    }
+}
+
+/// The mesh and materials every particle of a body built from particles shares, made on first use.
+///
+/// A planet of thousands of particles drawn with a mesh and a material each is thousands of assets
+/// to upload and thousands of draw calls; sharing them lets Bevy batch every particle of one colour
+/// into a few draws. The mesh is a low-polygon icosphere (`320` triangles, against the default
+/// sphere's `1,152`), which is plenty for something a few pixels across.
+///
+/// The cost: a shared material carries one eclipse uniform, so particles that share it do not each
+/// leave themselves out of their own occluder list. Scenes of particles have no star today, and
+/// `update_eclipse_occluders_system` does nothing without one.
+#[derive(Default)]
+pub struct ParticleAssets {
+    mesh: Option<Handle<Mesh>>,
+    materials: HashMap<[u32; 4], Handle<BodyMaterial>>,
+}
+
+/// The material a prop of its own is drawn with: its colour, and for a star the glow.
+fn body_material(prop: &Prop, color: Color) -> BodyMaterial {
+    let mut material = StandardMaterial::from(to_bevy_color(color));
+
+    // A star is lit from *inside* — its point light sits at its own centre — so with only reflected
+    // light its surface would render black, which is the one thing a star must not be. The emissive
+    // term is what makes it a disc rather than a silhouette.
+    if prop.is_luminous() {
+        material.emissive = LinearRgba::rgb(
+            color.r * STAR_EMISSIVE_SCALE,
+            color.g * STAR_EMISSIVE_SCALE,
+            color.b * STAR_EMISSIVE_SCALE,
+        );
+    }
+    BodyMaterial {
+        base: material,
+        // The eclipse extension starts with no star and no occluders, which draws exactly as plain
+        // PBR would. `update_eclipse_occluders_system` fills it in on the first frame.
+        extension: EclipseExtension::default(),
     }
 }
 
@@ -435,34 +556,50 @@ fn spawn_mirror(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<BodyMaterial>,
+    shared: &mut ParticleAssets,
     id: BodyId,
     prop: &Prop,
 ) {
     let body = &prop.body;
     let (mesh, color) = mesh_and_color(body);
 
-    let mut material = StandardMaterial::from(to_bevy_color(color));
-
-    // A star is lit from *inside* — its point light sits at its own centre — so with only reflected
-    // light its surface would render black, which is the one thing a star must not be. The emissive
-    // term is what makes it a disc rather than a silhouette.
-    if prop.is_luminous() {
-        material.emissive = LinearRgba::rgb(
-            color.r * STAR_EMISSIVE_SCALE,
-            color.g * STAR_EMISSIVE_SCALE,
-            color.b * STAR_EMISSIVE_SCALE,
-        );
-    }
+    // A particle of a body built from particles shares its mesh and material with every other of
+    // its colour: see `ParticleAssets`.
+    let particle = contact_is_simulated(prop, prop) && !prop.is_luminous();
+    let (mesh_handle, material_handle) = if particle {
+        let mesh = shared
+            .mesh
+            .get_or_insert_with(|| {
+                meshes.add(
+                    Sphere::new(1.0)
+                        .mesh()
+                        .ico(PARTICLE_MESH_SUBDIVISIONS)
+                        .unwrap_or_else(|_| Mesh::from(Sphere::new(1.0))),
+                )
+            })
+            .clone();
+        let key = [color.r, color.g, color.b, color.a].map(f32::to_bits);
+        let material = shared
+            .materials
+            .entry(key)
+            .or_insert_with(|| {
+                materials.add(BodyMaterial {
+                    base: StandardMaterial::from(to_bevy_color(color)),
+                    extension: EclipseExtension::default(),
+                })
+            })
+            .clone();
+        (mesh, material)
+    } else {
+        (meshes.add(mesh), materials.add(body_material(prop, color)))
+    };
 
     let mut entity = commands.spawn((
         MaterialMeshBundle::<BodyMaterial> {
-            mesh: meshes.add(mesh),
+            mesh: mesh_handle,
             // The eclipse extension starts with no star and no occluders, which draws exactly as
             // plain PBR would. `update_eclipse_occluders_system` fills it in on the first frame.
-            material: materials.add(BodyMaterial {
-                base: material,
-                extension: EclipseExtension::default(),
-            }),
+            material: material_handle,
             transform: transform_from(body),
             ..Default::default()
         },
@@ -649,15 +786,16 @@ pub fn sync_mirror_entities_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BodyMaterial>>,
     mirrored: Query<(Entity, &MirroredBody)>,
+    mut shared: Local<ParticleAssets>,
 ) {
-    // One pass over the entities, so the two directions below are both O(n) against a
-    // scene of a handful of props rather than O(n²).
-    let mut live: Vec<BodyId> = Vec::with_capacity(mirrored.iter().len());
+    // One pass over the entities into a set, so both directions below are O(n): with a planet built
+    // from thousands of particles a `Vec::contains` here made every frame O(n²).
+    let mut live: HashSet<BodyId> = HashSet::with_capacity(mirrored.iter().len());
 
     for (entity, mirrored_body) in &mirrored {
         let id = mirrored_body.0;
         if scene.get(id).is_some() {
-            live.push(id);
+            live.insert(id);
         } else {
             // The prop is gone — absorbed, in every case that exists today. Despawn rather
             // than hide: a hidden entity is state that has to be found again later, and the
@@ -672,7 +810,14 @@ pub fn sync_mirror_entities_system(
 
     for (id, prop) in scene.iter() {
         if !live.contains(&id) {
-            spawn_mirror(&mut commands, &mut meshes, &mut materials, id, prop);
+            spawn_mirror(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                &mut shared,
+                id,
+                prop,
+            );
         }
     }
 }
@@ -781,7 +926,35 @@ pub fn step_scene_system(
     trails: Option<ResMut<Trails>>,
     trail_config: Option<Res<TrailConfig>>,
     mut mission: Option<ResMut<Mission>>,
+    collision: Option<Res<CollisionSettings>>,
+    (gpu, solver): (Option<ResMut<GpuParticles>>, Option<Res<GpuSolver>>),
 ) {
+    // The detail the menu last set, for any impact this step. Compared first so a scene whose
+    // setting has not changed is not written to for nothing.
+    if let Some(collision) = collision {
+        if scene.collision != *collision {
+            scene.collision = *collision;
+        }
+    }
+
+    // A scene made only of particles goes to the GPU when there is one: every substep of the frame
+    // runs there, and the scene comes back once, at the end. Trails and the mission then see the
+    // frame's end rather than each substep, which for a cloud of particles is as fine as a trail
+    // needs. Anything the GPU cannot step, or a read-back that failed, falls through to the CPU.
+    if let Some(mut gpu) = gpu {
+        if let Some(solver) = solver {
+            gpu.solver = *solver;
+        }
+        if can_step_on_gpu(&scene) && gpu.step(&mut scene, clock.last_step()).is_some() {
+            if let (Some(mut trails), Some(config)) = (trails, trail_config) {
+                trails.record_from(&scene, &config);
+            }
+            if let Some(mission) = mission.as_mut() {
+                mission.observe(&scene);
+            }
+            return;
+        }
+    }
     // The mission flies a powered rocket before each substep (see `Mission::steer`), and both
     // trails and mission see the scene after it.
     let mut observers = (trails.zip(trail_config), mission.as_mut());

@@ -1,13 +1,13 @@
 //! Every constant the `projects::interstellar` layer reads.
 //!
-//! Per `.claude/steering/constants.md` this is the layer's only constants module. The
-//! **two-body** experiment's own numbers are not here — they are
-//! [`crate::constants`]'s `TWO_BODY_*` values, because `core` builds that scene and
-//! `render` frames it, so two layers already read them. Everything below either
-//! belongs to the three-body ring or governs experiment selection.
+//! Per `.claude/steering/constants.md` this is the layer's only constants module. The old
+//! two-body scene's numbers ([`crate::constants`]'s `TWO_BODY_*`) are not here: `core` still
+//! builds that scene as a test fixture. `experiment_1` is now the giant impact, whose numbers are.
 //!
 //! # Sections
 //!
+//! - **The giant impact** — `experiment_1`: the start, the clock, the camera, and
+//!   [`PLANETARY_MATERIAL`].
 //! - **Camera framing per experiment** — where the observer starts for each, and how
 //!   much of the scene that opening view is meant to contain.
 //! - **The three-body ring** — geometry, mass, and the random-speed window.
@@ -26,32 +26,179 @@
 
 pub use bevy::math::Vec3;
 
-use crate::core::scene::Color;
+use crate::core::scene::{Color, Material, Tillotson};
+use crate::physics_utils::physics_constants::{
+    BASALT_TILLOTSON_A, BASALT_TILLOTSON_B, BASALT_TILLOTSON_E0_J_KG,
+};
 use crate::projects::interstellar::black_hole::SStar;
 use crate::projects::interstellar::objects::StellarObject;
 use crate::projects::interstellar::solar_system::{MoonSystem, Planet};
 
-/// Where the camera starts for the two-body experiment, in world units.
+/// How far apart the giant impact's two planets start, as a multiple of the distance at which they
+/// touch (the sum of their radii). Dimensionless.
 ///
-/// **Why this value.** Framing arithmetic, not taste: the spheres sit at `x = ±15`,
-/// so the view needs a half-width of at least ~17 units. Bevy's default projection
-/// has a 45° vertical field of view — a 22.5° half-angle — so the camera must be at
-/// least `17 / tan(22.5°) ≈ 41` units away. `(0, 18, 42)` is ~44.6 units from the
-/// look-at point, leaving margin for the spheres to swing past each other without
-/// leaving the frame, and the `y = 18` elevation shows the floor for scale rather
-/// than viewing it edge-on.
+/// **Why this value.** `10`. Released from rest, the pair meets at `√(1 − 1/10) = 95%` of its
+/// mutual escape speed, `9.0 km/s` for the Earth and a Mars-mass body: inside the `1` to `1.1`
+/// times escape speed that models of the Moon-forming impact use (Canup 2004, Icarus 168:433). It is
+/// also close enough that the fall takes `14` hours, which the clock turns into about half a minute.
 ///
-/// **Used by.** [`crate::projects::interstellar::catalog::two_body`], which puts it in the
-/// experiment's [`ExperimentSpec`](crate::projects::interstellar::catalog::ExperimentSpec);
-/// `spawn_scene_entities` then reads the spec rather than a constant, which is what
-/// lets each experiment frame itself.
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`].
 ///
-/// **If you change it.** Pinned by
-/// `plugin_tests::the_startup_camera_frames_the_two_body_pair`, which recomputes the
-/// minimum distance from [`crate::constants::TWO_BODY_SEPARATION_UNITS`] and the
-/// field of view — so widening the scene without moving the camera fails there rather
-/// than silently pushing the spheres off screen.
-pub const TWO_BODY_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 18.0, 42.0);
+/// **If you change it.** Further apart and the impact is faster (it tends to the escape speed) and
+/// the wait longer. Below about `2` the pair is already close to touching.
+pub const GIANT_IMPACT_START_CONTACTS: f64 = 10.0;
+
+/// The angle the Moon-forming impact strikes at: between the impactor's path and the line between
+/// the two planets' centres at the moment they touch, in degrees. `0` is head-on.
+///
+/// **Why this value.** `45°`, the canonical Moon-forming impact (Canup & Asphaug 2001, Nature
+/// 412:708; Canup 2004, Icarus 168:433): the most probable angle for any impact (Shoemaker 1962),
+/// and the one whose angular momentum, with a Mars-mass impactor at the escape speed, is about that
+/// of the Earth and Moon today (`1.1` times it here).
+///
+/// **Used by.** [`crate::projects::interstellar::moon_forming::moon_forming_impact_with`].
+///
+/// **If you change it.** Head-on (`0`) is `experiment_1` again. Grazing (above about `60°`) and the
+/// impactor tends to hit and run rather than merge.
+pub const MOON_FORMING_IMPACT_ANGLE_DEG: f64 = 45.0;
+
+/// How far apart the Moon-forming impact's planets start, as a multiple of the distance at which
+/// they touch. Dimensionless.
+///
+/// **Why this value.** `4`. The impactor comes in on a parabolic orbit (it would just escape from
+/// infinity), so it meets the Earth at exactly their mutual escape speed whatever the start; four
+/// contact distances leaves the start far enough out that the tides between them are a few percent
+/// of their self-gravity, and the approach takes about `1.7` hours of simulated time.
+///
+/// **Used by.** As [`MOON_FORMING_IMPACT_ANGLE_DEG`].
+///
+/// **If you change it.** Closer and the planets start already deformed by each other's tides
+/// (they are built round). Further and the wait is longer, to no effect on the impact.
+pub const MOON_FORMING_START_CONTACTS: f64 = 4.0;
+
+/// Simulated seconds per real second for the giant impact.
+///
+/// **Why this value.** `2000`: the `50,300`-second fall takes `25` seconds to watch, and debris
+/// leaving at `10 km/s` crosses the opening view in a few seconds after that.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`], as the spec's time
+/// scale.
+///
+/// **If you change it.** The `+` and `-` keys change it at run time; this is only where it starts.
+pub const GIANT_IMPACT_TIME_SCALE: f32 = 2000.0;
+
+/// Where the camera starts for the giant impact, in world units.
+///
+/// **Why this value.** Bevy's 45° field of view needs `0.1 / tan(22.5°) = 0.241` units to frame
+/// [`GIANT_IMPACT_FRAMED_RADIUS_UNITS`] about the origin; this is `0.251` away, raised so the
+/// debris shell is seen in depth rather than edge-on.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`].
+///
+/// **If you change it.** Checked by `catalog_tests::every_experiment_frames_its_own_scene`.
+pub const GIANT_IMPACT_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 0.12, 0.22);
+
+/// Radius about the origin (the pair's centre of mass) that the giant impact's opening view
+/// contains, in world units.
+///
+/// **Why this value.** The Earth starts `0.0095` units from the origin and the impactor `0.088`
+/// on the other side, with radii `0.0064` and `0.0034`; `0.1` holds both, and the impact happens
+/// near the middle of the view.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`].
+///
+/// **If you change it.** Larger needs the camera further back; see
+/// [`GIANT_IMPACT_CAMERA_POSITION_UNITS`].
+pub const GIANT_IMPACT_FRAMED_RADIUS_UNITS: f32 = 0.1;
+
+/// How long the giant impact's trails are, in world units.
+///
+/// **Why this value.** `0.15`: the whole fall (`0.088` units for the impactor) plus the first stretch
+/// of the debris' flight. The render layer's default of `10` is a hundred times this scene.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`].
+///
+/// **If you change it.** Only how much path is drawn.
+pub const GIANT_IMPACT_TRAIL_LENGTH_UNITS: f32 = 0.15;
+
+/// Plummer softening for the giant impact, in world units.
+///
+/// **Why this value.** `1e-4` units, `100 km`: under `3%` of the smaller planet's radius, so gravity
+/// is Newton's to `0.01%` at contact, while still keeping the force finite if two debris fragments
+/// pass through each other. The crate's default of `1` unit is ten times the whole scene.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`].
+///
+/// **If you change it.** The force error at contact is `(ε/r)²`: `1e-3` units costs `1%`.
+pub const GIANT_IMPACT_SOFTENING_UNITS: f32 = 1.0e-4;
+
+/// How far the giant impact's bounds reach past the starting separation, in world units.
+///
+/// **Why this value.** `0.5`: room for the debris that escapes to fly well out of the opening view.
+/// Bounds are advisory and nothing is stopped at them.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`].
+///
+/// **If you change it.** Nothing moves; only the declared extent of the scene.
+pub const GIANT_IMPACT_BOUNDS_MARGIN_UNITS: f32 = 0.5;
+
+/// What a planet's surface is made of, for collisions: no bounce, no grip.
+///
+/// **Why these values.** Restitution `0`. Two planets meeting at kilometres per second carry far
+/// more energy than rock can store elastically: the impact melts and vaporises rock, and nothing
+/// springs back. What does come back in a real giant impact comes back through gravity and debris,
+/// which the merge pass models (see [`crate::collision::collision`]); a restitution above `0` would
+/// count that rebound twice. Friction `0`, because shear between molten bodies is not Coulomb
+/// friction, and a grazing pair then keeps all its sliding speed, which errs toward a hit-and-run
+/// rather than a merge.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact`], for both planets. The
+/// other experiments still use [`Material::ELASTIC`](crate::core::scene::Material::ELASTIC).
+///
+/// **If you change it.** Restitution `1` turns the merge off (an elastic pair is never merged) and
+/// the planets bounce. Friction above `0` slows grazing impacts and merges more of them.
+pub const PLANETARY_MATERIAL: Material = Material::new(0.0, 0.0);
+
+/// What the particles of a planet built from particles are made of: no bounce, the friction of
+/// rock on rock, an effective modulus of `1e13 Pa` so their contacts are simulated as a force, and
+/// basalt's thermal pressure, so what the contacts dissipate becomes heat that pushes back.
+///
+/// **Why these values.**
+///
+/// - **Restitution `0`**, as [`PLANETARY_MATERIAL`]: rock meeting rock at kilometres per second does
+///   not spring back. The restitution sets the contacts' damping, so `0` is the heaviest damping the
+///   step allows (7.6% rebound): two particles pressed together all but stop, and the planet flows
+///   rather than rings. With the thermal part, what that damping takes is not lost but heat.
+/// - **Friction `0.6`**, Byerlee's law (Byerlee 1978, Pure Appl. Geophys. 116:615): the friction of
+///   almost every rock on rock, from sandstone to granite, at the pressures of a planet's interior.
+///   Friction is what gives a pile of particles its shear strength, and what turns an oblique
+///   impact's sliding into the particles' spin (see [`crate::core::scene::Prop::spin_rad_s`]).
+///   Molten rock has none; melting is not modelled, so hot particles keep it.
+/// - **The modulus, `1e13 Pa`**, keeps the particles nearly rigid under the planet's own weight, as
+///   a planet's rock is: it is about seven times the bulk modulus at the Earth's centre (`1.4e12 Pa`,
+///   PREM, Dziewonski & Anderson 1981), and with it the pile compresses by a few percent of its
+///   radius under its own gravity rather than slumping. A linear spring has no stiffening under
+///   pressure the way real rock does, so a stiffer constant stands in for it. It also sets the
+///   contact time, `π·√(2m/(E·r))` for two equal particles, about `260 s` for the `1,700 km`
+///   particles of `experiment_1` at its default detail, which the substep count then resolves.
+/// - **Basalt's Tillotson parameters** (Benz & Asphaug 1999), the rock most impact simulations of
+///   rocky planets use. See [`crate::physics_utils::thermal`].
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact::giant_impact_with`] and
+/// [`crate::projects::interstellar::moon_forming::moon_forming_impact_with`], for every planet.
+///
+/// **If you change it.** Softer and the planets slump under their own weight and pass partly
+/// through each other on impact; at `1e12` the pile visibly flattens. Stiffer shortens every contact
+/// in proportion to `1/√E`, and the substep count rises to match: `1e14` costs three times the
+/// substeps. Without the thermal part the impact's dissipated energy leaves the simulation and no
+/// debris is thrown. Without friction the particles never spin.
+pub const PLANETARY_PARTICLE_MATERIAL: Material = Material::new(0.0, 0.6)
+    .with_modulus(1.0e13)
+    .with_thermal(Tillotson {
+        a: BASALT_TILLOTSON_A as f32,
+        b: BASALT_TILLOTSON_B as f32,
+        reference_energy_j_kg: BASALT_TILLOTSON_E0_J_KG as f32,
+    });
 
 /// Where the camera starts for the three-body ring, in world units.
 ///
@@ -70,35 +217,18 @@ pub const TWO_BODY_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 18.0, 42.0);
 /// the plan view for a horizon view; the bodies stay in frame either way.
 pub const THREE_BODY_CAMERA_POSITION_UNITS: Vec3 = Vec3::new(0.0, 26.0, 34.0);
 
-/// Radius about the camera target that the two-body experiment's opening view is meant
-/// to contain, in world units.
-///
-/// **Why this value.** The spheres start at `x = ±15` with a
-/// [`radius`](crate::constants::TWO_BODY_VISUAL_RADIUS_UNITS) of `1.5`, so `16.5` units
-/// covers the whole scene; `17` adds a little margin. For this experiment the framed
-/// radius *is* the scene's extent — every body is in the opening frame.
-///
-/// **Used by.** [`crate::projects::interstellar::catalog::two_body`], as the spec's
-/// [`framed_radius_units`](crate::projects::interstellar::catalog::ExperimentSpec::framed_radius_units),
-/// which is what `catalog_tests::every_experiment_frames_its_own_scene` checks the camera
-/// distance against.
-///
-/// **If you change it.** Raising it without moving
-/// [`TWO_BODY_CAMERA_POSITION_UNITS`] back fails that test, which is the point: it is the
-/// declaration the camera distance is verified against, not a decoration.
-pub const TWO_BODY_FRAMED_RADIUS_UNITS: f32 = 17.0;
-
 /// Radius about the camera target that the three-body ring's opening view is meant to
 /// contain, in world units.
 ///
 /// **Why this value.** [`THREE_BODY_RING_RADIUS_UNITS`] (`12`) plus
 /// [`THREE_BODY_VISUAL_RADIUS_UNITS`] (`1`): the circle the three bodies start on, to
-/// their outer edge. As with the two-body pair, this is the whole scene — nothing starts
+/// their outer edge. This is the whole scene — nothing starts
 /// off screen.
 ///
 /// **Used by.** [`crate::projects::interstellar::catalog::three_body_ring`].
 ///
-/// **If you change it.** See [`TWO_BODY_FRAMED_RADIUS_UNITS`]. Note the bodies *leave*
+/// **If you change it.** It is what `catalog_tests::every_experiment_frames_its_own_scene`
+/// checks the camera distance against, so raising it needs the camera further back. The bodies *leave*
 /// this radius as the experiment runs — an ejected body can go anywhere — so this
 /// describes the opening frame, not a bound on the motion.
 pub const THREE_BODY_FRAMED_RADIUS_UNITS: f32 = 13.0;

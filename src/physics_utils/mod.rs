@@ -22,6 +22,12 @@
 //! - [`newtons_laws`] — Newton's three laws of motion.
 //! - [`conservation_laws`] — momentum and energy: the quantities, the
 //!   conservation checks, and the collision solvers that follow from them.
+//! - [`impacts`] — collisions between bodies held together by gravity: the mutual escape speed,
+//!   the specific impact energy, the catastrophic-disruption threshold, and the share of mass that
+//!   survives (Leinhardt & Stewart 2012).
+//! - [`soft_contact`] — a contact resolved as a force over the time it lasts: the stiffness from a
+//!   modulus and two radii, the damping that gives a chosen restitution, the contact time, and the
+//!   spring-dashpot force.
 //! - [`kinematics`] — position, velocity, acceleration, and time under constant
 //!   acceleration, plus [`kinematics::MotionState`] to carry the three together.
 //! - [`relativity`] — special relativity: `β` and `γ`, time dilation, length contraction, and the
@@ -34,8 +40,11 @@
 //! supplies the geometry itself.
 
 pub mod conservation_laws;
+pub mod impacts;
 pub mod kinematics;
 pub mod newtons_laws;
 pub mod physics_constants;
 pub mod physics_formulas;
 pub mod relativity;
+pub mod soft_contact;
+pub mod thermal;

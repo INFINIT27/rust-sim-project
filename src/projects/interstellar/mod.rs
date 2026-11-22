@@ -24,9 +24,11 @@
 //!
 //! # The experiments
 //!
-//! - **`experiment_1` — two-body free fall.** Two Earth masses `30` units apart,
-//!   released from rest: they fall together, bounce elastically, and oscillate. The
-//!   scene the app has always shown, now one entry in a catalog.
+//! - **`experiment_1` — giant impact.** The Earth and a Mars-mass body at true size,
+//!   released from rest `10` contact distances apart: they fall together for `14` hours,
+//!   collide at `9 km/s`, merge, and throw off debris (see [`giant_impact`]). It replaced
+//!   the two-body free fall, two Earth masses drawn `235×` too large that bounced elastically
+//!   forever; that scene survives as `Scene::two_body_gravity`, a test fixture.
 //! - **`experiment_2` — three-body ring.** Three Earth masses at 120° on a `12`-unit
 //!   circle, each given a velocity that is exactly **tangential** to the circle with a
 //!   randomly drawn magnitude, then released. Chaotic by construction, and a different
@@ -75,7 +77,9 @@ pub mod black_hole;
 pub mod catalog;
 pub mod constants;
 pub mod earth_moon;
+pub mod giant_impact;
 pub mod jovian;
+pub mod moon_forming;
 pub mod objects;
 pub mod random;
 pub mod scale_check;

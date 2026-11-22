@@ -25,7 +25,7 @@ hard, and toward what, and counts what the flight cost.
 | `lambert.rs` | `lambert`: the two-body arc between two points in a given time, universal variables, solved by bisection. The transfer search's cost model. |
 | `guidance.rs` | The steering laws: `steer` (land on the braking curve; a direct flight also burns toward it and flies around bodies), `match_velocity` (correction burns), `swing_by` (the heading that turns a landing approach into a pass on the side that leads home), `braking_m_s2`, `blocking`. Touchdown uses `core::transfer::segment_entry`. |
 | `flight.rs` | `Flight`: a craft in the live scene, its `Phase` (`Dry` once a rocket's tanks are empty), its `Leg` of a return trip (`begin_return` starts the way back), its `f64` state for a powered craft, its `Rocket` if it carries propellant, its correction schedule, and its report. |
-| `report.rs` | `FlightReport`: time, peak speed, Δv, engine time, peak g, energy, propellant, touchdown; for a rocket also the propellant loaded and left, stages dropped, and whether it ran dry. |
+| `report.rs` | `FlightReport`: time, peak speed, Δv, engine time, peak g, energy, propellant, touchdown and whether the structure held (`structure_held`); for a rocket also the propellant loaded and left, stages dropped, and whether it ran dry. |
 
 ## The rocket that carries its propellant
 
@@ -61,7 +61,7 @@ of `Stage`s, each a dry mass, a propellant load and an engine, burned in order f
 - **The built-in one is `Spacecraft::saturn_v_lander`**: the Saturn V's three stages (`5 × F-1`,
   `5 × J-2`, `J-2`), a lunar-module descent stage, and the empty ascent stage as payload.
   `2,922 t` at launch and `19.44 km/s` in all. From Earth to the Moon in `experiment_7` it spends
-  `18.5 km/s` and lands at `10 m/s` with about `1.4 t` of propellant left. The stage figures and
+  `18.5 km/s` and lands at `2.0 m/s` with about `1.4 t` of propellant left. The stage figures and
   their caveats are in `constants.rs`.
 
 What the model leaves out: dropped stages vanish instead of becoming bodies; there is no
@@ -141,7 +141,7 @@ floor. Chemical exhaust is nearly five times slower than that, so most of its en
 propellant that is itself thrown away.
 
 Flown by the crewed craft in `experiment_7`: Earth, a pass `1,785 km` above the Moon's far side,
-and a landing back on Earth at `10 m/s`, in `7.4` days for `27.4 km/s`. Landing on the Moon costs
+and a landing back on Earth at `2 m/s`, in `7.4` days for `27.4 km/s`. Landing on the Moon costs
 `15.7 km/s`; the return costs more because Earth's whole well is braked against under power.
 
 The `27.4 km/s` breaks down as `12.9` to leave Earth, `0.4` for the corrections and the turn onto
@@ -160,6 +160,8 @@ All in `constants.rs`, each with its reasoning. The ones that shape a flight mos
 | `AEROJET_260_THRUST_N` | `26.2 MN` | The SL-3 firing, 1967: the largest solid motor ever fired. |
 | `AEROJET_260_EXHAUST_SPEED_M_S` | `2,579 m/s` | Its `263 s` vacuum specific impulse; turns Δv into energy and propellant. |
 | `POWERED_BRAKE_FRACTION` | `0.8` | Brake with four fifths of what the engine gives beyond the target's surface gravity. |
+| `POWERED_TOUCHDOWN_SPEED_M_S` | `2 m/s` | What a landing aims for, inside the structural limit. Every powered landing in the tests, on all 90 pairs of the Sun, the planets and the Moon, touches down under `3 m/s`. |
+| `CRAFT_MAX_TOUCHDOWN_SPEED_M_S` | `3 m/s` | What the structure takes: the Apollo LM gear's `10 ft/s`. Faster is reported as a crash (`FlightReport::structure_held`); the craft is not simulated breaking yet. |
 | `CORRECTION_FIRST_FRACTION`, `CORRECTION_MIN_REMAINING_S` | `1%`, `6 h` | Correct soon after departure, then each time half the time left has passed. |
 | `LANDING_START_RADII` | `20` | The landing law starts by twenty radii out at the latest, as terminal guidance. |
 | `DEPARTURE_BURN_STEPS` | `2,000` | A fixed step count keeps the burn smooth in what is solved for. |

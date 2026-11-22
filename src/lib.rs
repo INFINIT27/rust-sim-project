@@ -38,6 +38,7 @@
 
 pub mod bindings;
 pub mod collision;
+pub mod compute;
 pub mod config;
 pub mod constants;
 pub mod core;
@@ -62,7 +63,7 @@ pub use crate::time::simulation::{clamp_real_step, SimulationClock, TimeStep};
 // Experiments: the catalog, the per-experiment settings, the selection that picks
 // one, and the seeded generator that randomises initial conditions.
 pub use crate::projects::interstellar::catalog::{
-    catalog_lines, ring_circular_speed_units_s, three_body_ring, two_body, BodyNames, Experiment,
+    catalog_lines, ring_circular_speed_units_s, three_body_ring, BodyNames, Experiment,
     ExperimentId, ExperimentSpec,
 };
 pub use crate::projects::interstellar::random::Rng;
@@ -87,9 +88,12 @@ pub use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, EARTH_MOONS, EARTH_MOON_BOUNDS_MARGIN_UNITS,
     EARTH_MOON_CAMERA_POSITION_UNITS, EARTH_MOON_FRAMED_RADIUS_UNITS, EARTH_MOON_SOFTENING_UNITS,
     EARTH_MOON_TIME_SCALE, EARTH_MOON_TRAIL_LENGTH_UNITS, EARTH_RADIUS_M,
-    JOVIAN_BOUNDS_MARGIN_UNITS, JOVIAN_CAMERA_POSITION_UNITS, JOVIAN_DISPLAY_EXAGGERATION,
-    JOVIAN_FRAMED_RADIUS_UNITS, JOVIAN_MOONS, JOVIAN_SOFTENING_UNITS, JOVIAN_TIME_SCALE,
-    JOVIAN_TRAIL_LENGTH_UNITS, MOON_SYSTEMS, SCALE_CHECK_CAMERA_OFFSET_UNITS,
+    GIANT_IMPACT_BOUNDS_MARGIN_UNITS, GIANT_IMPACT_CAMERA_POSITION_UNITS,
+    GIANT_IMPACT_FRAMED_RADIUS_UNITS, GIANT_IMPACT_SOFTENING_UNITS, GIANT_IMPACT_START_CONTACTS,
+    GIANT_IMPACT_TIME_SCALE, GIANT_IMPACT_TRAIL_LENGTH_UNITS, JOVIAN_BOUNDS_MARGIN_UNITS,
+    JOVIAN_CAMERA_POSITION_UNITS, JOVIAN_DISPLAY_EXAGGERATION, JOVIAN_FRAMED_RADIUS_UNITS,
+    JOVIAN_MOONS, JOVIAN_SOFTENING_UNITS, JOVIAN_TIME_SCALE, JOVIAN_TRAIL_LENGTH_UNITS,
+    MOON_SYSTEMS, PLANETARY_MATERIAL, PLANETARY_PARTICLE_MATERIAL, SCALE_CHECK_CAMERA_OFFSET_UNITS,
     SCALE_CHECK_FRAMED_RADIUS_UNITS, SCALE_CHECK_GAP_UNITS, SCALE_CHECK_TIME_SCALE,
     SGR_A_STAR_COLOR, SGR_A_STAR_MASS_KG, SGR_A_STAR_SPIN, SOLAR_SYSTEM_CAMERA_POSITION_UNITS,
     SOLAR_SYSTEM_ECLIPTIC_HEIGHT_UNITS, SOLAR_SYSTEM_FRAMED_RADIUS_UNITS, SOLAR_SYSTEM_PLANETS,
@@ -98,7 +102,17 @@ pub use crate::projects::interstellar::constants::{
     STELLAR_OBJECTS, THREE_BODY_CAMERA_POSITION_UNITS, THREE_BODY_FRAMED_RADIUS_UNITS,
     THREE_BODY_HEIGHT_UNITS, THREE_BODY_MASS_KG, THREE_BODY_MAX_SPEED_FACTOR,
     THREE_BODY_MIN_SPEED_FACTOR, THREE_BODY_RING_RADIUS_UNITS, THREE_BODY_TIME_SCALE,
-    THREE_BODY_VISUAL_RADIUS_UNITS, TWO_BODY_CAMERA_POSITION_UNITS, TWO_BODY_FRAMED_RADIUS_UNITS,
+    THREE_BODY_VISUAL_RADIUS_UNITS,
+};
+// `experiment_1`: the giant impact.
+pub use crate::projects::interstellar::giant_impact::{
+    giant_impact, giant_impact_at_speed, giant_impact_contact_m, giant_impact_impactor,
+    giant_impact_seconds, giant_impact_speed_m_s, giant_impact_target, giant_impact_with,
+};
+pub use crate::projects::interstellar::moon_forming::{
+    moon_forming_angular_momentum, moon_forming_impact, moon_forming_impact_seconds,
+    moon_forming_impact_speed_m_s, moon_forming_impact_with,
+    moon_forming_specific_angular_momentum,
 };
 // `experiment_7`: the Earth and the Moon alone.
 pub use crate::projects::interstellar::earth_moon::{
@@ -120,7 +134,8 @@ pub use crate::projects::interstellar::solar_system::{
 // Re-export the public scene API at the crate root so consumers can write
 // `physics_sandbox::{Body, Scene, ...}` per the design's `Example Usage`.
 pub use crate::core::scene::{
-    moon_primary, Aabb, Body, BodyId, Color, DVec3, Pose, Prop, Quat, Scene, Vec3,
+    moon_primary, Aabb, Body, BodyId, CollisionSettings, Color, DVec3, Material, Pose, Prop, Quat,
+    Scene, Tillotson, Vec3,
 };
 
 // Cross-layer constants: the unit scale, the shipped scene's configuration, and
@@ -133,10 +148,12 @@ pub use crate::constants::{
 
 // The `core` layer's own constants.
 pub use crate::core::constants::{
+    DEFAULT_DEBRIS_FRAGMENTS, DEFAULT_FRICTION, DEFAULT_PARTICLES_PER_BODY, DEFAULT_RESTITUTION,
     DEMO_BOUNDS_MAX_UNITS, DEMO_BOUNDS_MIN_UNITS, DEMO_FLOOR_COLOR, DEMO_FLOOR_HALF_SIZE_UNITS,
-    GRAVITY_SOFTENING_UNITS, MOON_MAX_MASS_RATIO, ROTATION_UNIT_TOLERANCE,
-    TRANSFER_AIM_TOLERANCE_M, TRANSFER_AZIMUTH_SAMPLES, TRANSFER_CANDIDATES,
-    TRANSFER_CORRECTION_FRACTIONS, TRANSFER_EPHEMERIS_ORBIT_FRACTION, TRANSFER_EPHEMERIS_SAMPLES,
+    GRAVITY_SOFTENING_UNITS, MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
+    MOON_MAX_MASS_RATIO, ROTATION_UNIT_TOLERANCE, TRANSFER_AIM_TOLERANCE_M,
+    TRANSFER_AZIMUTH_SAMPLES, TRANSFER_CANDIDATES, TRANSFER_CORRECTION_FRACTIONS,
+    TRANSFER_EPHEMERIS_ORBIT_FRACTION, TRANSFER_EPHEMERIS_SAMPLES,
     TRANSFER_FIRST_CORRECTION_FRACTION, TRANSFER_FIRST_CORRECTION_S, TRANSFER_HORIZON_FACTOR,
     TRANSFER_LINE_SEARCH_HALVINGS, TRANSFER_MAX_ITERATIONS, TRANSFER_MIN_EPHEMERIS_STEP_S,
     TRANSFER_MIN_HORIZON_S, TRANSFER_MIN_STEP_S, TRANSFER_PATH_POINTS, TRANSFER_REACH_MARGIN,
@@ -164,13 +181,14 @@ pub use crate::render::mission::{
 };
 pub use crate::spacecraft::constants::{
     AEROJET_260_EXHAUST_SPEED_M_S, AEROJET_260_THRUST_N, BURN_DONE_M_S, CRAFT_COLOR,
-    CRAFT_RADIUS_M, CREWED_CRAFT_MASS_KG, CREW_MAX_ACCELERATION_G, CRUISE_STEP_FRACTION,
-    DEPARTURE_BURN_STEPS, LANDING_LOOKAHEAD_FACTOR, LANDING_START_BRAKING_DISTANCES,
-    LANDING_START_RADII, LAUNCH_ALTITUDE_M, ORBIT_SEARCH_CANDIDATES, ORBIT_SEARCH_DIRECTIONS,
-    ORBIT_SEARCH_MAX_FRACTION, ORBIT_SEARCH_MIN_FRACTION, ORBIT_SEARCH_REFINE_STEPS,
-    ORBIT_SEARCH_SAMPLES, ORBIT_SOLVE_WINDOW_FRACTION, POWERED_AIM_CLEARANCE_RADII,
-    POWERED_BRAKE_FRACTION, POWERED_CANCEL_CHECK_STEPS, POWERED_CLEARANCE_RADII,
-    POWERED_HORIZON_FACTOR, POWERED_MAX_SUBSTEP_S, POWERED_MIN_SUBSTEP_S, POWERED_SUBSTEP_FRACTION,
+    CRAFT_MAX_TOUCHDOWN_SPEED_M_S, CRAFT_RADIUS_M, CREWED_CRAFT_MASS_KG, CREW_MAX_ACCELERATION_G,
+    CRUISE_STEP_FRACTION, DEPARTURE_BURN_STEPS, LANDING_LOOKAHEAD_FACTOR,
+    LANDING_START_BRAKING_DISTANCES, LANDING_START_RADII, LAUNCH_ALTITUDE_M,
+    ORBIT_SEARCH_CANDIDATES, ORBIT_SEARCH_DIRECTIONS, ORBIT_SEARCH_MAX_FRACTION,
+    ORBIT_SEARCH_MIN_FRACTION, ORBIT_SEARCH_REFINE_STEPS, ORBIT_SEARCH_SAMPLES,
+    ORBIT_SOLVE_WINDOW_FRACTION, POWERED_AIM_CLEARANCE_RADII, POWERED_BRAKE_FRACTION,
+    POWERED_CANCEL_CHECK_STEPS, POWERED_CLEARANCE_RADII, POWERED_HORIZON_FACTOR,
+    POWERED_MAX_SUBSTEP_S, POWERED_MIN_SUBSTEP_S, POWERED_SUBSTEP_FRACTION,
     POWERED_TOUCHDOWN_SPEED_M_S, PROBE_MASS_KG, PROBE_MAX_DEPARTURE_SPEED_M_S,
     SWING_BY_PERIAPSIS_RADII,
 };
@@ -178,9 +196,19 @@ pub use crate::spacecraft::guidance::{
     blocking, braking_m_s2, match_velocity, steer, swing_by, Law, Sighting, Steering,
 };
 pub use crate::spacecraft::lambert::lambert;
+// GPU physics: stepping scenes made of particles on the GPU.
+pub use crate::compute::constants::{
+    DEFAULT_OPENING_ANGLE, GPU_LEAF_SIZE, GPU_PHYSICS_ENV, GPU_WORKGROUP_SIZE, MAX_OPENING_ANGLE,
+    MIN_OPENING_ANGLE,
+};
+pub use crate::compute::device::{gpu_physics_enabled, gpu_physics_enabled_by, GpuDevice};
+pub use crate::compute::particles::{
+    can_step_on_gpu, morton_order, GpuParticles, GpuSolver, GravitySolver, NeighbourSearch,
+    PARTICLES_SHADER,
+};
 // Configuration files: `config/*.toml`, read once at startup into the resources above.
 pub use crate::config::constants::{
-    CAMERA_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
+    CAMERA_FILE, COLLISION_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
     SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE,
 };
 pub use crate::config::{
@@ -209,12 +237,19 @@ pub use crate::collision::resolve::{resolve_contacts, substep_count};
 
 // The second contact response: a black hole takes what it touches.
 pub use crate::collision::absorb::absorb_contacts;
+pub use crate::collision::aggregate::{
+    contact_clusters, impact_outcome, lattice_points, lattice_spacing_m, particle_body,
+    particle_radius_m, ImpactOutcome, ParticleBody,
+};
+pub use crate::collision::collision::{
+    apply_contact_forces, contact_is_simulated, merge_contacts, particle_energy, push_contacts,
+    shortest_contact_seconds, smoothing_length_m, CollisionEvent, ContactPass, ParticleEnergy,
+};
 
 // The `collision` layer's tuning surface: hull shape, narrow phase, response.
 pub use crate::collision::constants::{
     EDGE_AXIS_BUDGET, MAX_SUBSTEPS, MAX_SUBSTEP_DISPLACEMENT_UNITS, MIN_AXIS_LENGTH,
-    NORMAL_TIE_TOLERANCE, PLANE_THICKNESS_UNITS, RESTITUTION, SPHERE_SUBDIVISIONS,
-    SURFACE_EPSILON_UNITS,
+    NORMAL_TIE_TOLERANCE, PLANE_THICKNESS_UNITS, SPHERE_SUBDIVISIONS, SURFACE_EPSILON_UNITS,
 };
 
 // Re-export the render-bridge surface so consumers can write
@@ -239,7 +274,8 @@ pub use crate::performance::{
 // depending on the exact module path.
 pub use crate::render::plugin::{
     advance_clocks_system, clamp_dt, spawn_scene_entities, step_scene_system,
-    sync_mirror_entities_system, update_eclipse_occluders_system, MirroredBody, ScenePlugin,
+    sync_mirror_entities_system, update_eclipse_occluders_system, GpuPhysicsPlugin, MirroredBody,
+    PhysicsBackend, ScenePlugin,
 };
 
 // Motion trails: the last few units of each body's path, fading out behind it.
@@ -370,7 +406,27 @@ pub use crate::ui::hud::{hud_shown, toggle_hud_system, HudPlugin, HudVisibility}
 // Re-export the physics surface so consumers can write
 // `physics_sandbox::gravitational_constant_calculator(..)` and
 // `physics_sandbox::GRAVITATIONAL_CONSTANT` without naming the layer.
-pub use crate::physics_utils::physics_constants::{GRAVITATIONAL_CONSTANT, STANDARD_GRAVITY_M_S2};
+pub use crate::physics_utils::physics_constants::{
+    BASALT_TILLOTSON_A, BASALT_TILLOTSON_B, BASALT_TILLOTSON_E0_J_KG, DISRUPTION_COEFFICIENT,
+    DISRUPTION_REFERENCE_DENSITY_KG_M3, DISRUPTION_VELOCITY_EXPONENT, FCC_PACKING_FRACTION,
+    GRAVITATIONAL_CONSTANT, STANDARD_GRAVITY_M_S2, SUPERCATASTROPHIC_EXPONENT,
+    SUPERCATASTROPHIC_ONSET,
+};
+// Soft contact: a contact resolved as a force, for bodies simulated as particles.
+pub use crate::physics_utils::soft_contact::{
+    contact_duration, contact_stiffness, damping_ratio_for_restitution,
+    restitution_for_damping_ratio, spring_dashpot_force,
+};
+// Hot rock: the Tillotson thermal pressure and the smoothing kernel that makes it a force.
+pub use crate::physics_utils::thermal::{
+    cubic_spline_gradient, cubic_spline_kernel, particle_density, sphere_moment_of_inertia,
+    tillotson_thermal_pressure,
+};
+// Planetary impacts: escape speed, impact energy, and what survives.
+pub use crate::physics_utils::impacts::{
+    catastrophic_disruption_threshold, largest_remnant_fraction, mutual_escape_speed,
+    specific_impact_energy,
+};
 pub use crate::physics_utils::physics_formulas::gravitational_constant_calculator;
 
 // Newton's three laws of motion.
@@ -415,7 +471,8 @@ pub use crate::physics_utils::relativity::energy::{
 // Conservation of momentum and energy, plus the collision solvers that follow
 // from them.
 pub use crate::physics_utils::conservation_laws::{
-    elastic_collision_1d, energy_is_conserved, gravitational_potential_energy, kinetic_energy,
+    collision_energy_loss, coulomb_friction_speed_change, elastic_collision_1d,
+    energy_is_conserved, gravitational_potential_energy, kinetic_energy,
     kinetic_energy_is_conserved, momentum, momentum_is_conserved, perfectly_inelastic_collision_1d,
-    total_kinetic_energy, total_mechanical_energy, total_momentum,
+    restitution_collision_1d, total_kinetic_energy, total_mechanical_energy, total_momentum,
 };

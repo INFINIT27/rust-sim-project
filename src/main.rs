@@ -26,10 +26,10 @@ use physics_sandbox::constants::{WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE, WI
 use physics_sandbox::{
     catalog_lines, config_dir, help_text, parse_args, AccretionDiscPlugin, ArrivalPopupPlugin,
     BlackHoleViewPlugin, Command, CompassPlugin, Config, ConfigPlugin, CrosshairPlugin,
-    DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, HudPlugin, LaunchInputPlugin,
-    MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin, PerformanceSettings,
-    PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin, Selection,
-    SimulationControlsPlugin, TrailPlugin,
+    DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, GpuPhysicsPlugin, HudPlugin,
+    LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin,
+    PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin,
+    Selection, SimulationControlsPlugin, TrailPlugin,
 };
 
 fn main() {
@@ -141,6 +141,8 @@ fn run(selection: Selection, dir: PathBuf, config: Config, performance: Performa
         }),
         ..default()
     }))
+    // Before the scene is stepped: finds a GPU for scenes made of particles, or settles on the CPU.
+    .add_plugins(GpuPhysicsPlugin)
     .add_plugins(ScenePlugin::new(selection))
     // The tracing grid goes after `ScenePlugin`, which inserts the `Scene` the grid
     // measures its floor from.

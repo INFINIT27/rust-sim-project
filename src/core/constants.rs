@@ -10,6 +10,11 @@
 //!   layer's `is_valid` predicates.
 //! - **Gravitation** — [`GRAVITY_SOFTENING_UNITS`], which keeps the `1/r²`
 //!   singularity out of the integrator.
+//! - **Contact materials** — [`DEFAULT_RESTITUTION`] and [`DEFAULT_FRICTION`], what a
+//!   prop's surface is made of until a scene says otherwise.
+//! - **Collision detail** — [`DEFAULT_PARTICLES_PER_BODY`], [`MIN_PARTICLES_PER_BODY`],
+//!   [`MAX_PARTICLES_PER_BODY`], [`DEFAULT_DEBRIS_FRAGMENTS`] and [`MAX_DEBRIS_FRAGMENTS`]: how many
+//!   particles a planet is made of, and how many bodies an instant merge's debris is split into.
 //! - **The starter scene** — the bounds, floor, and colours
 //!   [`crate::core::scene::Scene::demo`] and
 //!   [`crate::core::scene::Scene::two_body_gravity`] build from.
@@ -63,6 +68,124 @@ pub const ROTATION_UNIT_TOLERANCE: f32 = 1.0e-4;
 /// coincide — but props with no hull (a zero-width line, a massless prop) can still
 /// pass through each other and this is what keeps that finite.
 pub const GRAVITY_SOFTENING_UNITS: f32 = 1.0;
+
+/// The coefficient of restitution a prop has unless it is given a
+/// [`Material`](crate::core::scene::Material): `1.0`, a perfect bounce. Dimensionless.
+///
+/// The fraction of the approach speed along the contact normal that comes back out as
+/// separation speed: `1.0` conserves kinetic energy, `0.0` leaves the pair moving off
+/// together, and real materials sit between.
+///
+/// **Why this value.** It is the behaviour body physics shipped with (amendment A2):
+/// every contact perfectly elastic. Keeping it as the default is what lets materials
+/// arrive without moving a single existing scene: a prop that has not been given a
+/// material collides exactly as it did before, bit for bit, and each scene opts into
+/// dissipation when it is given materials. It replaces `collision::constants::RESTITUTION`,
+/// which held the same `1.0` for every contact in the crate.
+///
+/// **Used by.** [`Material::ELASTIC`](crate::core::scene::Material::ELASTIC), and through it
+/// every [`Prop`](crate::core::scene::Prop) constructor.
+///
+/// **If you change it.** Every scene that has not chosen materials starts losing energy on
+/// every contact; the two-body demo stops oscillating and settles. Values outside `[0, 1]`
+/// fail [`Material::is_valid`](crate::core::scene::Material::is_valid).
+pub const DEFAULT_RESTITUTION: f32 = 1.0;
+
+/// The coefficient of friction a prop has unless it is given a
+/// [`Material`](crate::core::scene::Material): `0.0`, frictionless. Dimensionless.
+///
+/// Coulomb's `μ`: a contact's impulse along the surface is at most `μ` times its impulse
+/// along the normal.
+///
+/// **Why this value.** As [`DEFAULT_RESTITUTION`]: contact was frictionless before
+/// materials existed, and the default keeps it so.
+///
+/// **Used by.** [`Material::ELASTIC`](crate::core::scene::Material::ELASTIC).
+///
+/// **If you change it.** Glancing contacts in every scene without materials start losing
+/// their sliding speed. Negative values fail
+/// [`Material::is_valid`](crate::core::scene::Material::is_valid).
+pub const DEFAULT_FRICTION: f32 = 0.0;
+
+/// How many bodies the debris of one impact is split into, unless `config/collision.toml` or the
+/// menu says otherwise.
+///
+/// **Why this value.** Small, as a starting point that costs nothing: `8` fragments next to the two
+/// colliding bodies is a scene of ten, where gravity is `45` pairs. It is enough to see the debris
+/// leave as a cloud, some of it falling back and some escaping, and the menu raises it for a finer
+/// picture. The debris *mass* does not depend on it, only how finely that mass is followed.
+///
+/// **Used by.** [`CollisionSettings::DEFAULT`](crate::core::scene::CollisionSettings::DEFAULT), and
+/// through it every [`Scene`](crate::core::scene::Scene) and the configuration's default.
+///
+/// **If you change it.** `0` makes every impact a perfect merge. Larger values cost as the square of
+/// the count once the debris is flying; see [`MAX_DEBRIS_FRAGMENTS`].
+pub const DEFAULT_DEBRIS_FRAGMENTS: u32 = 8;
+
+/// The most bodies the debris of one impact may be split into.
+///
+/// **Why this value.** `512`: gravity and contact are tested over every pair of bodies every
+/// substep, so a debris cloud of `512` is about `131,000` pairs, which a release build still steps
+/// at interactive rates. Beyond it a single impact would make the app unusable, which is a worse
+/// failure than a coarser cloud.
+///
+/// **Used by.** [`CollisionSettings::is_valid`](crate::core::scene::CollisionSettings::is_valid), the
+/// configuration file's check, and the menu's range.
+///
+/// **If you change it.** Raising it lets the menu ask for clouds that cost quadratically more frame
+/// time.
+pub const MAX_DEBRIS_FRAGMENTS: u32 = 512;
+
+/// How many particles the larger planet of a particle-built scene is made of, unless
+/// `config/collision.toml` or the menu says otherwise.
+///
+/// **Why this value.** `200`: in `experiment_1` the Earth is `201` particles about `1,700 km` across
+/// and the Mars-mass impactor `19` of the same size, `220` bodies in all, `24,000` pairs for
+/// gravity and contact per substep. That is cheap enough to run at full frame rate in a debug
+/// build, and fine enough that the contact visibly flows: the impactor is four particles
+/// across. It is a resolution, not a physical quantity, and the menu raises it.
+///
+/// **Used by.** [`CollisionSettings::DEFAULT`](crate::core::scene::CollisionSettings::DEFAULT).
+///
+/// **If you change it.** Cost grows as its square. Below about `50` the impactor is a single
+/// particle and the contact is no longer resolved.
+pub const DEFAULT_PARTICLES_PER_BODY: u32 = 200;
+
+/// The fewest particles a particle-built planet may be made of.
+///
+/// **Why this value.** `1`: a planet of one particle is a single soft sphere, the coarsest the model
+/// can go. Useful as a check, not as a simulation.
+///
+/// **Used by.** [`CollisionSettings::is_valid`](crate::core::scene::CollisionSettings::is_valid),
+/// the configuration file's check, and the menu's range.
+///
+/// **If you change it.** Nothing below `1` is meaningful.
+pub const MIN_PARTICLES_PER_BODY: u32 = 1;
+
+/// The most particles a particle-built planet may be made of.
+///
+/// **Why this value.** `200,000`, about `229,000` bodies with the smaller planet's share: as far as
+/// the GPU's tree algorithms ([`crate::compute`]) still step `experiment_1` at seconds a frame.
+/// Measured on an RTX 4070 SUPER, one frame's physics (`33` simulated seconds):
+///
+/// | Particles per planet | Exact pairs | Barnes–Hut and tree | |
+/// | --- | --- | --- | --- |
+/// | `200` | `0.8 ms` | `1.3 ms` | the app runs at full speed |
+/// | `5,000` | | | the app keeps up with its `2000×` clock, `68` frames a second |
+/// | `20,000` | `84 ms` | `114 ms` | the clock falls behind |
+/// | `100,000` | `2.2 s` | `0.85 s` | a frame every few seconds |
+/// | `200,000` | | `2.3 s` | |
+///
+/// Past this a frame takes longer than anyone would watch, and the next step is a faster tree
+/// rather than a larger number. **On the CPU** a frame at `2,000` takes over a second: the CPU path
+/// is practical to about `200`, and a machine without a GPU should keep to that.
+///
+/// **Used by.** As [`MIN_PARTICLES_PER_BODY`].
+///
+/// **If you change it.** Raising it lets the menu ask for scenes that cost quadratically more with
+/// the exact algorithms and as `N log N` with the trees. Past about `4` million the tree's depth
+/// would outgrow its walk stack.
+pub const MAX_PARTICLES_PER_BODY: u32 = 200_000;
 
 /// Lower corner of the starter scene's bounds, in world units.
 ///

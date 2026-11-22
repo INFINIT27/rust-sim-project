@@ -182,7 +182,19 @@ and adds no formula of its own: `gravitational_constant_calculator`,
 `acceleration_from_net_force`, `velocity_after`, `displacement`.
 
 `resolve_contacts` then makes props **solid**: any two whose triangle hulls
-overlap bounce perfectly elastically and are pushed apart. A `Body`'s radius or
+overlap bounce and are pushed apart. How much they bounce and grip is each prop's
+`Material` (restitution and friction); every constructor defaults to
+`Material::ELASTIC`, a perfect frictionless bounce, which is how contact behaved
+before materials existed. Particles whose `Material` has a modulus (`with_modulus`) touch
+through a force instead: `push_contacts` runs first in every substep, before gravity, and
+`ContactPass::heat` books the heat after it, at the mean of the substep's start and end velocities;
+together they are how two planets built from particles deform and merge. Such particles also spin
+(`Prop::spin_rad_s`), and when their material has a Tillotson `thermal` part they hold heat
+(`Prop::heat_j_kg`) that pushes back. `Scene::get` and `Scene::remove` find a body by binary
+search, since ids are handed out in increasing order and kept sorted. Between absorption and the
+bounce, `merge_contacts` makes one body of two single-sphere planets that cannot escape each
+other. `CollisionSettings` on `Scene::collision` holds the detail: particles per planet (read
+when a scene is built) and debris fragments per instant merge (copied in every frame). A `Body`'s radius or
 half-extents are no longer only a rendering detail — they are where the body
 stops. The layer that owns all of that is `src/collision/`, and its `README.md` is
 the place to read before touching it; what matters from here is:

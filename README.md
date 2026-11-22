@@ -44,7 +44,7 @@ By default `R` flies a **crewed transfer**: a `15 t` ship with an Aerojet 260 en
 largest solid motor ever fired) throttled so the crew never feels more than `3 g`. It flies the way
 real missions do, on the **least-energy** route: a `3 g` burn onto the cheapest coasting arc to the
 target (found among every time of flight from where the planets are now), an unpowered cruise with
-small correction burns, then a `3 g` braking burn and a soft landing at about `10 m/s`. Earth to the
+small correction burns, then a `3 g` braking burn and a soft landing at about `2 m/s`, under the `3 m/s` its landing gear takes. Earth to the
 Moon takes about 4.6 days, Earth to Mars about 17 months, Earth to Neptune 17 years. When it lands,
 a pop-up shows the time of travel, top speed, speed change, engine time, energy and propellant
 used, peak g, and touchdown speed.
@@ -104,7 +104,19 @@ cargo run --release -- black-hole  # Sgr A*, the Milky Way's central black hole
 cargo run --release -- earth-moon  # the Earth and the Moon at true size and distance
 ```
 
-Running with no argument starts `experiment_1`, the two-body free fall.
+Running with no argument starts `experiment_1`, the giant impact: the Earth and a Mars-mass body at true
+size, each built from particles, falling together from rest and colliding at `9 km/s`. The contact is
+simulated particle by particle, so the two deform, flow into each other and settle into one body.
+How many particles they are made of is set under `Esc` > Configuration > Collisions (from the next
+launch). The impact's heat puffs the merged body up; at twice the escape speed it throws debris
+off. `experiment_8` (`moon-forming`) is the same pair meeting at `45°`, the impact thought to have
+made the Moon: one spinning body, and material on orbits that clear it.
+
+On a machine with a GPU, a scene made only of particles steps there (`src/compute/`): experiment_1
+runs at full speed to about 5,000 particles per planet, against about 200 on the CPU. The same page
+chooses the GPU's algorithms, exact pairs or a Barnes–Hut tree for gravity and for neighbours; the
+trees reach `200,000` particles. `RGA_GPU_PHYSICS=off` keeps it on the CPU; the menu's first page
+says which is in use.
 
 ## Tests
 
@@ -128,7 +140,8 @@ concerns live instead (**Not here**).
 | [`src/`](src/README.md) | Crate root, app wiring and the window, key bindings, constants shared by layers |
 | [`src/core/`](src/core/README.md) | The world model: `Scene`, `Prop`, `Body`, units (1 world unit = 10⁹ m), the step loop, gravity |
 | [`src/core/transfer/`](src/core/transfer/README.md) | The coasting-path search between two bodies, gravity assists, the prediction the spacecraft use |
-| [`src/collision/`](src/collision/README.md) | Hulls, contact detection, elastic bounces, black-hole absorption |
+| [`src/collision/`](src/collision/README.md) | Hulls, contact detection, bounces with restitution and friction, simulated contact between particles, merging, black-hole absorption |
+| [`src/compute/`](src/compute/README.md) | GPU physics: scenes made of particles stepped on the GPU |
 | [`src/time/`](src/time/README.md) | The simulation and observer clocks, `TimeStep`, time scaling |
 | [`src/projects/`](src/projects/README.md) | The simulations, one directory per kind of physics; adding a new kind |
 | [`src/projects/interstellar/`](src/projects/interstellar/README.md) | Every experiment so far: the catalog, planet and moon data, starting cameras, command-line arguments, the `B`-key objects |

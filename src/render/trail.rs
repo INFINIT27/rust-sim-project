@@ -77,7 +77,7 @@ use crate::core::scene::{BodyId, Color, Scene};
 use crate::input::menu::MenuState;
 use crate::projects::interstellar::catalog::ExperimentSpec;
 use crate::render::constants::{
-    TRAIL_HEAD_ALPHA, TRAIL_LENGTH_UNITS, TRAIL_LINE_WIDTH_PX, TRAIL_MAX_SAMPLES,
+    TRAIL_HEAD_ALPHA, TRAIL_LENGTH_UNITS, TRAIL_LINE_WIDTH_PX, TRAIL_MAX_BODIES, TRAIL_MAX_SAMPLES,
     TRAIL_MAX_TURN_RADIANS, TRAIL_MIN_SAMPLE_SPACING_UNITS, TRAIL_MIN_SPACING_FRACTION,
     TRAIL_MOON_SAMPLES_PER_ORBIT, TRAIL_TAIL_ALPHA, TRAIL_TARGET_SEGMENTS,
 };
@@ -430,6 +430,12 @@ impl Trails {
     /// leave a trail hanging in the air. Nothing removes props today; this is what keeps that
     /// true when something does.
     pub fn record_from(&mut self, scene: &Scene, config: &TrailConfig) {
+        // A crowd of particles gets no trails: see `TRAIL_MAX_BODIES`. Forget any already kept,
+        // so none is left frozen on screen.
+        if scene.props.len() > TRAIL_MAX_BODIES {
+            self.paths.clear();
+            return;
+        }
         let mut seen = Vec::with_capacity(scene.props.len());
 
         for (id, prop) in scene.iter() {

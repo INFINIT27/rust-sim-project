@@ -50,6 +50,13 @@ pub const UI_FILE: &str = "ui.toml";
 /// **If you change it.** Rename the shipped file, or the built-in trails are used.
 pub const TRAILS_FILE: &str = "trails.toml";
 
+/// The collisions file: how much detail impacts are simulated in.
+///
+/// **Used by.** [`crate::config::Config::load`], and the menu's Save on the collisions page.
+///
+/// **If you change it.** Rename the shipped file, or the built-in detail is used.
+pub const COLLISION_FILE: &str = "collision.toml";
+
 /// The performance file: anti-aliasing, the floor's eclipse shadows, and vsync. The
 /// `RGA_*` environment variables override it for one run.
 ///

@@ -12,45 +12,37 @@
 //! `build`, and a builder function. The `match` in `build` is exhaustive, so a
 //! forgotten builder is a compile error rather than a missing menu entry.
 //!
-//! A builder small enough to read at a glance lives here ([`two_body`],
-//! [`three_body_ring`]); one with a data table of its own gets a module, as
-//! [`super::solar_system`] does.
+//! A builder small enough to read at a glance lives here ([`three_body_ring`]); one with
+//! a data table of its own gets a module, as [`super::solar_system`] and
+//! [`super::giant_impact`] do.
 //!
 //! # What a spec carries, and why the plugin reads it rather than a constant
 //!
 //! Time scale and camera pose are **per experiment**: a three-body ring `12` units
-//! across wants a different clock and a different viewpoint than a two-body pair `30`
-//! units apart. Before this layer both were constants that `ScenePlugin` and
+//! across wants a different clock and a different viewpoint than a giant impact a tenth
+//! of a unit across. Before this layer both were constants that `ScenePlugin` and
 //! `spawn_scene_entities` read directly, which made "run a different experiment" a
 //! code edit in the render layer. Now the plugin reads the spec, and the spec comes
 //! from the catalog.
 //!
-//! # Where each scene is actually built
+//! # Where each scene is built
 //!
-//! Asymmetric, deliberately: the two-body scene is [`Scene::two_body_gravity`] in
-//! `core`, because it predates this layer, its constants are already shared with
-//! `render`, and a body of tests and documentation names it. This layer *wraps* it
-//! with a spec. The three-body ring is built here, because it needs randomness — and
-//! `core` cannot reach [`super::random`] without a circular dependency, since this
-//! layer depends on `core`.
-//!
-//! The rule going forward: **a new experiment's scene is built in this layer.** Only
-//! the two-body one lives in `core`, and only for that history. The solar system is built
-//! in [`super::solar_system`] — the same layer, its own file, because eight rows of real
-//! astronomical data and the arithmetic that turns them into a scene do not belong in the
-//! middle of the catalog.
+//! In this layer. `experiment_1` used to be the two-body free fall, built by
+//! [`Scene::two_body_gravity`] in `core` because it predated this layer; it is now the giant
+//! impact, built in [`super::giant_impact`], and the old scene stays in `core` only as a test
+//! fixture that a body of `core` tests is written against.
 
 pub use bevy::math::{Quat, Vec3};
 
-use crate::constants::{TWO_BODY_HEIGHT_UNITS, TWO_BODY_TIME_SCALE};
-use crate::core::scene::{Body, BodyId, Color, Pose, Prop, Scene};
+use crate::core::scene::{Body, BodyId, CollisionSettings, Color, Pose, Prop, Scene};
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, THREE_BODY_CAMERA_POSITION_UNITS, THREE_BODY_FRAMED_RADIUS_UNITS,
     THREE_BODY_HEIGHT_UNITS, THREE_BODY_MASS_KG, THREE_BODY_MAX_SPEED_FACTOR,
     THREE_BODY_MIN_SPEED_FACTOR, THREE_BODY_RING_RADIUS_UNITS, THREE_BODY_TIME_SCALE,
-    THREE_BODY_VISUAL_RADIUS_UNITS, TWO_BODY_CAMERA_POSITION_UNITS, TWO_BODY_FRAMED_RADIUS_UNITS,
+    THREE_BODY_VISUAL_RADIUS_UNITS,
 };
+use crate::projects::interstellar::giant_impact::giant_impact_with;
 use crate::projects::interstellar::random::Rng;
 
 /// Which experiment to run.
@@ -60,8 +52,8 @@ use crate::projects::interstellar::random::Rng;
 /// [`super::selection`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ExperimentId {
-    /// Two Earth-mass spheres released from rest, falling together and bouncing.
-    TwoBody,
+    /// The Earth and a Mars-mass body at true size, falling together from rest and merging.
+    GiantImpact,
     /// Three Earth-mass bodies on a circle, each with a random tangential speed.
     ThreeBodyRing,
     /// The Sun and the eight planets, on real orbits at real relative sizes.
@@ -74,13 +66,15 @@ pub enum ExperimentId {
     BlackHole,
     /// The Earth and the Moon alone, orbiting their barycentre at true size and distance.
     EarthMoon,
+    /// The Earth and a Mars-mass body meeting at escape speed and 45°: the Moon-forming impact.
+    MoonForming,
 }
 
 impl Default for ExperimentId {
-    /// [`ExperimentId::TwoBody`] — `experiment_1`, what the app has always shown.
+    /// [`ExperimentId::GiantImpact`] — `experiment_1`, what the app opens on.
     #[inline]
     fn default() -> Self {
-        Self::TwoBody
+        Self::GiantImpact
     }
 }
 
@@ -89,17 +83,18 @@ impl ExperimentId {
     ///
     /// The order is the order a `--list` prints and a picker would show, so it is
     /// stable and matches the slugs: `experiment_1` first.
-    pub const ALL: [Self; 7] = [
-        Self::TwoBody,
+    pub const ALL: [Self; 8] = [
+        Self::GiantImpact,
         Self::ThreeBodyRing,
         Self::SolarSystem,
         Self::Jovian,
         Self::ScaleCheck,
         Self::BlackHole,
         Self::EarthMoon,
+        Self::MoonForming,
     ];
 
-    /// The canonical slug: `"experiment_1"` through `"experiment_7"`.
+    /// The canonical slug: `"experiment_1"` through `"experiment_8"`.
     ///
     /// Numbered rather than named because that is how they are referred to in
     /// conversation and on the command line. [`name`](Self::name) is the human label
@@ -107,13 +102,14 @@ impl ExperimentId {
     #[inline]
     pub fn slug(&self) -> &'static str {
         match self {
-            Self::TwoBody => "experiment_1",
+            Self::GiantImpact => "experiment_1",
             Self::ThreeBodyRing => "experiment_2",
             Self::SolarSystem => "experiment_3",
             Self::Jovian => "experiment_4",
             Self::ScaleCheck => "experiment_5",
             Self::BlackHole => "experiment_6",
             Self::EarthMoon => "experiment_7",
+            Self::MoonForming => "experiment_8",
         }
     }
 
@@ -121,13 +117,14 @@ impl ExperimentId {
     #[inline]
     pub fn name(&self) -> &'static str {
         match self {
-            Self::TwoBody => "Two-body free fall",
+            Self::GiantImpact => "Giant impact",
             Self::ThreeBodyRing => "Three-body ring",
             Self::SolarSystem => "Solar system",
             Self::Jovian => "Jovian system",
             Self::ScaleCheck => "Scale check",
             Self::BlackHole => "Black hole",
             Self::EarthMoon => "Earth and Moon",
+            Self::MoonForming => "Moon-forming impact",
         }
     }
 
@@ -135,9 +132,10 @@ impl ExperimentId {
     #[inline]
     pub fn description(&self) -> &'static str {
         match self {
-            Self::TwoBody => {
-                "Two Earth masses 30 units apart, released from rest: they fall \
-                 together, bounce elastically, and oscillate."
+            Self::GiantImpact => {
+                "The Earth and a Mars-mass body at true size, released from rest: they fall \
+                 together for 14 hours, collide at 9 km/s and merge, the impact's heat puffing up \
+                 the merged body."
             }
             Self::ThreeBodyRing => {
                 "Three Earth masses on a 12-unit circle, each given a random \
@@ -163,6 +161,11 @@ impl ExperimentId {
                 "The Earth and the Moon alone at true size and distance, both orbiting \
                  their barycentre once every 27.3 days."
             }
+            Self::MoonForming => {
+                "The Earth and a Mars-mass body meeting at their escape speed and at 45 degrees, \
+                 the impact thought to have made the Moon: they merge into one hot, spinning body \
+                 that keeps the impact's angular momentum."
+            }
         }
     }
 
@@ -173,13 +176,22 @@ impl ExperimentId {
     #[inline]
     pub fn aliases(&self) -> &'static [&'static str] {
         match self {
-            Self::TwoBody => &["1", "two-body", "two_body"],
+            Self::GiantImpact => &[
+                "1",
+                "giant-impact",
+                "giant_impact",
+                "impact",
+                "theia",
+                "two-body",
+                "two_body",
+            ],
             Self::ThreeBodyRing => &["2", "three-body", "three_body", "ring"],
             Self::SolarSystem => &["3", "solar-system", "solar_system", "solar", "planets"],
             Self::Jovian => &["4", "jovian", "jupiter", "moons", "galilean"],
             Self::ScaleCheck => &["5", "scale", "scale-check", "sizes", "ruler"],
             Self::BlackHole => &["6", "black-hole", "black_hole", "blackhole", "sgr-a"],
             Self::EarthMoon => &["7", "earth-moon", "earth_moon", "earth", "moon", "luna"],
+            Self::MoonForming => &["8", "moon-forming", "moon_forming", "oblique", "canonical"],
         }
     }
 
@@ -196,14 +208,28 @@ impl ExperimentId {
     /// than as an `Option` the caller has to reason about. The **same seed always
     /// produces the same scene**, on every platform — see [`super::random`].
     pub fn build(&self, seed: u64) -> Experiment {
+        self.build_with(seed, &CollisionSettings::default())
+    }
+
+    /// [`build`](Self::build), at the collision detail in `settings`: how many particles a
+    /// planet built from particles is made of. Only `experiment_1` and `experiment_8` read it; every other
+    /// experiment is the same at any detail, though each scene carries the settings.
+    pub fn build_with(&self, seed: u64, settings: &CollisionSettings) -> Experiment {
+        let mut experiment = self.build_scene(seed, settings);
+        experiment.scene.collision = *settings;
+        experiment
+    }
+
+    fn build_scene(&self, seed: u64, settings: &CollisionSettings) -> Experiment {
         match self {
-            Self::TwoBody => two_body(),
+            Self::GiantImpact => giant_impact_with(settings),
             Self::ThreeBodyRing => three_body_ring(seed),
             Self::SolarSystem => super::solar_system::solar_system(),
             Self::Jovian => super::jovian::jovian_system(),
             Self::ScaleCheck => super::scale_check::scale_check(),
             Self::BlackHole => super::black_hole::black_hole(),
             Self::EarthMoon => super::earth_moon::earth_moon_system(),
+            Self::MoonForming => super::moon_forming::moon_forming_impact_with(settings),
         }
     }
 
@@ -337,33 +363,6 @@ pub struct Experiment {
     pub spec: ExperimentSpec,
     /// What to call its bodies.
     pub names: BodyNames,
-}
-
-/// `experiment_1` — the two-body free fall.
-///
-/// Wraps [`Scene::two_body_gravity`] with its spec. The scene itself is built in
-/// `core`; see the module docs for why that one is the exception.
-pub fn two_body() -> Experiment {
-    Experiment {
-        scene: Scene::two_body_gravity(),
-        spec: ExperimentSpec {
-            id: ExperimentId::TwoBody,
-            // Deterministic: the pair is released from rest, so there is nothing to
-            // randomise. The seed is recorded as the default so the overlay has
-            // something honest to print rather than a number that did nothing.
-            seed: DEFAULT_RANDOM_SEED,
-            time_scale: TWO_BODY_TIME_SCALE,
-            camera_position_units: TWO_BODY_CAMERA_POSITION_UNITS,
-            camera_target_units: Vec3::new(0.0, TWO_BODY_HEIGHT_UNITS, 0.0),
-            framed_radius_units: TWO_BODY_FRAMED_RADIUS_UNITS,
-            // The default `10`-unit trail is a third of this scene's width — already the
-            // right length, so this experiment has nothing to say about it.
-            trail_length_units: None,
-            launches: true,
-            general_lighting: true,
-        },
-        names: BodyNames::default(),
-    }
 }
 
 /// `experiment_2` — three equal masses on a circle, with random tangential speeds.

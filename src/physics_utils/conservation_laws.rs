@@ -837,6 +837,267 @@ pub fn perfectly_inelastic_collision_1d(
     (mass_a_kg / total_mass) * velocity_a_m_s + (mass_b_kg / total_mass) * velocity_b_m_s
 }
 
+/// Resolve a one-dimensional collision with a **coefficient of restitution**.
+///
+/// The general case that [`elastic_collision_1d`] (`e = 1`) and
+/// [`perfectly_inelastic_collision_1d`] (`e = 0`) are the two ends of. Newton's
+/// experimental law fixes the separation speed as `e` times the approach speed, and
+/// momentum conservation fixes the rest:
+///
+/// ```text
+/// v_a' = v_a − (1 + e)·m_b/(m_a + m_b) · (v_a − v_b)
+/// v_b' = v_b + (1 + e)·m_a/(m_a + m_b) · (v_a − v_b)
+/// ```
+///
+/// **Momentum is conserved for every `e`.** Kinetic energy is conserved only at
+/// `e = 1`; the amount lost is [`collision_energy_loss`].
+///
+/// # Parameters
+///
+/// - `mass_a_kg`, `mass_b_kg` — masses in kilograms. Finite and strictly positive.
+/// - `velocity_a_m_s`, `velocity_b_m_s` — incoming velocities in metres per second,
+///   signed along the caller's axis. Finite.
+/// - `restitution` — dimensionless, in `[0, 1]`. `1` is a perfect bounce, `0` is the
+///   pair moving off together, and real materials sit between.
+///
+/// # Returns
+///
+/// The outgoing velocities `(v_a', v_b')` in metres per second.
+///
+/// # Bit-identical to the elastic solver at `e = 1`
+///
+/// `(1 + e)` is exactly `2.0` when `e` is exactly `1.0`, and the expression is grouped
+/// the same way [`elastic_collision_1d`] groups its own, so a caller that switches to
+/// this function with `e = 1` gets the same bits back. That is what lets the collision
+/// layer use one solver for every material without perturbing a scene that has not
+/// opted into dissipation.
+///
+/// # Preconditions and release behaviour
+///
+/// As [`elastic_collision_1d`], plus `restitution` finite and in `[0, 1]`. Violations
+/// fire a `debug_assert!`; in release the function returns the **inputs unchanged**,
+/// for the reason [`elastic_collision_1d`] gives.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::{elastic_collision_1d, perfectly_inelastic_collision_1d, restitution_collision_1d};
+///
+/// // The two ends of the range are the two existing solvers.
+/// assert_eq!(restitution_collision_1d(2.0, 3.0, 1.0, -1.0, 1.0), elastic_collision_1d(2.0, 3.0, 1.0, -1.0));
+/// let together = perfectly_inelastic_collision_1d(1.0, 8.0, 3.0, 0.0);
+/// let (a, b) = restitution_collision_1d(1.0, 8.0, 3.0, 0.0, 0.0);
+/// assert!((a - together).abs() < 1e-12 && (b - together).abs() < 1e-12);
+///
+/// // Half restitution: they close at 8 m/s and part at 4.
+/// let (a, b) = restitution_collision_1d(1.0, 8.0, 3.0, 0.0, 0.5);
+/// assert!(((b - a) - 4.0).abs() < 1e-12);
+/// ```
+#[inline]
+pub fn restitution_collision_1d(
+    mass_a_kg: f64,
+    velocity_a_m_s: f64,
+    mass_b_kg: f64,
+    velocity_b_m_s: f64,
+    restitution: f64,
+) -> (f64, f64) {
+    debug_assert!(
+        mass_a_kg.is_finite() && mass_a_kg > 0.0,
+        "restitution_collision_1d: mass_a_kg must be finite and strictly positive, got {}",
+        mass_a_kg
+    );
+    debug_assert!(
+        mass_b_kg.is_finite() && mass_b_kg > 0.0,
+        "restitution_collision_1d: mass_b_kg must be finite and strictly positive, got {}",
+        mass_b_kg
+    );
+    debug_assert!(
+        velocity_a_m_s.is_finite() && velocity_b_m_s.is_finite(),
+        "restitution_collision_1d: velocities must be finite, got {} and {}",
+        velocity_a_m_s,
+        velocity_b_m_s
+    );
+    debug_assert!(
+        (0.0..=1.0).contains(&restitution),
+        "restitution_collision_1d: restitution must be in [0, 1], got {}",
+        restitution
+    );
+
+    let total_mass = mass_a_kg + mass_b_kg;
+
+    if !mass_a_kg.is_finite()
+        || !mass_b_kg.is_finite()
+        || mass_a_kg <= 0.0
+        || mass_b_kg <= 0.0
+        || !velocity_a_m_s.is_finite()
+        || !velocity_b_m_s.is_finite()
+        || !total_mass.is_finite()
+        || total_mass <= 0.0
+        || !(0.0..=1.0).contains(&restitution)
+    {
+        return (velocity_a_m_s, velocity_b_m_s);
+    }
+
+    let approach_speed = velocity_a_m_s - velocity_b_m_s;
+    let factor = 1.0 + restitution;
+
+    (
+        velocity_a_m_s - factor * (mass_b_kg / total_mass) * approach_speed,
+        velocity_b_m_s + factor * (mass_a_kg / total_mass) * approach_speed,
+    )
+}
+
+/// The kinetic energy a collision of restitution `e` turns into heat, sound and
+/// deformation, in joules.
+///
+/// ```text
+/// ΔE = ½ · μ · (1 − e²) · v_rel²,    μ = m_a·m_b / (m_a + m_b)
+/// ```
+///
+/// where `μ` is the reduced mass and `v_rel` the approach speed. Only the motion
+/// *relative* to the centre of mass can be lost — the centre of mass keeps going,
+/// which is momentum conservation — and of that relative energy `½·μ·v_rel²` a
+/// fraction `e²` comes back out.
+///
+/// # Parameters
+///
+/// - `mass_a_kg`, `mass_b_kg` — kilograms, finite and strictly positive.
+/// - `approach_speed_m_s` — the relative speed along the contact normal, m/s. The
+///   sign does not matter.
+/// - `restitution` — in `[0, 1]`.
+///
+/// # Returns
+///
+/// The energy dissipated, `≥ 0`. In release, invalid inputs return `0.0`.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::collision_energy_loss;
+///
+/// // Elastic: nothing lost.
+/// assert_eq!(collision_energy_loss(1.0, 1.0, 10.0, 1.0), 0.0);
+/// // Two 2 kg bodies sticking at 10 m/s relative: μ = 1 kg, so 50 J.
+/// assert!((collision_energy_loss(2.0, 2.0, 10.0, 0.0) - 50.0).abs() < 1e-12);
+/// ```
+#[inline]
+pub fn collision_energy_loss(
+    mass_a_kg: f64,
+    mass_b_kg: f64,
+    approach_speed_m_s: f64,
+    restitution: f64,
+) -> f64 {
+    debug_assert!(
+        mass_a_kg.is_finite() && mass_a_kg > 0.0 && mass_b_kg.is_finite() && mass_b_kg > 0.0,
+        "collision_energy_loss: masses must be finite and strictly positive, got {} and {}",
+        mass_a_kg,
+        mass_b_kg
+    );
+    debug_assert!(
+        approach_speed_m_s.is_finite(),
+        "collision_energy_loss: approach_speed_m_s must be finite, got {}",
+        approach_speed_m_s
+    );
+    debug_assert!(
+        (0.0..=1.0).contains(&restitution),
+        "collision_energy_loss: restitution must be in [0, 1], got {}",
+        restitution
+    );
+
+    let total_mass = mass_a_kg + mass_b_kg;
+    if !(mass_a_kg > 0.0 && mass_b_kg > 0.0 && total_mass.is_finite())
+        || !approach_speed_m_s.is_finite()
+        || !(0.0..=1.0).contains(&restitution)
+    {
+        return 0.0;
+    }
+
+    // `m_a · (m_b / M)` rather than `m_a·m_b / M`, so astronomical masses do not overflow.
+    let reduced_mass = mass_a_kg * (mass_b_kg / total_mass);
+    0.5 * reduced_mass * (1.0 - restitution * restitution) * approach_speed_m_s * approach_speed_m_s
+}
+
+/// How much Coulomb friction can slow the **sliding** of two bodies during one impact,
+/// in metres per second of relative tangential speed.
+///
+/// The tangential half of an impulsive collision. A contact that delivers a normal
+/// impulse `J_n` can deliver at most `μ·J_n` along the surface (Coulomb's law,
+/// `|F_t| ≤ μ·|F_n|`, integrated over the impact). Both impulses act on the same
+/// reduced mass, so the limit can be stated in speeds alone, with no mass in it:
+///
+/// ```text
+/// Δv_t = min( v_t ,  μ · Δv_n )
+/// ```
+///
+/// where `Δv_n` is how much the impact changed the relative **normal** speed (for
+/// restitution `e` and approach speed `v_n`, that is `(1 + e)·v_n`). If the cap is
+/// above the sliding speed, the surfaces **stop sliding** relative to each other; if
+/// it is below, they keep sliding, slower.
+///
+/// # Parameters
+///
+/// - `sliding_speed_m_s` — relative tangential speed at the contact, `≥ 0`.
+/// - `normal_speed_change_m_s` — the change in relative normal speed the impact
+///   produced, `≥ 0`.
+/// - `friction` — the coefficient of friction `μ`, dimensionless, `≥ 0`.
+///
+/// # Returns
+///
+/// The reduction in relative tangential speed, in `[0, sliding_speed_m_s]`. Never
+/// more than the sliding speed: friction stops sliding, it never reverses it. In
+/// release, invalid inputs return `0.0` — no friction rather than a wrong one.
+///
+/// # What this leaves out
+///
+/// Rotation. On a body that can spin, friction at the rim converts sliding into
+/// rolling and the bodies leave with some of their tangential speed as spin; here
+/// the impulse acts at the centre of mass, so sliding is simply removed. See
+/// `src/collision/README.md`.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::coulomb_friction_speed_change;
+///
+/// // A hard hit stops a slow slide entirely.
+/// assert_eq!(coulomb_friction_speed_change(1.0, 10.0, 0.5), 1.0);
+/// // A glancing hit only slows a fast one: 0.5 × 2 m/s.
+/// assert_eq!(coulomb_friction_speed_change(5.0, 2.0, 0.5), 1.0);
+/// // No friction, no change.
+/// assert_eq!(coulomb_friction_speed_change(5.0, 2.0, 0.0), 0.0);
+/// ```
+#[inline]
+pub fn coulomb_friction_speed_change(
+    sliding_speed_m_s: f64,
+    normal_speed_change_m_s: f64,
+    friction: f64,
+) -> f64 {
+    debug_assert!(
+        sliding_speed_m_s.is_finite() && sliding_speed_m_s >= 0.0,
+        "coulomb_friction_speed_change: sliding_speed_m_s must be finite and non-negative, got {}",
+        sliding_speed_m_s
+    );
+    debug_assert!(
+        normal_speed_change_m_s.is_finite() && normal_speed_change_m_s >= 0.0,
+        "coulomb_friction_speed_change: normal_speed_change_m_s must be finite and non-negative, got {}",
+        normal_speed_change_m_s
+    );
+    debug_assert!(
+        friction.is_finite() && friction >= 0.0,
+        "coulomb_friction_speed_change: friction must be finite and non-negative, got {}",
+        friction
+    );
+
+    if !(sliding_speed_m_s.is_finite() && sliding_speed_m_s >= 0.0)
+        || !(normal_speed_change_m_s.is_finite() && normal_speed_change_m_s >= 0.0)
+        || !(friction.is_finite() && friction >= 0.0)
+    {
+        return 0.0;
+    }
+
+    (friction * normal_speed_change_m_s).min(sliding_speed_m_s)
+}
+
 #[cfg(test)]
 #[path = "../../tst/physics_utils/conservation_laws_tests.rs"]
 mod tests;

@@ -4,23 +4,28 @@
 //! runs after every integration substep. For each overlapping pair it does two
 //! things, in this order:
 //!
-//! 1. **Bounce.** Swap the velocity components along the contact normal so the
-//!    collision is perfectly elastic — momentum and kinetic energy both conserved.
-//!    The solver is [`elastic_collision_1d`], the same one
-//!    [`crate::physics_utils::conservation_laws`] already had; this module
-//!    supplies the axis and adds no formula of its own, exactly as
-//!    [`crate::core::integrator`] does for gravitation.
-//! 2. **Separate.** Translate the pair apart along the normal by the penetration
+//! 1. **Bounce.** Resolve the velocity components along the contact normal with the
+//!    pair's coefficient of restitution — momentum always conserved, kinetic energy
+//!    conserved only when the restitution is `1`. The solver is
+//!    [`restitution_collision_1d`]; this module supplies the axis and adds no formula
+//!    of its own, exactly as [`crate::core::integrator`] does for gravitation.
+//! 2. **Grip.** Slow the sliding along the surface by Coulomb friction, capped by the
+//!    normal impulse the bounce just delivered — [`coulomb_friction_speed_change`].
+//! 3. **Separate.** Translate the pair apart along the normal by the penetration
 //!    depth, split by inverse mass, so the overlap does not survive into the next
 //!    step and accumulate.
 //!
-//! # Elastic, and only elastic
+//! # Materials, elastic by default
 //!
-//! [`RESTITUTION`] is `1.0` and there is no per-prop override yet: every contact
-//! in this crate is perfectly elastic, and nothing dissipates energy. Two equal
-//! spheres meeting head-on therefore exchange velocities exactly and separate as
-//! fast as they arrived, which is why the shipped scene now *oscillates* instead
-//! of ending — see [`Scene::two_body_gravity`](crate::core::scene::Scene::two_body_gravity).
+//! Each prop carries a [`Material`] (restitution and friction), and a contact uses
+//! [`Material::combined_with`]: the lower restitution and the geometric mean of the
+//! frictions. Every constructor defaults to [`Material::ELASTIC`] — `e = 1`, `μ = 0` —
+//! which is exactly the behaviour this module had before materials existed, down to
+//! the bit: two equal spheres meeting head-on exchange velocities and separate as fast
+//! as they arrived, which is why the shipped scene *oscillates* instead of ending — see
+//! [`Scene::two_body_gravity`](crate::core::scene::Scene::two_body_gravity). A scene that
+//! gives its props materials loses energy on every contact, and the loss is
+//! [`collision_energy_loss`] per bounce.
 //!
 //! # What is not modelled
 //!
@@ -29,10 +34,8 @@
 //!
 //! - **No rotation.** The impulse is central: it acts at the centre of mass, not
 //!   at [`Contact::point`], so a glancing hit does not spin anything. `Prop` has
-//!   no angular velocity or inertia tensor to spin.
-//! - **No friction.** Only the normal component of the relative velocity is
-//!   touched. The tangential component passes through untouched, so bodies slide
-//!   frictionlessly.
+//!   no angular velocity or inertia tensor to spin. Friction therefore *removes*
+//!   sliding rather than turning it into rolling.
 //! - **No resting contact.** Each contact is resolved independently in one pass,
 //!   so a body cannot be supported by two others at once without jitter; a stack
 //!   needs an iterative or simultaneous solver.
@@ -56,21 +59,28 @@
 //! other. A massless prop travels in a straight line through everything, which is
 //! what the variant is reserved for.
 //!
-//! [`elastic_collision_1d`]: crate::physics_utils::conservation_laws::elastic_collision_1d
+//! [`restitution_collision_1d`]: crate::physics_utils::conservation_laws::restitution_collision_1d
+//! [`coulomb_friction_speed_change`]: crate::physics_utils::conservation_laws::coulomb_friction_speed_change
+//! [`collision_energy_loss`]: crate::physics_utils::conservation_laws::collision_energy_loss
+//! [`Material`]: crate::core::scene::Material
+//! [`Material::combined_with`]: crate::core::scene::Material::combined_with
+//! [`Material::ELASTIC`]: crate::core::scene::Material::ELASTIC
 //! [`Contact::point`]: crate::collision::contact::Contact::point
 
 pub use bevy::math::Vec3;
 
 use crate::collision::constants::{
     BROAD_PHASE_RELATIVE_SLACK, MAX_SUBSTEPS, MAX_SUBSTEP_DISPLACEMENT_UNITS,
-    MAX_SUBSTEP_DYNAMICAL_FRACTION, PLANE_THICKNESS_UNITS, RESTITUTION,
+    MAX_SUBSTEP_DYNAMICAL_FRACTION, PLANE_THICKNESS_UNITS, SOFT_CONTACT_SUBSTEPS,
 };
 use crate::collision::contact::{contact_between_meshes, Contact};
 use crate::collision::tessellate::{contact_mesh, hull_box};
 use crate::collision::trimesh::TriMesh;
 use crate::constants::METRES_PER_UNIT;
-use crate::core::scene::{Body, DVec3, Prop};
-use crate::physics_utils::conservation_laws::elastic_collision_1d;
+use crate::core::scene::{Body, DVec3, Material, Prop};
+use crate::physics_utils::conservation_laws::{
+    coulomb_friction_speed_change, restitution_collision_1d,
+};
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
 use crate::time::simulation::TimeStep;
 
@@ -143,7 +153,9 @@ pub fn substep_count(props: &[Prop], step: TimeStep) -> u32 {
 
     // Whichever criterion is stricter. They answer different questions and neither subsumes
     // the other — see the doc comment.
-    let needed = for_contact.max(orbital_substeps(props, dt));
+    let needed = for_contact
+        .max(orbital_substeps(props, dt))
+        .max(simulated_contact_substeps(props, dt));
 
     if !needed.is_finite() || needed >= MAX_SUBSTEPS as f32 {
         MAX_SUBSTEPS
@@ -153,6 +165,53 @@ pub fn substep_count(props: &[Prop], step: TimeStep) -> u32 {
         // `needed > 1.0` here, so the cast cannot round down to zero.
         needed.ceil() as u32
     }
+}
+
+/// How many substeps the shortest **simulated contact** in `props` needs over a step of `dt`
+/// seconds: enough that every contact between particles is followed over at least
+/// [`SOFT_CONTACT_SUBSTEPS`] steps. `1.0` when nothing's contact is simulated, so a scene without
+/// particle bodies pays one pass over its props and nothing else.
+///
+/// A third criterion beside displacement and orbits, and like them it answers its own question: a
+/// damped spring integrated in steps longer than a small fraction of its period gains energy, and
+/// a pile of particles held together by such springs flies apart.
+fn simulated_contact_substeps(props: &[Prop], dt: f32) -> f32 {
+    match crate::collision::collision::shortest_contact_seconds(props) {
+        Some(contact) if contact > 0.0 => {
+            ((f64::from(dt) * SOFT_CONTACT_SUBSTEPS / contact) as f32).max(1.0)
+        }
+        _ => 1.0,
+    }
+}
+
+/// [`orbital_substeps`] for a scene made only of particles, in one pass rather than over every
+/// pair.
+///
+/// Particles in simulated contact cannot come much closer than touching, so the tightest pair in
+/// such a scene is two particles touching: the dynamical time of each particle with a copy of
+/// itself at twice its radius, `√((2r)³ / (G·2m))`, bounds every pair from below, give or take the
+/// few percent the contacts let them overlap. That makes the criterion O(n) where the general one
+/// is O(n²), which matters once the particles are counted in thousands: the general pass over
+/// `20,000` particles is `2e8` pairs on the CPU every frame, more than the GPU's whole step.
+fn particle_orbital_substeps(props: &[Prop], dt: f32) -> f32 {
+    let shortest = props
+        .iter()
+        .filter_map(|prop| {
+            let Body::Sphere { radius, .. } = &prop.body else {
+                return None;
+            };
+            let diameter_m =
+                2.0 * f64::from(prop.contact_radius_units.unwrap_or(*radius)) * METRES_PER_UNIT;
+            let mass = 2.0 * f64::from(prop.mass_kg);
+            let time = (diameter_m.powi(3) / (GRAVITATIONAL_CONSTANT * mass)).sqrt();
+            (time.is_finite() && time > 0.0).then_some(time)
+        })
+        .fold(f64::INFINITY, f64::min);
+    if !shortest.is_finite() {
+        return 1.0;
+    }
+    let allowed = shortest * f64::from(MAX_SUBSTEP_DYNAMICAL_FRACTION);
+    ((f64::from(dt) / allowed) as f32).max(1.0)
 }
 
 /// How many substeps the tightest **orbit** in `props` needs over a step of `dt` seconds.
@@ -190,6 +249,14 @@ pub fn substep_count(props: &[Prop], step: TimeStep) -> u32 {
 /// criterion and clamp. Pairs with no mass, a non-finite separation, or zero separation
 /// contribute nothing — gravitation has nothing to resolve there either.
 fn orbital_substeps(props: &[Prop], dt: f32) -> f32 {
+    if props.len() > 2
+        && props
+            .iter()
+            .all(|prop| crate::collision::collision::contact_is_simulated(prop, prop))
+    {
+        return particle_orbital_substeps(props, dt);
+    }
+
     let mut shortest_dynamical_time = f32::INFINITY;
 
     for (index, subject) in props.iter().enumerate() {
@@ -253,7 +320,9 @@ fn pair_can_interact(a: &Prop, b: &Prop) -> bool {
     let participates = |prop: &Prop| prop.immovable || prop.responds_to_forces();
     // Two walls cannot collide: neither can move and neither can be pushed.
     let both_fixed = a.immovable && b.immovable;
-    participates(a) && participates(b) && !both_fixed
+    // Two particles of bodies built from particles touch through a force, not a bounce.
+    let simulated = crate::collision::collision::contact_is_simulated(a, b);
+    participates(a) && participates(b) && !both_fixed && !simulated
 }
 
 /// Resolve every contact among `props`: bounce elastically, then push apart.
@@ -493,31 +562,45 @@ fn apply_contact(props: &mut [Prop], i: usize, j: usize, contact: &Contact) {
     let approach = (b.velocity_units_s - a.velocity_units_s).dot(normal);
 
     if approach < 0.0 {
+        // Restitution and friction belong to the two surfaces together.
+        let material = a.material.combined_with(&b.material);
+
         match (a.immovable, b.immovable) {
-            // A movable prop against a wall: the infinite-mass limit of the
-            // elastic solution, where the wall's outgoing velocity is unchanged
-            // and the movable prop's normal component is negated.
-            (false, true) => reflect_off_wall(a, normal),
-            (true, false) => reflect_off_wall(b, normal),
+            // A movable prop against a wall: the infinite-mass limit, where the
+            // wall's velocity is unchanged and the movable prop's normal component
+            // is reversed and scaled by the restitution.
+            (false, true) => bounce_off_wall(a, normal, material),
+            (true, false) => bounce_off_wall(b, normal, material),
             // Two movable props with positive mass — guaranteed by
             // `pair_can_interact`. Both velocities are resolved onto the contact
-            // normal, handed to the 1-D elastic solver, and the *change* is put
-            // back along the normal. Only the normal component is touched, so the
-            // tangential motion survives untouched (there is no friction).
+            // normal, handed to the 1-D restitution solver, and the *change* is put
+            // back along the normal; then friction acts on what is left of the
+            // relative motion along the surface.
             (false, false) => {
                 let normal_a = a.velocity_units_s.dot(normal);
                 let normal_b = b.velocity_units_s.dot(normal);
 
-                // Velocities are in units/s rather than m/s. The elastic solution
-                // is linear in velocity and scale-free in the length unit, so
-                // feeding it units/s yields units/s — no conversion needed, and
+                // Velocities are in units/s rather than m/s. The solution is linear
+                // in velocity and scale-free in the length unit, so feeding it
+                // units/s yields units/s — no conversion needed, and
                 // `METRES_PER_UNIT` deliberately does not appear here. Masses are
-                // already SI.
-                let (outgoing_a, outgoing_b) =
-                    elastic_collision_1d(a.mass_kg as f64, normal_a, b.mass_kg as f64, normal_b);
+                // already SI. At `e = 1` this is bit-identical to
+                // `elastic_collision_1d`, so a scene with no materials is untouched.
+                let (outgoing_a, outgoing_b) = restitution_collision_1d(
+                    f64::from(a.mass_kg),
+                    normal_a,
+                    f64::from(b.mass_kg),
+                    normal_b,
+                    f64::from(material.restitution),
+                );
 
                 a.velocity_units_s += (outgoing_a - normal_a) * normal;
                 b.velocity_units_s += (outgoing_b - normal_b) * normal;
+
+                // How much the impact changed the relative normal speed: the
+                // impulse friction is capped by.
+                let normal_change = ((outgoing_b - outgoing_a) - (normal_b - normal_a)).abs();
+                apply_pair_friction(a, b, normal, normal_change, material.friction);
             }
             // Two walls. Filtered out before we get here.
             (true, true) => {}
@@ -527,17 +610,83 @@ fn apply_contact(props: &mut [Prop], i: usize, j: usize, contact: &Contact) {
     separate(a, b, normal, contact.depth);
 }
 
-/// Negate `prop`'s velocity component along `normal`, scaled by
-/// [`RESTITUTION`].
+/// Reverse `prop`'s velocity component along `normal`, scaled by the contact's
+/// restitution, then apply the contact's friction against the immovable surface.
 ///
-/// The infinite-mass limit of [`elastic_collision_1d`]: as one mass grows without
-/// bound the heavy body is undeflected and the light one's approach speed is
-/// returned in full. Written directly rather than by passing a huge mass to the
-/// solver, because "a very large number" is not the same claim as "immovable" and
-/// the limit is exact.
-fn reflect_off_wall(prop: &mut Prop, normal: DVec3) {
+/// The infinite-mass limit of [`restitution_collision_1d`]: as one mass grows without
+/// bound the heavy body is undeflected and the light one leaves at `e` times its
+/// approach speed. Written directly rather than by passing a huge mass to the solver,
+/// because "a very large number" is not the same claim as "immovable" and the limit is
+/// exact. At `e = 1` it is the reflection this function made before materials existed,
+/// to the bit.
+fn bounce_off_wall(prop: &mut Prop, normal: DVec3, material: Material) {
     let along_normal = prop.velocity_units_s.dot(normal);
-    prop.velocity_units_s -= (1.0 + f64::from(RESTITUTION)) * along_normal * normal;
+    let normal_change = 1.0 + f64::from(material.restitution);
+    prop.velocity_units_s -= normal_change * along_normal * normal;
+
+    if material.friction > 0.0 {
+        // The wall is at rest, so the prop's own velocity is the relative one.
+        if let Some((direction, sliding)) = sliding_motion(prop.velocity_units_s, normal) {
+            let slowed = coulomb_friction_speed_change(
+                sliding,
+                normal_change * along_normal.abs(),
+                f64::from(material.friction),
+            );
+            prop.velocity_units_s -= slowed * direction;
+        }
+    }
+}
+
+/// Apply Coulomb friction to a pair of movable props that have just been bounced.
+///
+/// `normal_change` is the change in relative normal speed the bounce produced. The
+/// relative sliding speed is reduced by [`coulomb_friction_speed_change`], and the
+/// change is shared in inverse proportion to mass, exactly as the normal impulse is —
+/// so momentum is conserved and the heavier body is dragged less.
+///
+/// The impulse acts at the centre of mass, so it removes sliding rather than turning it
+/// into spin. See the module docs.
+fn apply_pair_friction(
+    a: &mut Prop,
+    b: &mut Prop,
+    normal: DVec3,
+    normal_change: f64,
+    friction: f32,
+) {
+    if friction <= 0.0 || !normal_change.is_finite() {
+        return;
+    }
+
+    // `b` relative to `a`, so `direction` is the way `b` slides past `a`.
+    let relative = b.velocity_units_s - a.velocity_units_s;
+    let Some((direction, sliding)) = sliding_motion(relative, normal) else {
+        return;
+    };
+
+    let slowed = coulomb_friction_speed_change(sliding, normal_change, f64::from(friction));
+
+    let mass_a = f64::from(a.mass_kg);
+    let mass_b = f64::from(b.mass_kg);
+    let total = mass_a + mass_b;
+    if !(total.is_finite() && total > 0.0) {
+        return;
+    }
+
+    // `a` is dragged along with `b` and `b` is held back by `a`.
+    a.velocity_units_s += (mass_b / total) * slowed * direction;
+    b.velocity_units_s -= (mass_a / total) * slowed * direction;
+}
+
+/// The direction and speed of `relative`'s component along the contact surface, or
+/// `None` when it is not sliding at all.
+fn sliding_motion(relative: DVec3, normal: DVec3) -> Option<(DVec3, f64)> {
+    let tangential = relative - relative.dot(normal) * normal;
+    let speed = tangential.length();
+    if speed > 0.0 && speed.is_finite() {
+        Some((tangential / speed, speed))
+    } else {
+        None
+    }
 }
 
 /// Push the pair apart along `normal` by `depth`, split by inverse mass.

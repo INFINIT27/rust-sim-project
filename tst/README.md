@@ -17,6 +17,7 @@ conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 | `headless_app.rs` | The only true integration test: builds `MinimalPlugins` + `ScenePlugin`, ticks 5 frames, asserts the Scene↔ECS mirror invariants. Declared as a `[[test]]` target in `Cargo.toml`. |
 | `core/` | Unit + property tests for `src/core/`. |
 | `collision/` | Unit + property tests for `src/collision/`, including the end-to-end "the spheres bounce instead of phasing through" check. |
+| `compute/` | Unit tests for `src/compute/`: the GPU particle stepper held to the CPU path, including the whole giant impact on the GPU. Skips without a GPU unless `RGA_REQUIRE_GPU` is set. |
 | `render/` | Unit + property tests for `src/render/`, including the floor grid's geometry, the trails' length and fade, and both features' render-only-ness. |
 | `input/` | Unit + property tests for `src/input/`. |
 | `ui/` | Unit tests for `src/ui/`. |
