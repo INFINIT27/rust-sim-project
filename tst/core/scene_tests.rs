@@ -196,6 +196,7 @@ fn arbitrary_scene() -> impl Strategy<Value = Scene> {
             collision: CollisionSettings::DEFAULT,
             ids: Vec::new(),
             next_id: 0,
+            revision: next_revision(),
         };
         for prop in props {
             scene.add(prop);
@@ -1313,6 +1314,7 @@ fn get_with_unknown_body_id_returns_none() {
         collision: CollisionSettings::DEFAULT,
         ids: Vec::new(),
         next_id: 0,
+        revision: next_revision(),
     };
     assert!(
         scene.get(BodyId(u64::MAX)).is_none(),

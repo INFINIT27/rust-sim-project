@@ -8,8 +8,10 @@
 
 use super::*;
 use crate::collision::aggregate::contact_clusters;
+use crate::core::constants::DEFAULT_PARTICLES_PER_BODY;
 use crate::core::scene::Body;
 use crate::projects::interstellar::catalog::ExperimentId;
+use crate::projects::interstellar::constants::GIANT_IMPACT_SOFTENING_UNITS;
 use crate::time::simulation::TimeStep;
 
 const EARTH_KG: f64 = 5.9722e24;
@@ -76,6 +78,15 @@ fn settings(particles: u32) -> CollisionSettings {
     }
 }
 
+/// The rubble planets (springs and friction), at `particles`: what the tests written before fluid
+/// planets measured, kept so the two models can be compared.
+fn rubble(particles: u32) -> CollisionSettings {
+    CollisionSettings {
+        planet_model: PlanetModel::Rubble,
+        ..settings(particles)
+    }
+}
+
 #[test]
 fn it_is_experiment_1_and_the_default() {
     assert_eq!(ExperimentId::GiantImpact.slug(), "experiment_1");
@@ -87,8 +98,8 @@ fn it_is_experiment_1_and_the_default() {
 }
 
 #[test]
-fn each_planet_is_a_pile_of_particles_with_its_true_mass() {
-    let scene = giant_impact().scene;
+fn each_rubble_planet_is_a_pile_of_particles_with_its_true_mass() {
+    let scene = giant_impact_with(&rubble(DEFAULT_PARTICLES_PER_BODY)).scene;
     let clusters = contact_clusters(&scene.props);
     assert_eq!(clusters.len(), 2, "two separate piles");
     assert!((mass_of(&scene, &clusters[0]) / EARTH_KG - 1.0).abs() < 1.0e-5);
@@ -196,11 +207,136 @@ fn a_planet_of_particles_holds_together_under_its_own_gravity() {
     );
 }
 
+/// A fluid Earth alone, of about `count` particles, built in hydrostatic equilibrium.
+fn fluid_earth(count: u32) -> Scene {
+    let mut scene = Scene::empty(crate::core::scene::Aabb {
+        min: Vec3::splat(-1.0),
+        max: Vec3::splat(1.0),
+    });
+    scene.softening_units = crate::projects::interstellar::constants::GIANT_IMPACT_SOFTENING_UNITS;
+    let earth = giant_impact_target();
+    let fluid = CollisionSettings {
+        particles_per_body: count,
+        planet_model: PlanetModel::Fluid,
+        ..CollisionSettings::default()
+    };
+    // Built as one planet of a pair whose second is itself, then the second removed.
+    add_planets(
+        &mut scene,
+        &fluid,
+        [
+            (&earth, DVec3::ZERO, DVec3::ZERO),
+            (&earth, DVec3::new(0.5, 0.0, 0.0), DVec3::ZERO),
+        ],
+    );
+    scene.props.retain(|p| p.body.center().x < 0.25);
+    scene
+}
+
 #[test]
-fn the_planets_meet_on_time_and_merge_with_every_joule_accounted_for() {
+fn a_fluid_planet_holds_its_hydrostatic_shape_and_its_energy() {
+    // A fluid Earth of 200 particles alone for four hours. Measured: its outermost particles sink
+    // `15–19%` in the first twenty minutes, as the kernel reaching past the surface reads the outer
+    // mantle light and its pressure falls to nothing (at `2,000` particles, `10%`), and then it stays
+    // one quiet body, its kinetic energy under `1e-3` of the binding energy and its total energy, heat
+    // included, within `2e-4` of it.
+    use crate::collision::collision::particle_energy;
+    let mut scene = fluid_earth(200);
+    let softening = scene.softening_units;
+    let all: Vec<usize> = (0..scene.props.len()).collect();
+    let before = extent_m(&scene, &all);
+    let start = particle_energy(&scene.props, softening);
+    let binding = start.gravity.abs();
+
+    let step = TimeStep::from_seconds(60.0).unwrap();
+    let mut worst = 0.0_f64;
+    for minute in 1..=240 {
+        scene.step(step);
+        if minute % 10 == 0 {
+            let now = particle_energy(&scene.props, softening);
+            worst = worst.max((now.total() - start.total()).abs());
+            assert_eq!(
+                contact_clusters(&scene.props).len(),
+                1,
+                "one body after {minute} minutes"
+            );
+        }
+    }
+    let after = extent_m(&scene, &contact_clusters(&scene.props)[0]);
+    let shrink = 1.0 - after / before;
+    assert!(
+        (0.0..0.25).contains(&shrink),
+        "the surface settles, it does not collapse or fly apart: {:.1}%",
+        100.0 * shrink
+    );
+    assert!(
+        worst < 1.0e-3 * binding,
+        "energy drifted {:.2e} of the binding energy",
+        worst / binding
+    );
+    let end = particle_energy(&scene.props, softening);
+    assert!(
+        end.kinetic < 2.0e-3 * binding,
+        "settled: kinetic {:.2e} of the binding energy",
+        end.kinetic / binding
+    );
+    assert!(
+        scene.props.iter().all(|p| p.is_valid()),
+        "every particle valid"
+    );
+}
+
+#[test]
+fn a_fluid_planet_is_built_in_layers_with_its_true_mass() {
+    let scene = giant_impact_with(&settings(200)).scene;
+    assert_eq!(scene.collision.planet_model, PlanetModel::Fluid);
+    let clusters = contact_clusters(&scene.props);
+    assert_eq!(clusters.len(), 2, "two separate planets");
+    for (cluster, mass) in [(&clusters[0], EARTH_KG), (&clusters[1], MARS_KG)] {
+        assert!((mass_of(&scene, cluster) / mass - 1.0).abs() < 1.0e-5);
+        let core: f64 = cluster
+            .iter()
+            .filter(|&&i| scene.props[i].material == PLANETARY_IRON_FLUID)
+            .map(|&i| f64::from(scene.props[i].mass_kg))
+            .sum();
+        // The innermost 30% of the particles by count, to one particle: the impactor has about 21.
+        let share = core / mass_of(&scene, cluster);
+        assert!(
+            (share - PLANET_CORE_MASS_FRACTION).abs() <= 1.0 / cluster.len() as f64,
+            "core {:.1}% of the mass",
+            100.0 * share
+        );
+        // Denser at the centre than at the surface.
+        let densest = cluster
+            .iter()
+            .map(|&i| scene.props[i].density_kg_m3)
+            .fold(0.0, f64::max);
+        assert!(
+            densest > 2.0 * crate::physics_utils::physics_constants::BASALT_TILLOTSON_RHO0_KG_M3
+        );
+    }
+    assert!(scene.props.iter().all(|p| p.is_valid()
+        && (p.material == PLANETARY_IRON_FLUID || p.material == PLANETARY_ROCK_FLUID)));
+    // Equal masses: the impactor gets its share of the count by mass, about 21 of 200.
+    assert!(
+        (180..=220).contains(&clusters[0].len()),
+        "{}",
+        clusters[0].len()
+    );
+    assert!(
+        (15..=30).contains(&clusters[1].len()),
+        "{}",
+        clusters[1].len()
+    );
+    // Gravity softened over half a particle spacing.
+    assert!(scene.softening_units > GIANT_IMPACT_SOFTENING_UNITS);
+}
+
+#[test]
+fn rubble_planets_meet_on_time_and_merge_with_every_joule_accounted_for() {
     use crate::collision::aggregate::impact_outcome;
     use crate::collision::collision::particle_energy;
-    let mut scene = giant_impact().scene;
+    let mut scene = giant_impact_with(&rubble(DEFAULT_PARTICLES_PER_BODY)).scene;
     let softening = scene.softening_units;
     let start_momentum = momentum(&scene);
     let start = particle_energy(&scene.props, softening);
@@ -278,7 +414,7 @@ fn the_planets_meet_on_time_and_merge_with_every_joule_accounted_for() {
 }
 
 #[test]
-fn at_twice_the_escape_speed_the_hot_impact_throws_off_about_what_the_scaling_law_says() {
+fn at_twice_the_escape_speed_the_hot_rubble_impact_throws_off_about_what_the_scaling_law_says() {
     // Leinhardt & Stewart (2012) give the largest remnant at `0.976` for this impact with their
     // central constant `c* = 5`, and `0.959` to `0.983` across their fit's `c* = 5 ± 2`. Without
     // heat the particle model threw nothing off at all. Measured on the CPU at the default detail:
@@ -293,7 +429,7 @@ fn at_twice_the_escape_speed_the_hot_impact_throws_off_about_what_the_scaling_la
         target.radius_m,
         impactor.radius_m,
     );
-    let mut scene = giant_impact_at_speed(&CollisionSettings::default(), 2.0 * escape).scene;
+    let mut scene = giant_impact_at_speed(&rubble(DEFAULT_PARTICLES_PER_BODY), 2.0 * escape).scene;
     let step = TimeStep::from_seconds(60.0).unwrap();
     for _ in 0..(16 * 60) {
         scene.step(step);

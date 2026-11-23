@@ -175,13 +175,22 @@ pub fn substep_count(props: &[Prop], step: TimeStep) -> u32 {
 /// A third criterion beside displacement and orbits, and like them it answers its own question: a
 /// damped spring integrated in steps longer than a small fraction of its period gains energy, and
 /// a pile of particles held together by such springs flies apart.
+///
+/// Fluid particles have no spring; for them the question is the Courant condition, that no signal
+/// (a sound wave, or the viscosity of a shock) crosses a smoothing length in one substep
+/// ([`crate::collision::collision::fluid_courant_seconds`]). Whichever is stricter wins.
 fn simulated_contact_substeps(props: &[Prop], dt: f32) -> f32 {
-    match crate::collision::collision::shortest_contact_seconds(props) {
+    let springs = match crate::collision::collision::shortest_contact_seconds(props) {
         Some(contact) if contact > 0.0 => {
             ((f64::from(dt) * SOFT_CONTACT_SUBSTEPS / contact) as f32).max(1.0)
         }
         _ => 1.0,
-    }
+    };
+    let fluids = match crate::collision::collision::fluid_courant_seconds(props) {
+        Some(courant) if courant > 0.0 => ((f64::from(dt) / courant) as f32).max(1.0),
+        _ => 1.0,
+    };
+    springs.max(fluids)
 }
 
 /// [`orbital_substeps`] for a scene made only of particles, in one pass rather than over every

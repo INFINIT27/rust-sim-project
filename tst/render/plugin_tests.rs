@@ -84,7 +84,7 @@ fn scene_plugin_inserts_the_giant_impact_at_the_configured_detail() {
             .resource::<Scene>()
             .props
             .iter()
-            .all(|p| p.responds_to_forces() && p.material.modulus_pa.is_some()),
+            .all(|p| p.responds_to_forces() && p.material.is_particle()),
         "every particle movable, massive, and in simulated contact"
     );
 
@@ -1243,6 +1243,8 @@ fn the_step_copies_the_collision_detail_into_the_scene() {
 fn the_gpu_plugin_says_where_the_physics_runs() {
     let mut app = App::new();
     app.add_plugins(GpuPhysicsPlugin);
+    // The stepper is made in `finish`, after the renderer (when there is one) has its device.
+    app.finish();
     let backend = app.world().resource::<PhysicsBackend>().clone();
     match &backend {
         PhysicsBackend::Gpu(name) => {

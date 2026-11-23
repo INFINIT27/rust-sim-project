@@ -188,6 +188,12 @@ fn no_experiment_starts_with_bodies_already_touching() {
 
         for i in 0..props.len() {
             for j in (i + 1)..props.len() {
+                // Two fluid particles meet through their pressure, never through a contact, and
+                // the spheres they are drawn as are their share of the volume, not a surface: a
+                // planet's own fluid particles overlap by design.
+                if props[i].material.fluid && props[j].material.fluid {
+                    continue;
+                }
                 assert!(
                     contact_between_props(&props[i], &props[j]).is_none(),
                     "{:?}: props {i} and {j} start in contact",

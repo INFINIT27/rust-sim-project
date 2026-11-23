@@ -500,9 +500,16 @@ fn simulated_friction_slows_a_slide_and_never_speeds_it_up() {
 /// Hot rock: basalt's Tillotson parameters.
 fn basalt() -> crate::core::scene::Tillotson {
     crate::core::scene::Tillotson {
+        reference_density_kg_m3: 2700.0,
+        bulk_a_pa: 2.67e10,
+        bulk_b_pa: 2.67e10,
         a: 0.5,
         b: 1.5,
         reference_energy_j_kg: 4.87e8,
+        incipient_vaporisation_j_kg: 4.72e6,
+        complete_vaporisation_j_kg: 1.82e7,
+        alpha: 5.0,
+        beta: 5.0,
     }
 }
 

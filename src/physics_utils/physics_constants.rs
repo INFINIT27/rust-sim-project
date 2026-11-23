@@ -90,31 +90,186 @@ pub const SUPERCATASTROPHIC_EXPONENT: f64 = -1.5;
 /// Used by [`super::thermal::particle_density`].
 pub const FCC_PACKING_FRACTION: f64 = std::f64::consts::PI / (3.0 * std::f64::consts::SQRT_2);
 
+// ---------------------------------------------------------------------------------------------
+// The Tillotson equation of state: basalt and iron.
+//
+// Sources, cited in full once here and by short form on each constant:
+//
+// - **Tillotson 1962**: Tillotson, J. H. (1962). *Metallic equations of state for hypervelocity
+//   impact.* General Atomic report GA-3216, General Dynamics, San Diego, CA. The equation itself.
+// - **Melosh 1989**: Melosh, H. J. (1989). *Impact Cratering: A Geologic Process.* Oxford Monographs
+//   on Geology and Geophysics 11. Oxford University Press, New York. Appendix II: the equation's
+//   branches and the iron parameter set.
+// - **Benz & Asphaug 1999**: Benz, W. & Asphaug, E. (1999). Catastrophic disruptions revisited.
+//   *Icarus* 142(1), 5–20. doi:10.1006/icar.1999.6204. Table II: the basalt parameter set.
+// - **SWIFT**: the SWIFT simulation code, `src/equation_of_state/planetary/tillotson.h`, functions
+//   `set_Til_basalt` and `set_Til_iron` (SI units). https://github.com/SWIFTSIM/SWIFT, read
+//   2026-11-22.
+// - **WoMa**: the WoMa planet-building code, `woma/eos/tillotson.py` (SI units).
+//   https://github.com/srbonilla/WoMa, read 2026-11-22.
+//
+// **Which were checked.** Every value below was read from SWIFT and WoMa, which agree on every
+// digit. Both are implementations; WoMa's documentation attributes the basalt set to
+// Benz & Asphaug 1999 and the iron set to Melosh 1989. The papers themselves were not re-read
+// here.
+// ---------------------------------------------------------------------------------------------
+
 /// The Tillotson parameter `a` for basalt. Dimensionless.
 ///
-/// Value: `0.5`, Benz & Asphaug (1999, Icarus 142:5, table II), the basalt most impact simulations
-/// of rocky planets use. It is the Grüneisen parameter of rock heated far past
-/// [`BASALT_TILLOTSON_E0_J_KG`], where it behaves as a gas.
+/// Value: `0.5` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa; see the source list
+/// above). It is the Grüneisen parameter of rock heated far past [`BASALT_TILLOTSON_E0_J_KG`],
+/// where it behaves as a gas.
 ///
-/// Used by the planetary particle material in `src/projects/interstellar/constants.rs`, through
-/// [`super::thermal::tillotson_thermal_pressure`].
+/// Used by the planetary materials in `src/projects/interstellar/constants.rs`, through
+/// [`super::thermal::tillotson_thermal_pressure`] and [`super::thermal::tillotson_pressure`].
 pub const BASALT_TILLOTSON_A: f64 = 0.5;
 
 /// The Tillotson parameter `b` for basalt. Dimensionless.
 ///
-/// Value: `1.5`, Benz & Asphaug (1999, table II). With [`BASALT_TILLOTSON_A`] it gives cool rock
-/// a Grüneisen parameter of `2`, the measured value for silicates near room temperature.
+/// Value: `1.5` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa). With
+/// [`BASALT_TILLOTSON_A`] it gives cool rock a Grüneisen parameter of `2`.
 ///
 /// Used as [`BASALT_TILLOTSON_A`].
 pub const BASALT_TILLOTSON_B: f64 = 1.5;
 
 /// The Tillotson reference energy `E₀` for basalt, in joules per kilogram.
 ///
-/// Value: `4.87e8` (`487 MJ/kg`), Benz & Asphaug (1999, table II): the internal energy over which
-/// the Grüneisen parameter falls from `a + b` towards `a`.
+/// Value: `4.87e8` (`487 MJ/kg`) (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa):
+/// the internal energy over which the Grüneisen parameter falls from `a + b` towards `a`. It is
+/// far larger than iron's [`IRON_TILLOTSON_E0_J_KG`], as both codes have it.
 ///
 /// Used as [`BASALT_TILLOTSON_A`].
 pub const BASALT_TILLOTSON_E0_J_KG: f64 = 4.87e8;
+
+/// The Tillotson reference density `ρ₀` of basalt, in kilograms per cubic metre: the density at
+/// which cold basalt is under no pressure.
+///
+/// Value: `2700` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_RHO0_KG_M3: f64 = 2700.0;
+
+/// The Tillotson bulk modulus `A` of basalt, in pascals: the linear term of the cold compression
+/// curve, `P = A·μ + B·μ²` with `μ = ρ/ρ₀ − 1`.
+///
+/// Value: `2.67e10` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_BULK_A_PA: f64 = 2.67e10;
+
+/// The Tillotson nonlinear compression coefficient `B` of basalt, in pascals: the quadratic term
+/// of the cold compression curve.
+///
+/// Value: `2.67e10` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_BULK_B_PA: f64 = 2.67e10;
+
+/// The specific internal energy at which expanded basalt **begins** to vaporise, `E_iv`, in joules
+/// per kilogram: below it, expanded basalt follows the condensed branch of the equation.
+///
+/// Value: `4.72e6` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_EIV_J_KG: f64 = 4.72e6;
+
+/// The specific internal energy at which expanded basalt is **completely** vaporised, `E_cv`, in
+/// joules per kilogram: above it, expanded basalt follows the expanded (gas-like) branch.
+///
+/// Value: `1.82e7` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_ECV_J_KG: f64 = 1.82e7;
+
+/// The Tillotson parameter `α` of basalt, dimensionless: how fast the thermal term's solid-like
+/// part dies away as vapour expands.
+///
+/// Value: `5` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_ALPHA: f64 = 5.0;
+
+/// The Tillotson parameter `β` of basalt, dimensionless: how fast the cold term dies away as vapour
+/// expands.
+///
+/// Value: `5` (Benz & Asphaug 1999, table II; checked in SWIFT and WoMa).
+///
+/// Used as [`BASALT_TILLOTSON_A`].
+pub const BASALT_TILLOTSON_BETA: f64 = 5.0;
+
+/// The Tillotson parameter `a` for iron. Dimensionless.
+///
+/// Value: `0.5` (Melosh 1989, appendix II; checked in SWIFT and WoMa; see the source list
+/// above).
+///
+/// Used by the planetary iron material in `src/projects/interstellar/constants.rs`, through
+/// [`super::thermal::tillotson_pressure`].
+pub const IRON_TILLOTSON_A: f64 = 0.5;
+
+/// The Tillotson parameter `b` for iron. Dimensionless.
+///
+/// Value: `1.5` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_B: f64 = 1.5;
+
+/// The Tillotson reference energy `E₀` for iron, in joules per kilogram.
+///
+/// Value: `9.5e6` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_E0_J_KG: f64 = 9.5e6;
+
+/// The Tillotson reference density `ρ₀` of iron, in kilograms per cubic metre.
+///
+/// Value: `7800` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_RHO0_KG_M3: f64 = 7800.0;
+
+/// The Tillotson bulk modulus `A` of iron, in pascals.
+///
+/// Value: `1.28e11` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_BULK_A_PA: f64 = 1.28e11;
+
+/// The Tillotson nonlinear compression coefficient `B` of iron, in pascals.
+///
+/// Value: `1.05e11` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_BULK_B_PA: f64 = 1.05e11;
+
+/// The specific internal energy at which expanded iron begins to vaporise, `E_iv`, in joules per
+/// kilogram.
+///
+/// Value: `2.4e6` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_EIV_J_KG: f64 = 2.4e6;
+
+/// The specific internal energy at which expanded iron is completely vaporised, `E_cv`, in joules
+/// per kilogram.
+///
+/// Value: `8.67e6` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_ECV_J_KG: f64 = 8.67e6;
+
+/// The Tillotson parameter `α` of iron. Dimensionless.
+///
+/// Value: `5` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_ALPHA: f64 = 5.0;
+
+/// The Tillotson parameter `β` of iron. Dimensionless.
+///
+/// Value: `5` (Melosh 1989; checked in SWIFT and WoMa).
+///
+/// Used as [`IRON_TILLOTSON_A`].
+pub const IRON_TILLOTSON_BETA: f64 = 5.0;
 
 #[cfg(test)]
 #[path = "../../tst/physics_utils/physics_constants_tests.rs"]

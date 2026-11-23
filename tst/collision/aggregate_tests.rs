@@ -115,6 +115,75 @@ fn rigid_props_are_left_out_of_clusters() {
     assert!(contact_clusters(&props).is_empty());
 }
 
+// ---------------------------------------------------------------------------------------------
+// Fluid planets: the hydrostatic profile and the layered build.
+// ---------------------------------------------------------------------------------------------
+
+use crate::core::scene::Tillotson;
+use crate::physics_utils::physics_constants::{
+    BASALT_TILLOTSON_A, BASALT_TILLOTSON_ALPHA, BASALT_TILLOTSON_B, BASALT_TILLOTSON_BETA,
+    BASALT_TILLOTSON_BULK_A_PA, BASALT_TILLOTSON_BULK_B_PA, BASALT_TILLOTSON_E0_J_KG,
+    BASALT_TILLOTSON_ECV_J_KG, BASALT_TILLOTSON_EIV_J_KG, BASALT_TILLOTSON_RHO0_KG_M3,
+    IRON_TILLOTSON_A, IRON_TILLOTSON_ALPHA, IRON_TILLOTSON_B, IRON_TILLOTSON_BETA,
+    IRON_TILLOTSON_BULK_A_PA, IRON_TILLOTSON_BULK_B_PA, IRON_TILLOTSON_E0_J_KG,
+    IRON_TILLOTSON_ECV_J_KG, IRON_TILLOTSON_EIV_J_KG, IRON_TILLOTSON_RHO0_KG_M3,
+};
+
+/// The Earth's mass, kg.
+const EARTH_KG: f64 = 5.972e24;
+
+fn basalt() -> Tillotson {
+    Tillotson {
+        reference_density_kg_m3: BASALT_TILLOTSON_RHO0_KG_M3 as f32,
+        bulk_a_pa: BASALT_TILLOTSON_BULK_A_PA as f32,
+        bulk_b_pa: BASALT_TILLOTSON_BULK_B_PA as f32,
+        a: BASALT_TILLOTSON_A as f32,
+        b: BASALT_TILLOTSON_B as f32,
+        reference_energy_j_kg: BASALT_TILLOTSON_E0_J_KG as f32,
+        incipient_vaporisation_j_kg: BASALT_TILLOTSON_EIV_J_KG as f32,
+        complete_vaporisation_j_kg: BASALT_TILLOTSON_ECV_J_KG as f32,
+        alpha: BASALT_TILLOTSON_ALPHA as f32,
+        beta: BASALT_TILLOTSON_BETA as f32,
+    }
+}
+
+fn iron() -> Tillotson {
+    Tillotson {
+        reference_density_kg_m3: IRON_TILLOTSON_RHO0_KG_M3 as f32,
+        bulk_a_pa: IRON_TILLOTSON_BULK_A_PA as f32,
+        bulk_b_pa: IRON_TILLOTSON_BULK_B_PA as f32,
+        a: IRON_TILLOTSON_A as f32,
+        b: IRON_TILLOTSON_B as f32,
+        reference_energy_j_kg: IRON_TILLOTSON_E0_J_KG as f32,
+        incipient_vaporisation_j_kg: IRON_TILLOTSON_EIV_J_KG as f32,
+        complete_vaporisation_j_kg: IRON_TILLOTSON_ECV_J_KG as f32,
+        alpha: IRON_TILLOTSON_ALPHA as f32,
+        beta: IRON_TILLOTSON_BETA as f32,
+    }
+}
+
+fn earth_profile() -> PlanetProfile {
+    hydrostatic_profile(EARTH_KG, 0.3, &iron().parameters(), &basalt().parameters()).unwrap()
+}
+
+#[test]
+fn the_earth_s_profile_holds_its_mass_and_reports_its_size() {
+    let profile = earth_profile();
+    println!(
+        "Earth: radius {:.0} km, core {:.0} km, centre {:.3e} Pa, centre density {:.0}, surface density {:.0}",
+        profile.radius_m / 1e3,
+        profile.core_radius_m / 1e3,
+        profile.central_pressure_pa,
+        profile.density_at(0.0),
+        profile.density_at(profile.radius_m),
+    );
+    assert!(
+        (profile.mass_kg / EARTH_KG - 1.0).abs() < 1e-9,
+        "{}",
+        profile.mass_kg
+    );
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         failure_persistence: Some(Box::new(FileFailurePersistence::Direct(REGRESSION_SEEDS))),

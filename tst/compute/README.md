@@ -13,7 +13,6 @@
 
 ## Machines without a GPU
 
-A test that needs a GPU asks for one and, finding none, prints `skipped: no GPU on this machine`
-and passes, so the suite runs anywhere. Set `RGA_REQUIRE_GPU` to make a missing GPU a failure.
-CI installs Mesa's software Vulkan driver (`mesa-vulkan-drivers`, lavapipe) so these tests run
+Not supported (since 2026-11-22: particle simulations are GPU-only; see `src/compute/README.md`).
+A test that needs a GPU fails without one. CI installs Mesa's software Vulkan driver (`mesa-vulkan-drivers`, lavapipe) so these tests run
 there on the CPU through Vulkan.

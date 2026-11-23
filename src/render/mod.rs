@@ -14,6 +14,7 @@ pub mod black_hole_view;
 pub mod bridge;
 pub mod constants;
 pub mod eclipse;
+pub mod gpu_particles;
 pub mod grid;
 pub mod kerr_ray;
 pub mod light_streams;

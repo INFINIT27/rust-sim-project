@@ -511,6 +511,32 @@ fn the_collision_detail_loads_saves_and_refuses_too_many_fragments() {
 }
 
 #[test]
+fn the_planet_material_loads_by_name_saves_and_a_bad_name_is_an_error_naming_it() {
+    use crate::core::scene::PlanetModel;
+    assert_eq!(
+        CollisionSettings::default().planet_model,
+        PlanetModel::Fluid
+    );
+    let (settings, _) = parse("planet_model = \"rubble\"", CollisionFile::into_runtime).unwrap();
+    assert_eq!(settings.planet_model, PlanetModel::Rubble);
+    let error = parse("planet_model = \"lava\"", CollisionFile::into_runtime).unwrap_err();
+    assert!(error.contains("planet_model"), "{error}");
+    // Through the file's text rather than `save_and_reload`, whose scratch directory is shared by
+    // every test saving `collision.toml`.
+    for model in PlanetModel::ALL {
+        let wanted = CollisionSettings {
+            planet_model: model,
+            ..CollisionSettings::default()
+        };
+        let text = toml::to_string(&CollisionFile::from_runtime(&wanted, &GpuSolver::DEFAULT))
+            .expect("serialises");
+        assert!(text.contains(model.name()), "{text}");
+        let (reloaded, _) = parse(&text, CollisionFile::into_runtime).unwrap();
+        assert_eq!(reloaded, wanted);
+    }
+}
+
+#[test]
 fn the_particle_count_loads_and_out_of_range_is_an_error_naming_it() {
     let (settings, _) = parse("particles_per_body = 800", CollisionFile::into_runtime).unwrap();
     assert_eq!(settings.particles_per_body, 800);
@@ -530,9 +556,11 @@ fn the_gpu_algorithms_load_by_name_and_a_bad_name_or_angle_is_an_error_naming_it
     assert_eq!(solver.gravity, GravitySolver::BarnesHut);
     assert_eq!(solver.neighbours, NeighbourSearch::Tree);
     assert_eq!(solver.opening_angle, 0.7);
+    let (_, grid) = parse("neighbours = \"grid\"", CollisionFile::into_runtime).unwrap();
+    assert_eq!(grid.neighbours, NeighbourSearch::Grid);
     for (bad, key) in [
         ("gravity = \"fmm\"", "gravity"),
-        ("neighbours = \"grid\"", "neighbours"),
+        ("neighbours = \"octree\"", "neighbours"),
         ("opening_angle = 1.5", "opening_angle"),
         ("opening_angle = 0.0", "opening_angle"),
     ] {

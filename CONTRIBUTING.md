@@ -8,13 +8,14 @@ This file is the entry point. The full rules are the standard operating procedur
 
 - A stable Rust toolchain, rustc 1.87 or later. The pinned dependencies are in `Cargo.lock`, which
   is committed.
-- A working graphics stack for running the app. The tests need none.
+- A working graphics stack for running the app, and a GPU (or a software Vulkan driver such as
+  lavapipe) for the GPU tests: particle simulations are GPU-only.
 
 ## The loop
 
 ```bash
 cargo run --release -- solar-system   # see the change in the real app
-cargo test                            # headless, needs no window or GPU
+cargo test                            # headless; the GPU tests need a GPU
 cargo test --release                  # must pass too; see tst/README.md
 cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps

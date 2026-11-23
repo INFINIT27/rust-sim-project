@@ -17,7 +17,7 @@ conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 | `headless_app.rs` | The only true integration test: builds `MinimalPlugins` + `ScenePlugin`, ticks 5 frames, asserts the Scene↔ECS mirror invariants. Declared as a `[[test]]` target in `Cargo.toml`. |
 | `core/` | Unit + property tests for `src/core/`. |
 | `collision/` | Unit + property tests for `src/collision/`, including the end-to-end "the spheres bounce instead of phasing through" check. |
-| `compute/` | Unit tests for `src/compute/`: the GPU particle stepper held to the CPU path, including the whole giant impact on the GPU. Skips without a GPU unless `RGA_REQUIRE_GPU` is set. |
+| `compute/` | Unit tests for `src/compute/`: the GPU particle stepper, including the whole giant impact on the GPU. Needs a GPU (lavapipe on CI) and fails without one. |
 | `render/` | Unit + property tests for `src/render/`, including the floor grid's geometry, the trails' length and fade, and both features' render-only-ness. |
 | `input/` | Unit + property tests for `src/input/`. |
 | `ui/` | Unit tests for `src/ui/`. |
@@ -54,7 +54,8 @@ block or wire it in via a `#[path]` stub.
 - **Mirror the `src/` path exactly.** A test file's location is derived from its
   subject's location, so `src/a/b.rs` ⇒ `tst/a/b_tests.rs`. No exceptions, so
   that "where are this file's tests?" never needs a search.
-- **All tests run headlessly** — no window, no GPU. Bevy tests use
+- **All tests run headlessly** — no window. The GPU tests (`compute/`, and anything stepping particle
+  scenes on the GPU) need a GPU and fail without one; CI provides lavapipe. Bevy tests use
   `MinimalPlugins` and `init_resource` the asset collections by hand, because
   `MinimalPlugins` omits `AssetPlugin`.
 - **`cargo test --release` must pass too.** Tests asserting `debug_assert!`

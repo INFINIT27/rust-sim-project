@@ -414,3 +414,38 @@ fn a_pause_set_during_a_hold_survives_its_release() {
         "the user's pause outlasts the plan"
     );
 }
+
+#[test]
+fn the_reached_scale_falls_when_the_physics_cannot_keep_up_and_recovers_when_it_can() {
+    let mut clock = SimulationClock::new(1000.0);
+    // Each frame asks for 50 s and the physics steps only 10 of them.
+    for _ in 0..60 {
+        let before = clock.elapsed_seconds();
+        clock.advance(0.05);
+        clock.correct_elapsed(before + 10.0);
+    }
+    let reached = clock.reached_scale();
+    assert!((reached - 200.0).abs() < 5.0, "{reached}");
+    assert_eq!(clock.scale(), 1000.0);
+    // A frame nothing corrects reached all of its step.
+    clock.advance(0.05);
+    clock.advance(0.05);
+    assert_eq!(clock.reached_scale(), 1000.0);
+}
+
+#[test]
+fn a_count_that_arrives_every_few_frames_still_reads_as_keeping_up() {
+    // The GPU's simulated time reaches the clock some frames late: four frames gain nothing, the
+    // fifth catches up all five. The physics is keeping up.
+    let mut clock = SimulationClock::new(1000.0);
+    let mut simulated = 0.0;
+    for frame in 0..300 {
+        clock.advance(0.01);
+        if frame % 5 == 4 {
+            simulated += 50.0;
+        }
+        clock.correct_elapsed(simulated);
+    }
+    let reached = clock.reached_scale();
+    assert!(reached > 950.0, "{reached}");
+}

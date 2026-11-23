@@ -79,7 +79,14 @@ impl std::fmt::Display for BenchSummary {
 }
 
 /// Runs in `Last`, so a frame's length is measured between the same point of consecutive frames.
-pub(crate) fn record_frame_system(mut run: ResMut<BenchRun>, mut exit: EventWriter<AppExit>) {
+///
+/// With the GPU pass timer on (`RGA_GPU_PROFILE`), its means over the same window follow on a
+/// `GPU_PROFILE` line.
+pub(crate) fn record_frame_system(
+    mut run: ResMut<BenchRun>,
+    mut exit: EventWriter<AppExit>,
+    mut gpu: Option<ResMut<crate::compute::particles::GpuParticles>>,
+) {
     if run.reported {
         return;
     }
@@ -90,6 +97,12 @@ pub(crate) fn record_frame_system(mut run: ResMut<BenchRun>, mut exit: EventWrit
 
     if elapsed > run.config.warmup {
         if let Some(last) = run.last {
+            if run.frames_ms.is_empty() {
+                // The warm-up is over: the timer's means start with the frames recorded.
+                if let Some(gpu) = gpu.as_mut() {
+                    gpu.reset_profile();
+                }
+            }
             run.frames_ms.push((now - last).as_secs_f64() * 1e3);
         }
     }
@@ -98,6 +111,9 @@ pub(crate) fn record_frame_system(mut run: ResMut<BenchRun>, mut exit: EventWrit
     if elapsed > run.config.warmup + run.config.window {
         if let Some(summary) = BenchSummary::from_frames(&run.frames_ms) {
             println!("{summary}");
+            if let Some(profile) = gpu.as_ref().and_then(|gpu| gpu.profile_since_reset()) {
+                println!("{profile}");
+            }
             run.reported = true;
             exit.send(AppExit::Success);
         }

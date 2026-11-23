@@ -1,5 +1,5 @@
 # Saved from the in-app menu, which does not keep comments.
 # Every key is optional; see config/README.md for what each one does.
 
-particles_per_body = 2000
+particles_per_body = 200
 debris_fragments = 8

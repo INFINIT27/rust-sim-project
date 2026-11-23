@@ -1,23 +1,28 @@
 //! The GPU the physics runs on: finding one, and the switch that turns the GPU path off.
 //!
-//! The device is the layer's own, not the one Bevy renders with. That keeps the physics free of
-//! the ECS and the render graph, so it runs in a headless test exactly as in the app, and the cost
-//! is one more logical device on the same GPU, which drivers handle routinely. Both are made from
-//! the same `wgpu` crate.
+//! In the app the device is the one Bevy renders with ([`GpuDevice::from_render`]), so the particles
+//! the physics steps are the buffer the renderer draws, with nothing copied back to the CPU to be
+//! drawn. In a headless test there is no renderer, and [`GpuDevice::request`] makes a device of its
+//! own, wrapped in the same types.
 //!
-//! No GPU is not an error: [`GpuDevice::request`] returns `None` and the app steps on the CPU as it
-//! always has. A machine with no GPU driver at all (a CI runner, a remote session) can still have
+//! Particle simulations need a GPU (see `src/compute/README.md`): without one [`GpuDevice::request`]
+//! returns `None` and the app falls back to the frozen CPU path. A machine with no GPU driver at all (a CI runner, a remote session) can still have
 //! one through a software Vulkan driver such as Mesa's `lavapipe`, which `wgpu` finds like any
 //! other; it is slow, and it is how CI tests the GPU path.
 
+use std::sync::Arc;
+
+use bevy::render::renderer::{RenderDevice, RenderQueue, WgpuWrapper};
+
 use crate::compute::constants::GPU_PHYSICS_ENV;
 
-/// A GPU device and its queue, ready for compute work.
+/// A GPU device and its queue, ready for compute work: Bevy's, in the app.
 pub struct GpuDevice {
-    /// The device: buffers, pipelines and command encoders are made from it.
-    pub device: wgpu::Device,
+    /// The device: buffers, pipelines and command encoders are made from it. Bevy's handle type, so
+    /// a buffer made from it can be handed to the renderer; [`GpuDevice::wgpu`] is the raw device.
+    pub device: RenderDevice,
     /// The queue work is submitted on.
-    pub queue: wgpu::Queue,
+    pub queue: RenderQueue,
     /// What the device is, for the menu and the logs: its name and backend.
     pub info: wgpu::AdapterInfo,
     /// Set when the device has been lost or has reported an error: the GPU was reset (Windows
@@ -47,7 +52,9 @@ impl GpuDevice {
         let (device, queue) = bevy::tasks::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("physics"),
-                required_features: wgpu::Features::empty(),
+                // Timestamps when the adapter has them, for the GPU pass timer
+                // (`compute::profiler`). Bevy's own device asks for every feature the adapter has.
+                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
                 // Everything the adapter offers: the particle buffers grow with the detail
                 // setting, and the defaults cap a storage buffer at 128 MiB.
                 required_limits: adapter.limits(),
@@ -55,16 +62,33 @@ impl GpuDevice {
             None,
         ))
         .ok()?;
+        Some(Self::watched(
+            RenderDevice::from(device),
+            RenderQueue(Arc::new(WgpuWrapper::new(queue))),
+            info,
+        ))
+    }
+
+    /// The device Bevy renders with, so the physics' buffers are the renderer's too. `info` is
+    /// Bevy's `RenderAdapterInfo`.
+    pub fn from_render(device: RenderDevice, queue: RenderQueue, info: wgpu::AdapterInfo) -> Self {
+        Self::watched(device, queue, info)
+    }
+
+    /// `device` and `queue`, with an error and a lost device logged and remembered rather than
+    /// panicking.
+    fn watched(device: RenderDevice, queue: RenderQueue, info: wgpu::AdapterInfo) -> Self {
         // `wgpu` panics on an error nothing handles, which would take the app down with the GPU.
         // Log it instead, and remember, so the caller falls back to the CPU.
         let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let device_handle = device.wgpu_device();
         let on_error = failed.clone();
-        device.on_uncaptured_error(Box::new(move |error| {
-            bevy::log::error!("physics GPU error, falling back to the CPU: {error}");
+        device_handle.on_uncaptured_error(Box::new(move |error| {
+            bevy::log::error!("GPU error, physics falling back to the CPU: {error}");
             on_error.store(true, std::sync::atomic::Ordering::Relaxed);
         }));
         let on_lost = failed.clone();
-        device.set_device_lost_callback(move |reason, message| {
+        device_handle.set_device_lost_callback(move |reason, message| {
             // Dropping the device, as the app does when it exits, also reports it lost.
             if matches!(reason, wgpu::DeviceLostReason::Dropped) {
                 return;
@@ -72,12 +96,17 @@ impl GpuDevice {
             bevy::log::error!("physics GPU lost ({reason:?}), falling back to the CPU: {message}");
             on_lost.store(true, std::sync::atomic::Ordering::Relaxed);
         });
-        Some(Self {
+        Self {
             device,
             queue,
             info,
             failed,
-        })
+        }
+    }
+
+    /// The raw `wgpu` device.
+    pub fn wgpu(&self) -> &wgpu::Device {
+        self.device.wgpu_device()
     }
 
     /// The device's name and backend, for display: `"NVIDIA GeForce RTX 4070 (Vulkan)"`.

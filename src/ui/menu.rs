@@ -52,7 +52,7 @@ use crate::constants::METRES_PER_UNIT;
 use crate::core::constants::{
     MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
 };
-use crate::core::scene::CollisionSettings;
+use crate::core::scene::{CollisionSettings, PlanetModel};
 use crate::input::camera::CameraSettings;
 use crate::input::menu::{ConfigTab, MenuPage, MenuState, SettingsTab};
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
@@ -800,6 +800,15 @@ fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
                 0..=MAX_DEBRIS_FRAGMENTS,
                 1.0,
             );
+            ui.label("Planet material");
+            egui::ComboBox::from_id_source("menu_planet_model")
+                .selected_text(collision.planet_model.label())
+                .show_ui(ui, |ui| {
+                    for choice in PlanetModel::ALL {
+                        ui.selectable_value(&mut collision.planet_model, choice, choice.label());
+                    }
+                });
+            ui.end_row();
         });
     });
     ui.add_space(MENU_SECTION_GAP_PX);
@@ -848,6 +857,16 @@ fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     );
     ui.label(
         egui::RichText::new(
+            "Planet material: Fluid planets have an iron core under a basalt mantle and flow as a \
+             planet does, by smoothed-particle hydrodynamics: they resist compression with their \
+             pressure but not a change of shape, so a tide stretches them. Rubble planets are \
+             uniform piles of basalt held by springs and friction, stiff against tides, kept to \
+             compare against. Save, then relaunch: the scene is built at launch.",
+        )
+        .weak(),
+    );
+    ui.label(
+        egui::RichText::new(
             "Debris fragments: for planets that are single spheres, which merge in one instant, \
              how many bodies the debris the scaling law gives is split into. 0 merges with no \
              debris. Applies to the next impact.",
@@ -859,7 +878,7 @@ fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
             "GPU algorithms, applied at once: Direct and All pairs are exact and fastest up to \
              tens of thousands of particles; the trees cost N log N rather than N² and win beyond \
              (measured on an RTX 4070 SUPER: 4x faster at 114,000). A smaller opening angle is \
-             more exact and slower. The CPU always sums every pair.",
+             more exact and slower. The CPU sums gravity over every pair.",
         )
         .weak(),
     );

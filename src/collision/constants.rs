@@ -22,6 +22,9 @@
 //! - **Simulated contact** — [`SOFT_CONTACT_SUBSTEPS`], [`SOFT_CONTACT_MAX_DAMPING_RATIO`],
 //!   [`CLUSTER_CONTACT_TOLERANCE`]: how finely
 //!   a contact between particles is followed, and which particles count as one body.
+//! - **Fluid particles** — [`SPH_SMOOTHING_FACTOR`], [`SPH_MIN_SMOOTHING_FRACTION`],
+//!   [`SPH_VISCOSITY_ALPHA`], [`SPH_VISCOSITY_BETA`], [`SPH_VISCOSITY_EPSILON`], [`SPH_COURANT`],
+//!   [`SPH_SOUND_SPEED_FLOOR_FRACTION`]: smoothed-particle hydrodynamics for fluid planets.
 //!
 //! # Two of these constrain each other
 //!
@@ -395,6 +398,21 @@ pub const SOFT_CONTACT_SUBSTEPS: f64 = 20.0;
 /// that is still near the body as part of it.
 pub const CLUSTER_CONTACT_TOLERANCE: f64 = 0.05;
 
+/// [`CLUSTER_CONTACT_TOLERANCE`] for fluid particles: how far apart two may be and still count as
+/// one body, as a fraction of their summed radii. Dimensionless.
+///
+/// **Why this value.** `0.5`. A fluid's particles do not stay on a lattice: they settle into a
+/// disordered arrangement in which a neighbour is often a fifth or more past touching, though the
+/// two are firmly in one body. Measured on a fluid Earth of `2,000` particles settling for four
+/// hours: at `0.05` it read as `572` bodies. Half again the touching distance is still well inside
+/// the kernel's reach (`2.6` spacings), and a fragment thrown off at any speed leaves it in seconds.
+///
+/// **Used by.** [`crate::collision::aggregate::contact_clusters`], for pairs of fluid particles.
+///
+/// **If you change it.** Smaller breaks a settled fluid planet into many bodies; much larger counts
+/// the inner edge of a disk as part of the planet.
+pub const FLUID_CLUSTER_CONTACT_TOLERANCE: f64 = 0.5;
+
 /// The most damping a simulated contact is given, as a damping ratio `ζ`. Dimensionless.
 ///
 /// A contact that only pushes returns `13.5%` of the approach speed even when critically damped
@@ -434,6 +452,178 @@ pub const SOFT_CONTACT_MAX_DAMPING_RATIO: f64 = 1.5;
 /// **If you change it.** Smaller and the pressure is felt by fewer neighbours and turns noisy; below
 /// `0.9` hot particles feel only those they touch. Larger costs more pairs per particle.
 pub const SPH_SMOOTHING_FACTOR: f64 = 1.3;
+
+/// The fewest and most a fluid particle's smoothing length may be, as multiples of its value at
+/// the material's reference density, `SPH_SMOOTHING_FACTOR·(m/ρ₀)^(1/3)`. Dimensionless.
+///
+/// A fluid particle's smoothing length follows its density, `SPH_SMOOTHING_FACTOR·(m/ρ)^(1/3)`, so
+/// it keeps about the same number of neighbours whether compressed in a core or thrown into the
+/// disk. These bounds keep a particle alone in space from reaching across the whole scene, and a
+/// strongly compressed one from losing its neighbours.
+///
+/// **Why these values.** `0.5` and `3`. The most compressed material in a planet, iron at the
+/// Earth's centre, is under twice its reference density, which needs `0.79` of the reference
+/// length; `0.5` is never reached by gravity. At `3` a particle feels neighbours out to `7.8` of its
+/// own spacings: a disk `27` times thinner than rock is still smoothed, and anything thinner is
+/// vapour or debris whose pressure is nothing anyway. No published value; chosen here.
+///
+/// **Used by.** [`crate::collision::collision::apply_contact_forces`] and its GPU twin.
+///
+/// **If you change it.** A larger maximum makes isolated particles reach further, which costs
+/// neighbour pairs (and, on the GPU tree, larger boxes to open).
+pub const SPH_MIN_SMOOTHING_FRACTION: f64 = 0.5;
+
+/// See [`SPH_MIN_SMOOTHING_FRACTION`].
+pub const SPH_MAX_SMOOTHING_FRACTION: f64 = 3.0;
+
+/// The linear coefficient `α` of the artificial viscosity of fluid particles. Dimensionless.
+///
+/// Smoothed-particle hydrodynamics resolves no shock on its own: particles would pass through each
+/// other where a shock should be. The artificial viscosity of Monaghan, J. J. (1992), Smoothed
+/// particle hydrodynamics, *Annual Review of Astronomy and Astrophysics* 30, 543–574,
+/// doi:10.1146/annurev.aa.30.090192.002551, adds a pressure `Π` between approaching neighbours,
+///
+/// ```text
+/// Π = (−α·c̄·μ + β·μ²) / ρ̄,    μ = h̄·(v_ab·r_ab) / (r² + ε·h̄²)    (v_ab·r_ab < 0, else Π = 0)
+/// ```
+///
+/// and turns the kinetic energy it takes into heat, which is how a shock heats rock.
+///
+/// **Why this value.** `1`, with [`SPH_VISCOSITY_BETA`] `= 2`: the values Monaghan (1992) gives for
+/// shocks, and the usual choice in impact simulations.
+///
+/// **Used by.** [`crate::collision::collision::apply_contact_forces`] and its GPU twin, and the
+/// time step ([`crate::collision::collision::fluid_courant_seconds`]).
+///
+/// **If you change it.** Larger smears shocks and heats more in shear (a viscosity has no way to
+/// tell shear from compression without a Balsara switch, not built); smaller lets particles
+/// interpenetrate in a strong shock.
+pub const SPH_VISCOSITY_ALPHA: f64 = 1.0;
+
+/// The quadratic coefficient `β` of the artificial viscosity. Dimensionless.
+///
+/// **Why this value.** `2`, Monaghan (1992); see [`SPH_VISCOSITY_ALPHA`]. The quadratic term stops
+/// particles passing through each other at high Mach numbers, which a giant impact at `9 km/s`
+/// into rock whose sound speed is `3 km/s` is.
+///
+/// **Used by.** As [`SPH_VISCOSITY_ALPHA`].
+///
+/// **If you change it.** As [`SPH_VISCOSITY_ALPHA`].
+pub const SPH_VISCOSITY_BETA: f64 = 2.0;
+
+/// The softening `ε` of the artificial viscosity's `μ`, as a fraction of the smoothing length
+/// squared. Dimensionless.
+///
+/// **Why this value.** `0.01`, Monaghan (1992; see [`SPH_VISCOSITY_ALPHA`]): it keeps `μ` finite for
+/// two particles on top of each other and is otherwise negligible, at `1%` of `h²`.
+///
+/// **Used by.** As [`SPH_VISCOSITY_ALPHA`].
+///
+/// **If you change it.** Larger weakens the viscosity between close neighbours.
+pub const SPH_VISCOSITY_EPSILON: f64 = 0.01;
+
+/// The Courant factor of the fluid time step. Dimensionless.
+///
+/// A fluid particle's substep must be shorter than the time a signal takes to cross its smoothing
+/// length,
+///
+/// ```text
+/// dt ≤ C · h / (c·(1 + 1.2·α) + 1.2·β·v)
+/// ```
+///
+/// with `c` its sound speed, `α` and `β` the viscosity's coefficients, and `v` the fastest approach
+/// of any two particles. Monaghan (1992; see [`SPH_VISCOSITY_ALPHA`]) gives this form with the
+/// largest `|μ|` among the neighbours for `v`; here `v` is bounded by twice the fastest particle's
+/// speed in the centre-of-mass frame, which needs no pair loop.
+///
+/// **Why this value.** `0.3`, Monaghan (1992).
+///
+/// **Used by.** [`crate::collision::collision::fluid_courant_seconds`], through
+/// [`crate::collision::resolve::substep_count`].
+///
+/// **If you change it.** Above about `0.5` the explicit step goes unstable in a shock; below `0.3`
+/// costs substeps for no gain.
+pub const SPH_COURANT: f64 = 0.3;
+
+/// The least sound speed a fluid particle is given, as a fraction of its material's bulk sound
+/// speed `√(A/ρ₀)`. Dimensionless.
+///
+/// The Tillotson sound speed falls towards zero in thin, cool vapour, where the pressure has nearly
+/// vanished. The artificial viscosity and the time step need a signal speed even there: without
+/// one, two vapour particles approaching each other would feel no viscosity at all.
+///
+/// **Why this value.** `0.25`, about `0.8 km/s` for basalt and `1 km/s` for iron: below the
+/// speed of any impact here, so it never sets the time step of a real impact, and above zero. No
+/// published value; chosen here.
+///
+/// **Used by.** [`crate::collision::collision::apply_contact_forces`] and its GPU twin, and
+/// [`crate::collision::collision::fluid_courant_seconds`].
+///
+/// **If you change it.** Larger shortens the step and strengthens the viscosity in vapour.
+pub const SPH_SOUND_SPEED_FLOOR_FRACTION: f64 = 0.25;
+
+/// How many radial steps a fluid planet's hydrostatic profile is integrated in, across the radius
+/// the planet would have uncompressed. Dimensionless.
+///
+/// **Why this value.** `4000`: about `1.7 km` a step for the Earth, a thousand times finer than the
+/// finest particle spacing, so the profile's error is far below what the particles can resolve.
+/// Fourth-order Runge–Kutta at that step is exact to print precision; the jump in density at the
+/// core's edge is resolved to one step.
+///
+/// **Used by.** [`crate::collision::aggregate::hydrostatic_profile`], once per planet built.
+///
+/// **If you change it.** Fewer smears the core's edge over more depth. Each profile costs this many
+/// steps times [`PLANET_PROFILE_BISECTIONS`].
+pub const PLANET_PROFILE_RADIAL_STEPS: u32 = 4000;
+
+/// How many times a fluid planet's central pressure is bisected to make its profile hold the
+/// planet's mass. Dimensionless.
+///
+/// **Why this value.** `80`, on the logarithm of the central pressure between `1e6` and `1e15 Pa`:
+/// after `80` halvings the pressure is known to `1e-23` of that range's span, far past `f64`'s
+/// precision, so the last bisections change nothing and the mass is matched to rounding.
+///
+/// **Used by.** [`crate::collision::aggregate::hydrostatic_profile`].
+///
+/// **If you change it.** Below about `50` the planet's mass is matched less exactly, which the
+/// builder then corrects by giving each particle its share of the true mass anyway.
+pub const PLANET_PROFILE_BISECTIONS: u32 = 80;
+
+/// How many densities each material's cold isentrope is tabulated at, from `ρ₀` to
+/// [`PLANET_PROFILE_MAX_COMPRESSION`] times it, for the hydrostatic profile to look up the density
+/// and energy at a pressure. Dimensionless.
+///
+/// **Why this value.** `2000`: a step of `0.25%` of `ρ₀`, over which the isentrope is so nearly
+/// straight that linear interpolation errs by under `1e-5` in density.
+///
+/// **Used by.** [`crate::collision::aggregate::hydrostatic_profile`].
+///
+/// **If you change it.** Fewer coarsens the interpolation; more costs time at each build only.
+pub const PLANET_PROFILE_ISENTROPE_SAMPLES: u32 = 2000;
+
+/// The densest a fluid planet's material is tabulated to, as a multiple of its reference density.
+/// Dimensionless.
+///
+/// **Why this value.** `6`. The most compressed material in a rocky planet the size of the Earth
+/// is under three times its reference density with these equations of state, so `6` leaves the
+/// table room; a pressure past its end is given the table's densest entry.
+///
+/// **Used by.** [`crate::collision::aggregate::hydrostatic_profile`].
+///
+/// **If you change it.** Below what the planet's centre needs and the centre is built too light;
+/// above costs only table entries.
+pub const PLANET_PROFILE_MAX_COMPRESSION: f64 = 6.0;
+
+/// How many Runge–Kutta steps [`crate::physics_utils::thermal::tillotson_cold_energy`] takes to
+/// integrate the cold isentrope up to one density. Dimensionless.
+///
+/// **Why this value.** `64`: the integrand is smooth, and fourth-order Runge–Kutta in `64` steps over
+/// even a fivefold compression is exact to about `1e-9`.
+///
+/// **Used by.** [`crate::collision::aggregate::hydrostatic_profile`], for each tabulated density.
+///
+/// **If you change it.** Fewer only loses digits nobody reads.
+pub const COLD_ISENTROPE_STEPS: u32 = 64;
 
 /// The most neighbours a simulated particle touches at once: the coordination number of a
 /// face-centred cubic packing. Dimensionless.

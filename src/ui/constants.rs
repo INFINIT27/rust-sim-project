@@ -348,3 +348,18 @@ pub const JOULES_PER_TONNE_OF_TNT: f64 = 4.184e9;
 ///
 /// **If you change it.** Keep it true to how the pop-up closes; it is the only place that says.
 pub const ARRIVAL_HINT: &str = "Esc or ✕ closes this. R picks the next departure body.";
+
+/// The share of the time scale below which the overlay says what the simulation is reaching.
+///
+/// The GPU physics steps a scene of particles only as fast as it can; asked for more, it runs in
+/// slow motion and the clock shows the time simulated (`SimulationClock::reached_scale`). Without a
+/// note the scale shown would go up with each `]` while nothing on screen sped up.
+///
+/// **Why this value.** `0.9`: the GPU's count of simulated time arrives a frame late and in whole
+/// macro steps, so a simulation keeping up reads a little under its scale from frame to frame.
+///
+/// **Used by.** [`crate::ui::overlay::clock_lines`].
+///
+/// **If you change it.** Nearer `1` makes the note flicker on a simulation that keeps up; lower
+/// hides a real shortfall.
+pub const SCALE_REACHED_SHOWN_BELOW: f32 = 0.9;

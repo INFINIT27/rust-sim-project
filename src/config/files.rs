@@ -20,7 +20,7 @@ use crate::compute::particles::{GpuSolver, GravitySolver, NeighbourSearch};
 use crate::core::constants::{
     MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
 };
-use crate::core::scene::{CollisionSettings, Color};
+use crate::core::scene::{CollisionSettings, Color, PlanetModel};
 use crate::input::camera::CameraSettings;
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
@@ -346,10 +346,15 @@ pub struct CollisionFile {
     /// How the GPU sums gravity between particles: `"direct"` (every pair) or `"barnes-hut"` (a
     /// tree). Applies at once.
     pub gravity: String,
-    /// How the GPU finds each particle's neighbours: `"all-pairs"` or `"tree"`. Applies at once.
+    /// How the GPU finds each particle's neighbours: `"all-pairs"`, `"tree"` or `"grid"`. Applies
+    /// at once.
     pub neighbours: String,
     /// Barnes–Hut's opening angle `θ`, `0.1` to `1.0`. Applies at once.
     pub opening_angle: f32,
+    /// What planets built from particles are made of: `"fluid"` (smoothed-particle hydrodynamics,
+    /// an iron core under a basalt mantle) or `"rubble"` (basalt particles held by springs). Read when
+    /// the scene is built, so it applies from the next launch.
+    pub planet_model: String,
 }
 
 impl Default for CollisionFile {
@@ -367,12 +372,19 @@ impl CollisionFile {
             gravity: solver.gravity.name().to_string(),
             neighbours: solver.neighbours.name().to_string(),
             opening_angle: solver.opening_angle,
+            planet_model: settings.planet_model.name().to_string(),
         }
     }
 
     /// The [`CollisionSettings`] and [`GpuSolver`] this file describes, or a message naming the bad
     /// key.
     pub fn into_runtime(self) -> Result<(CollisionSettings, GpuSolver), String> {
+        let Some(planet_model) = PlanetModel::from_name(&self.planet_model) else {
+            return Err(format!(
+                "`planet_model` must be \"fluid\" or \"rubble\", got {:?}",
+                self.planet_model
+            ));
+        };
         let Some(gravity) = GravitySolver::from_name(&self.gravity) else {
             return Err(format!(
                 "`gravity` must be \"direct\" or \"barnes-hut\", got {:?}",
@@ -381,7 +393,7 @@ impl CollisionFile {
         };
         let Some(neighbours) = NeighbourSearch::from_name(&self.neighbours) else {
             return Err(format!(
-                "`neighbours` must be \"all-pairs\" or \"tree\", got {:?}",
+                "`neighbours` must be \"all-pairs\", \"tree\" or \"grid\", got {:?}",
                 self.neighbours
             ));
         };
@@ -413,6 +425,7 @@ impl CollisionFile {
             CollisionSettings {
                 particles_per_body: self.particles_per_body,
                 debris_fragments: self.debris_fragments,
+                planet_model,
             },
             solver,
         ))

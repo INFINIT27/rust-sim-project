@@ -1174,3 +1174,38 @@ pub const BLACK_HOLE_OUTLINE_WIDTH_PX: f32 = 2.0;
 ///
 /// **If you change it.** Each step quadruples the triangles. `1` (`80`) looks faceted close up.
 pub const PARTICLE_MESH_SUBDIVISIONS: usize = 2;
+
+/// Where the shader that draws particles straight from the GPU physics buffer lives, relative to
+/// `assets/`.
+///
+/// **Why this value.** Beside the other shaders.
+///
+/// **Used by.** [`crate::render::gpu_particles`].
+///
+/// **If you change it.** The file must move with it. A missing shader is a runtime error: the app
+/// logs an asset-not-found and the particles are not drawn.
+pub const GPU_PARTICLES_SHADER_PATH: &str = "shaders/gpu_particles.wgsl";
+
+/// The fewest particles a body of a GPU-drawn particle scene needs for the camera to lock onto it
+/// with `F`.
+///
+/// While the GPU draws a scene of particles there is no entity per particle to lock onto, so each
+/// body (a contact cluster: a planet, the merged body, a clump of debris) gets one lock target.
+///
+/// **Why this value.** `2`: a lone particle of debris is not a body worth orbiting, and there can be
+/// hundreds of them after an impact.
+///
+/// **Used by.** [`crate::render::gpu_particles`].
+///
+/// **If you change it.** `1` makes every stray particle a target; larger hides small moonlets.
+pub const CLUSTER_TARGET_MIN_PARTICLES: usize = 2;
+
+/// The most bodies of a GPU-drawn particle scene the camera can lock onto, the most massive first.
+///
+/// **Why this value.** `32`: the planets, the merged body and the larger clumps of an impact's
+/// debris; each target is an entity re-placed every frame.
+///
+/// **Used by.** [`crate::render::gpu_particles`].
+///
+/// **If you change it.** Larger makes smaller clumps lockable at a little cost each frame.
+pub const CLUSTER_TARGET_MAX: usize = 32;

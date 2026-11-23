@@ -29,16 +29,24 @@
 
 pub use bevy::math::{Quat, Vec3};
 
-use crate::collision::aggregate::{lattice_spacing_m, particle_body, ParticleBody};
+use std::sync::Mutex;
+
+use crate::collision::aggregate::{
+    hydrostatic_profile, lattice_spacing_m, layered_particle_body, particle_body, LayeredBody,
+    ParticleBody, PlanetProfile,
+};
 use crate::constants::METRES_PER_UNIT;
-use crate::core::scene::{Aabb, CollisionSettings, DVec3, Scene};
-use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
+use crate::core::scene::{Aabb, CollisionSettings, Color, DVec3, PlanetModel, Scene};
+use crate::physics_utils::physics_constants::{
+    BASALT_TILLOTSON_RHO0_KG_M3, GRAVITATIONAL_CONSTANT,
+};
 use crate::projects::interstellar::catalog::{BodyNames, Experiment, ExperimentId, ExperimentSpec};
 use crate::projects::interstellar::constants::{
-    DEFAULT_RANDOM_SEED, GIANT_IMPACT_BOUNDS_MARGIN_UNITS, GIANT_IMPACT_CAMERA_POSITION_UNITS,
-    GIANT_IMPACT_FRAMED_RADIUS_UNITS, GIANT_IMPACT_SOFTENING_UNITS, GIANT_IMPACT_START_CONTACTS,
-    GIANT_IMPACT_TIME_SCALE, GIANT_IMPACT_TRAIL_LENGTH_UNITS, PLANETARY_PARTICLE_MATERIAL,
-    SOLAR_SYSTEM_PLANETS,
+    DEFAULT_RANDOM_SEED, FLUID_SOFTENING_SPACINGS, GIANT_IMPACT_BOUNDS_MARGIN_UNITS,
+    GIANT_IMPACT_CAMERA_POSITION_UNITS, GIANT_IMPACT_FRAMED_RADIUS_UNITS,
+    GIANT_IMPACT_SOFTENING_UNITS, GIANT_IMPACT_START_CONTACTS, GIANT_IMPACT_TIME_SCALE,
+    GIANT_IMPACT_TRAIL_LENGTH_UNITS, PLANETARY_IRON_FLUID, PLANETARY_PARTICLE_MATERIAL,
+    PLANETARY_ROCK_FLUID, PLANET_CORE_MASS_FRACTION, PLANET_CORE_SHADE, SOLAR_SYSTEM_PLANETS,
 };
 use crate::projects::interstellar::solar_system::Planet;
 
@@ -99,6 +107,102 @@ pub fn giant_impact_speed_m_s() -> f64 {
     (2.0 * GRAVITATIONAL_CONSTANT * total_mass * (1.0 / contact - 1.0 / start)).sqrt()
 }
 
+/// Add the two planets of a giant impact to `scene`, each `(planet, centre, velocity)` in world
+/// units, built of particles as `settings.planet_model` says. The first planet is the larger, and
+/// is made of `settings.particles_per_body` particles (as near as the packing allows).
+///
+/// - [`PlanetModel::Fluid`]: each planet is a fluid in hydrostatic equilibrium, an iron core of
+///   [`PLANET_CORE_MASS_FRACTION`] under a basalt mantle ([`hydrostatic_profile`],
+///   [`layered_particle_body`]). Every particle has the same mass, so the second planet gets its
+///   share of the count by mass. The core is drawn in a darker shade of the planet's colour
+///   ([`PLANET_CORE_SHADE`]), so where each core ends up can be seen.
+/// - [`PlanetModel::Rubble`]: each planet is a uniform pile of [`PLANETARY_PARTICLE_MATERIAL`] at
+///   its true radius, both of one particle size set by the first planet's count, as before fluid
+///   planets.
+pub(crate) fn add_planets(
+    scene: &mut Scene,
+    settings: &CollisionSettings,
+    planets: [(&Planet, DVec3, DVec3); 2],
+) {
+    match settings.planet_model {
+        PlanetModel::Rubble => {
+            // One particle size for both planets, set by the first's count.
+            let spacing = lattice_spacing_m(planets[0].0.radius_m, settings.particles_per_body);
+            for (planet, centre, velocity) in planets {
+                let body = ParticleBody {
+                    centre_units: centre,
+                    velocity_units_s: velocity,
+                    mass_kg: planet.mass_kg,
+                    radius_m: planet.radius_m,
+                    color: planet.color,
+                    material: PLANETARY_PARTICLE_MATERIAL,
+                };
+                for particle in particle_body(&body, spacing) {
+                    scene.add(particle);
+                }
+            }
+        }
+        PlanetModel::Fluid => {
+            let largest = planets[0].0.mass_kg;
+            for (planet, centre, velocity) in planets {
+                let count = (f64::from(settings.particles_per_body) * planet.mass_kg / largest)
+                    .round()
+                    .max(1.0) as u32;
+                let shade = |c: f32| c * PLANET_CORE_SHADE;
+                let body = LayeredBody {
+                    centre_units: centre,
+                    velocity_units_s: velocity,
+                    mass_kg: planet.mass_kg,
+                    core_fraction: PLANET_CORE_MASS_FRACTION,
+                    core: PLANETARY_IRON_FLUID,
+                    mantle: PLANETARY_ROCK_FLUID,
+                    core_color: Color {
+                        r: shade(planet.color.r),
+                        g: shade(planet.color.g),
+                        b: shade(planet.color.b),
+                        a: planet.color.a,
+                    },
+                    mantle_color: planet.color,
+                };
+                let Some(profile) = fluid_planet_profile(planet.mass_kg) else {
+                    continue;
+                };
+                for particle in layered_particle_body(&body, &profile, count) {
+                    scene.add(particle);
+                }
+            }
+            // Soften gravity over half a particle spacing; see `FLUID_SOFTENING_SPACINGS`.
+            let particle_mass = largest / f64::from(settings.particles_per_body.max(1));
+            let spacing = (particle_mass / BASALT_TILLOTSON_RHO0_KG_M3).cbrt();
+            let softening = (FLUID_SOFTENING_SPACINGS * spacing / METRES_PER_UNIT) as f32;
+            scene.softening_units = scene.softening_units.max(softening);
+        }
+    }
+}
+
+/// The hydrostatic profile of a fluid planet of `mass_kg` built of the planetary iron and rock
+/// ([`hydrostatic_profile`]), worked out once per mass and kept: every scene build and every test
+/// that builds the giant impacts asks for the same two.
+pub fn fluid_planet_profile(mass_kg: f64) -> Option<PlanetProfile> {
+    static PROFILES: Mutex<Vec<(u64, PlanetProfile)>> = Mutex::new(Vec::new());
+    let key = mass_kg.to_bits();
+    if let Ok(cache) = PROFILES.lock() {
+        if let Some((_, profile)) = cache.iter().find(|(k, _)| *k == key) {
+            return Some(profile.clone());
+        }
+    }
+    let profile = hydrostatic_profile(
+        mass_kg,
+        PLANET_CORE_MASS_FRACTION,
+        &PLANETARY_IRON_FLUID.thermal?.parameters(),
+        &PLANETARY_ROCK_FLUID.thermal?.parameters(),
+    )?;
+    if let Ok(mut cache) = PROFILES.lock() {
+        cache.push((key, profile.clone()));
+    }
+    Some(profile)
+}
+
 /// Build `experiment_1` at the default detail. See [`giant_impact_with`].
 pub fn giant_impact() -> Experiment {
     giant_impact_with(&CollisionSettings::default())
@@ -117,7 +221,7 @@ pub fn giant_impact() -> Experiment {
 /// let experiment = giant_impact_with(&coarse);
 /// let count = experiment.scene.props.len();
 /// assert!((50..70).contains(&count), "about 50 for the Earth and a few for the impactor: {count}");
-/// assert!(experiment.scene.props.iter().all(|p| p.material.modulus_pa.is_some()));
+/// assert!(experiment.scene.props.iter().all(|p| p.material.is_particle()));
 /// ```
 pub fn giant_impact_with(settings: &CollisionSettings) -> Experiment {
     let target = giant_impact_target();
@@ -136,22 +240,14 @@ pub fn giant_impact_with(settings: &CollisionSettings) -> Experiment {
     });
     scene.softening_units = GIANT_IMPACT_SOFTENING_UNITS;
     scene.collision = *settings;
-
-    // One particle size for both planets, set by the Earth's count.
-    let spacing = lattice_spacing_m(target.radius_m, settings.particles_per_body);
-    for (planet, centre) in [(&target, target_centre), (&impactor, impactor_centre)] {
-        let body = ParticleBody {
-            centre_units: centre,
-            velocity_units_s: DVec3::ZERO,
-            mass_kg: planet.mass_kg,
-            radius_m: planet.radius_m,
-            color: planet.color,
-            material: PLANETARY_PARTICLE_MATERIAL,
-        };
-        for particle in particle_body(&body, spacing) {
-            scene.add(particle);
-        }
-    }
+    add_planets(
+        &mut scene,
+        settings,
+        [
+            (&target, target_centre, DVec3::ZERO),
+            (&impactor, impactor_centre, DVec3::ZERO),
+        ],
+    );
 
     Experiment {
         scene,

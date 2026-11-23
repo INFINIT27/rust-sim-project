@@ -286,6 +286,16 @@ pub struct SimulationClock {
     /// not call it — the scene-stepping system, the overlay — can read it without a
     /// second source of truth.
     last_step: TimeStep,
+    /// The share of the scale the simulation has actually been reaching, smoothed: below one when
+    /// the GPU physics cannot step the time asked for and the scene runs in slow motion (see
+    /// [`correct_elapsed`](Self::correct_elapsed)). One when nothing corrects the clock.
+    reached: f32,
+    /// Whether [`correct_elapsed`](Self::correct_elapsed) ran since the last advance.
+    corrected: bool,
+    /// Simulated seconds asked for and gained a frame, smoothed, while the clock is corrected:
+    /// `reached` is their ratio.
+    asked_smoothed: f64,
+    gained_smoothed: f64,
 }
 
 impl Default for SimulationClock {
@@ -315,6 +325,10 @@ impl SimulationClock {
             single_step_pending: false,
             held: false,
             last_step: TimeStep::ZERO,
+            reached: 1.0,
+            corrected: false,
+            asked_smoothed: 0.0,
+            gained_smoothed: 0.0,
         }
     }
 
@@ -341,6 +355,13 @@ impl SimulationClock {
     /// is zero.
     pub fn advance(&mut self, real_step_s: f32) -> TimeStep {
         let real = clamp_real_step(real_step_s, self.max_real_step_s);
+        // Nothing corrected the last step: the simulation reached all of it.
+        if !self.corrected {
+            self.reached = 1.0;
+            self.asked_smoothed = 0.0;
+            self.gained_smoothed = 0.0;
+        }
+        self.corrected = false;
 
         let effective_real = if self.held {
             0.0
@@ -385,10 +406,39 @@ impl SimulationClock {
         self.elapsed_s
     }
 
+    /// Set the simulated time to `elapsed_s`: what the scene has actually been stepped through,
+    /// when that falls short of what the clock handed out. The GPU physics does this when it cannot
+    /// keep up with the time scale and runs the scene in slow motion, so the time shown is the time
+    /// simulated. Ignored unless `elapsed_s` is finite and non-negative.
+    pub fn correct_elapsed(&mut self, elapsed_s: f64) {
+        if elapsed_s.is_finite() && elapsed_s >= 0.0 {
+            // What the frames gained against what they asked for, each smoothed over about thirty
+            // frames before the ratio is taken: the GPU's count arrives some frames late and in whole
+            // macro steps, so a single frame often gains nothing and the next several frames' worth.
+            let asked = self.last_step.seconds();
+            if asked > 0.0 {
+                let gained = (elapsed_s - (self.elapsed_s - asked)).max(0.0);
+                self.asked_smoothed = 0.97 * self.asked_smoothed + 0.03 * asked;
+                self.gained_smoothed = 0.97 * self.gained_smoothed + 0.03 * gained;
+                self.reached = (self.gained_smoothed / self.asked_smoothed).clamp(0.0, 1.0) as f32;
+            }
+            self.corrected = true;
+            self.elapsed_s = elapsed_s;
+        }
+    }
+
     /// Simulated seconds per real second.
     #[inline]
     pub fn scale(&self) -> f32 {
         self.scale
+    }
+
+    /// The simulated seconds per real second actually being reached: [`scale`](Self::scale), or
+    /// less when the GPU physics cannot keep up and the scene runs in slow motion. Smoothed over
+    /// about ten frames.
+    #[inline]
+    pub fn reached_scale(&self) -> f32 {
+        self.scale * self.reached
     }
 
     /// Set the scale, clamped into `[MIN_TIME_SCALE, MAX_TIME_SCALE]`.

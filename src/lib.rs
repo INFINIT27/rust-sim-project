@@ -134,8 +134,8 @@ pub use crate::projects::interstellar::solar_system::{
 // Re-export the public scene API at the crate root so consumers can write
 // `physics_sandbox::{Body, Scene, ...}` per the design's `Example Usage`.
 pub use crate::core::scene::{
-    moon_primary, Aabb, Body, BodyId, CollisionSettings, Color, DVec3, Material, Pose, Prop, Quat,
-    Scene, Tillotson, Vec3,
+    moon_primary, Aabb, Body, BodyId, CollisionSettings, Color, DVec3, Material, PlanetModel, Pose,
+    Prop, Quat, Scene, Tillotson, Vec3,
 };
 
 // Cross-layer constants: the unit scale, the shipped scene's configuration, and
@@ -198,13 +198,18 @@ pub use crate::spacecraft::guidance::{
 pub use crate::spacecraft::lambert::lambert;
 // GPU physics: stepping scenes made of particles on the GPU.
 pub use crate::compute::constants::{
-    DEFAULT_OPENING_ANGLE, GPU_LEAF_SIZE, GPU_PHYSICS_ENV, GPU_WORKGROUP_SIZE, MAX_OPENING_ANGLE,
-    MIN_OPENING_ANGLE,
+    DEFAULT_OPENING_ANGLE, GPU_FRAME_TIME_TARGET_SECONDS, GPU_LEAF_SIZE, GPU_MAX_TIME_BINS,
+    GPU_MIN_SUBSTEP_BUDGET, GPU_NEIGHBOUR_STEP_RATIO, GPU_PHYSICS_ENV, GPU_PROFILE_ENV,
+    GPU_PROFILE_WINDOW_FRAMES, GPU_READBACK_INTERVAL_FRAMES, GPU_TIME_BIN_HEADROOM,
+    GPU_WORKGROUP_SIZE, MAX_OPENING_ANGLE, MIN_OPENING_ANGLE,
 };
 pub use crate::compute::device::{gpu_physics_enabled, gpu_physics_enabled_by, GpuDevice};
 pub use crate::compute::particles::{
     can_step_on_gpu, morton_order, GpuParticles, GpuSolver, GravitySolver, NeighbourSearch,
     PARTICLES_SHADER,
+};
+pub use crate::compute::profiler::{
+    gpu_profile_enabled, gpu_profile_enabled_by, GpuPhase, GpuProfile, GPU_PHASES,
 };
 // Configuration files: `config/*.toml`, read once at startup into the resources above.
 pub use crate::config::constants::{
@@ -238,18 +243,23 @@ pub use crate::collision::resolve::{resolve_contacts, substep_count};
 // The second contact response: a black hole takes what it touches.
 pub use crate::collision::absorb::absorb_contacts;
 pub use crate::collision::aggregate::{
-    contact_clusters, impact_outcome, lattice_points, lattice_spacing_m, particle_body,
-    particle_radius_m, ImpactOutcome, ParticleBody,
+    contact_clusters, hydrostatic_profile, impact_outcome, lattice_points, lattice_spacing_m,
+    layered_particle_body, particle_body, particle_radius_m, ImpactOutcome, LayeredBody,
+    ParticleBody, PlanetProfile,
 };
 pub use crate::collision::collision::{
-    apply_contact_forces, contact_is_simulated, merge_contacts, particle_energy, push_contacts,
-    shortest_contact_seconds, smoothing_length_m, CollisionEvent, ContactPass, ParticleEnergy,
+    apply_contact_forces, contact_is_simulated, fluid_courant_seconds, fluid_radius_m,
+    fluid_smoothing_m, merge_contacts, particle_energy, push_contacts, shortest_contact_seconds,
+    smoothing_length_m, CollisionEvent, ContactPass, ParticleEnergy,
 };
 
 // The `collision` layer's tuning surface: hull shape, narrow phase, response.
 pub use crate::collision::constants::{
     EDGE_AXIS_BUDGET, MAX_SUBSTEPS, MAX_SUBSTEP_DISPLACEMENT_UNITS, MIN_AXIS_LENGTH,
-    NORMAL_TIE_TOLERANCE, PLANE_THICKNESS_UNITS, SPHERE_SUBDIVISIONS, SURFACE_EPSILON_UNITS,
+    NORMAL_TIE_TOLERANCE, PLANE_THICKNESS_UNITS, SPHERE_SUBDIVISIONS, SPH_COURANT,
+    SPH_MAX_SMOOTHING_FRACTION, SPH_MIN_SMOOTHING_FRACTION, SPH_SMOOTHING_FACTOR,
+    SPH_SOUND_SPEED_FLOOR_FRACTION, SPH_VISCOSITY_ALPHA, SPH_VISCOSITY_BETA, SPH_VISCOSITY_EPSILON,
+    SURFACE_EPSILON_UNITS,
 };
 
 // Re-export the render-bridge surface so consumers can write
@@ -407,9 +417,14 @@ pub use crate::ui::hud::{hud_shown, toggle_hud_system, HudPlugin, HudVisibility}
 // `physics_sandbox::gravitational_constant_calculator(..)` and
 // `physics_sandbox::GRAVITATIONAL_CONSTANT` without naming the layer.
 pub use crate::physics_utils::physics_constants::{
-    BASALT_TILLOTSON_A, BASALT_TILLOTSON_B, BASALT_TILLOTSON_E0_J_KG, DISRUPTION_COEFFICIENT,
-    DISRUPTION_REFERENCE_DENSITY_KG_M3, DISRUPTION_VELOCITY_EXPONENT, FCC_PACKING_FRACTION,
-    GRAVITATIONAL_CONSTANT, STANDARD_GRAVITY_M_S2, SUPERCATASTROPHIC_EXPONENT,
+    BASALT_TILLOTSON_A, BASALT_TILLOTSON_ALPHA, BASALT_TILLOTSON_B, BASALT_TILLOTSON_BETA,
+    BASALT_TILLOTSON_BULK_A_PA, BASALT_TILLOTSON_BULK_B_PA, BASALT_TILLOTSON_E0_J_KG,
+    BASALT_TILLOTSON_ECV_J_KG, BASALT_TILLOTSON_EIV_J_KG, BASALT_TILLOTSON_RHO0_KG_M3,
+    DISRUPTION_COEFFICIENT, DISRUPTION_REFERENCE_DENSITY_KG_M3, DISRUPTION_VELOCITY_EXPONENT,
+    FCC_PACKING_FRACTION, GRAVITATIONAL_CONSTANT, IRON_TILLOTSON_A, IRON_TILLOTSON_ALPHA,
+    IRON_TILLOTSON_B, IRON_TILLOTSON_BETA, IRON_TILLOTSON_BULK_A_PA, IRON_TILLOTSON_BULK_B_PA,
+    IRON_TILLOTSON_E0_J_KG, IRON_TILLOTSON_ECV_J_KG, IRON_TILLOTSON_EIV_J_KG,
+    IRON_TILLOTSON_RHO0_KG_M3, STANDARD_GRAVITY_M_S2, SUPERCATASTROPHIC_EXPONENT,
     SUPERCATASTROPHIC_ONSET,
 };
 // Soft contact: a contact resolved as a force, for bodies simulated as particles.
@@ -420,7 +435,8 @@ pub use crate::physics_utils::soft_contact::{
 // Hot rock: the Tillotson thermal pressure and the smoothing kernel that makes it a force.
 pub use crate::physics_utils::thermal::{
     cubic_spline_gradient, cubic_spline_kernel, particle_density, sphere_moment_of_inertia,
-    tillotson_thermal_pressure,
+    tillotson_cold_energy, tillotson_pressure, tillotson_sound_speed, tillotson_thermal_pressure,
+    TillotsonParameters,
 };
 // Planetary impacts: escape speed, impact energy, and what survives.
 pub use crate::physics_utils::impacts::{

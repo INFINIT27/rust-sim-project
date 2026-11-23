@@ -61,7 +61,7 @@ use crate::time::constants::{
 };
 use crate::time::observer::ObserverClock;
 use crate::time::simulation::SimulationClock;
-use crate::ui::constants::{MAX_DISTANCE_ROWS, MAX_PROP_ROWS};
+use crate::ui::constants::{MAX_DISTANCE_ROWS, MAX_PROP_ROWS, SCALE_REACHED_SHOWN_BELOW};
 
 /// Bevy plugin that adds a read-only `bevy_egui` debug overlay to the
 /// `App`.
@@ -162,9 +162,17 @@ pub fn clock_lines(simulation: &SimulationClock, observer: &ObserverClock) -> Ve
         "running"
     };
 
+    // When the physics cannot keep up with the scale (the GPU runs the scene in slow motion), say
+    // what it is reaching: asking for more then does nothing until the detail is lowered.
+    let reached = simulation.reached_scale();
+    let behind = if state == "running" && reached < SCALE_REACHED_SHOWN_BELOW * simulation.scale() {
+        format!("  (reaching x{reached:.2e}: the physics is at its limit)")
+    } else {
+        String::new()
+    };
     vec![
         format!(
-            "sim   {:.3e} s  ({})   x{:.3e}",
+            "sim   {:.3e} s  ({})   x{:.3e}{behind}",
             elapsed_sim,
             human_duration(elapsed_sim),
             simulation.scale()
@@ -376,15 +384,13 @@ pub fn distance_lines(scene: &Scene) -> Vec<String> {
     let props: Vec<_> = scene.iter().collect();
 
     let mut lines = Vec::new();
-    let mut pairs_seen = 0usize;
-
-    for (index, (id_a, prop_a)) in props.iter().enumerate() {
+    // Only the rows shown are visited; the pairs left out are counted, not walked. Walking all
+    // `n(n-1)/2` to count them cost `52 ms` a frame at `22,000` particles and `1.3 s` at `110,000`.
+    'rows: for (index, (id_a, prop_a)) in props.iter().enumerate() {
         for (id_b, prop_b) in props.iter().skip(index + 1) {
-            pairs_seen += 1;
             if lines.len() >= MAX_DISTANCE_ROWS {
-                continue;
+                break 'rows;
             }
-
             let separation_units = (prop_b.body.center() - prop_a.body.center()).length();
             lines.push(format!(
                 "#{}-#{}: {:.4e} m",
@@ -395,7 +401,9 @@ pub fn distance_lines(scene: &Scene) -> Vec<String> {
         }
     }
 
-    let omitted = pairs_seen.saturating_sub(lines.len());
+    let n = props.len();
+    let pairs = n * n.saturating_sub(1) / 2;
+    let omitted = pairs.saturating_sub(lines.len());
     if omitted > 0 {
         lines.push(format!("... and {} more pair(s)", omitted));
     }
@@ -438,6 +446,8 @@ pub fn distance_lines(scene: &Scene) -> Vec<String> {
 ///   and we fall back to `"(no camera)"` strings for translation and
 ///   rotation rather than panicking. This mirrors the same defensive
 ///   pattern used in `free_fly_camera_system`.
+// A Bevy system takes its resources as arguments; the GPU pass timer's made it eight.
+#[allow(clippy::too_many_arguments)]
 pub fn debug_overlay_system(
     mut contexts: EguiContexts,
     scene: Res<Scene>,
@@ -446,7 +456,13 @@ pub fn debug_overlay_system(
     observer: Res<ObserverClock>,
     camera: Query<&Transform, With<Camera3d>>,
     controllers: Query<(&FreeFlyController, Option<&CameraLock>)>,
+    gpu: Option<Res<crate::compute::particles::GpuParticles>>,
 ) {
+    // The GPU pass timer's rows, while it is on (`RGA_GPU_PROFILE`).
+    let profile_rows = gpu
+        .as_deref()
+        .and_then(crate::compute::particles::GpuParticles::profile)
+        .map(crate::compute::profiler::GpuProfile::lines);
     // FPS comes from the *observer* clock's raw delta: frames per real second is the
     // only useful reading, and it must not be affected by the simulation being paused
     // or rescaled.
@@ -494,6 +510,12 @@ pub fn debug_overlay_system(
         ui.label(experiment_row);
         ui.label(format!("FPS: {:.1}", fps));
         ui.label(format!("props: {}", prop_count));
+        if let Some(rows) = &profile_rows {
+            ui.separator();
+            for row in rows {
+                ui.label(egui::RichText::new(row).monospace());
+            }
+        }
 
         // The two clocks, side by side. This is the row that makes the split legible:
         // the experiment's elapsed time is not the observer's, and their ratio is the

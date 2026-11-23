@@ -9,6 +9,7 @@
 //! | --- | --- |
 //! | [`device`] | [`device::GpuDevice`]: finding a GPU (or not), and the `RGA_GPU_PHYSICS` switch. |
 //! | [`particles`] | [`particles::GpuParticles`]: the stepper, and `particles.wgsl`, its kernel. |
+//! | [`profiler`] | [`profiler::GpuProfile`]: the GPU pass timer, from timestamp queries (`RGA_GPU_PROFILE`). |
 //! | [`constants`] | The workgroup size and the switch's name. |
 //!
 //! The app uses it when it can and falls back to the CPU when it cannot: no GPU, the switch off, a
@@ -25,3 +26,4 @@
 pub mod constants;
 pub mod device;
 pub mod particles;
+pub mod profiler;

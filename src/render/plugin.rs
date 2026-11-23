@@ -137,12 +137,44 @@ impl PhysicsBackend {
 pub struct GpuPhysicsPlugin;
 
 impl Plugin for GpuPhysicsPlugin {
-    fn build(&self, app: &mut App) {
+    fn build(&self, _app: &mut App) {}
+
+    /// After Bevy's renderer has made its device (`RenderPlugin::finish`), so the physics runs on
+    /// it and the renderer can draw the physics' particle buffer. Without a renderer (a headless
+    /// app) it makes a device of its own.
+    fn finish(&self, app: &mut App) {
+        let shared = (
+            app.world()
+                .get_resource::<bevy::render::renderer::RenderDevice>(),
+            app.world()
+                .get_resource::<bevy::render::renderer::RenderQueue>(),
+            app.world()
+                .get_resource::<bevy::render::renderer::RenderAdapterInfo>(),
+        );
+        let from_render = match shared {
+            (Some(device), Some(queue), Some(info)) => Some(GpuParticles::new(
+                crate::compute::device::GpuDevice::from_render(
+                    device.clone(),
+                    queue.clone(),
+                    (*info.0).clone(),
+                ),
+            )),
+            _ => None,
+        };
         let backend = if !gpu_physics_enabled() {
             PhysicsBackend::Cpu("RGA_GPU_PHYSICS is off")
-        } else if let Some(gpu) = GpuParticles::request() {
+        } else if let Some(mut gpu) = from_render.or_else(GpuParticles::request) {
             let name = gpu.describe();
             bevy::log::info!("physics: particle scenes step on the GPU, {name}");
+            if crate::compute::profiler::gpu_profile_enabled() {
+                if gpu.set_profiling(true) {
+                    bevy::log::info!("physics: GPU pass timer on");
+                } else {
+                    bevy::log::warn!(
+                        "physics: GPU pass timer asked for, but {name} cannot write timestamps"
+                    );
+                }
+            }
             app.insert_resource(gpu);
             PhysicsBackend::Gpu(name)
         } else {
@@ -294,6 +326,8 @@ impl Plugin for ScenePlugin {
         }
         if app.is_plugin_added::<bevy::render::RenderPlugin>() {
             app.add_plugins(MaterialPlugin::<BodyMaterial>::default());
+            // Particles kept on the GPU are drawn from the physics buffer.
+            app.add_plugins(crate::render::gpu_particles::GpuParticleRenderPlugin);
         }
 
         app.add_systems(Startup, spawn_scene_entities);
@@ -373,6 +407,8 @@ fn to_bevy_color(c: Color) -> BevyColor {
 ///   line system here would pull in rendering concerns this task
 ///   doesn't own; the thin-rod approximation keeps `spawn_scene_entities`
 ///   purely a bundle-spawner while still producing something visible.
+// A Bevy system: each argument is a resource it reads.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_scene_entities(
     mut commands: Commands,
     scene: Res<Scene>,
@@ -381,6 +417,7 @@ pub fn spawn_scene_entities(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<BodyMaterial>>,
     mut shared: Local<ParticleAssets>,
+    gpu: Option<Res<GpuParticles>>,
 ) {
     // Camera: framed on the two-body pair, which now starts 30 units apart.
     //
@@ -452,9 +489,14 @@ pub fn spawn_scene_entities(
     // `MirroredBody(id)`. Mesh + material are built per-variant so the
     // `transform_from` scale convention holds (see doc comment above).
     //
+    // Particles the GPU keeps are drawn from its buffer (`gpu_particles`), not as entities.
+    let gpu_draws = crate::render::gpu_particles::gpu_draws_particles(gpu.as_deref(), &scene);
     // Only `prop.body` is read here: a prop's velocity and mass are simulation
     // state with no visual representation, so the render world never sees them.
     for (id, prop) in scene.iter() {
+        if gpu_draws && crate::render::gpu_particles::is_gpu_drawn(prop) {
+            continue;
+        }
         spawn_mirror(
             &mut commands,
             &mut meshes,
@@ -787,6 +829,7 @@ pub fn sync_mirror_entities_system(
     mut materials: ResMut<Assets<BodyMaterial>>,
     mirrored: Query<(Entity, &MirroredBody)>,
     mut shared: Local<ParticleAssets>,
+    gpu: Option<Res<GpuParticles>>,
 ) {
     // One pass over the entities into a set, so both directions below are O(n): with a planet built
     // from thousands of particles a `Vec::contains` here made every frame O(n²).
@@ -808,7 +851,13 @@ pub fn sync_mirror_entities_system(
         }
     }
 
+    // Particles the GPU keeps are drawn from its buffer (`gpu_particles`), not as entities; if the
+    // GPU is lost they are spawned here on the next frame.
+    let gpu_draws = crate::render::gpu_particles::gpu_draws_particles(gpu.as_deref(), &scene);
     for (id, prop) in scene.iter() {
+        if gpu_draws && crate::render::gpu_particles::is_gpu_drawn(prop) {
+            continue;
+        }
         if !live.contains(&id) {
             spawn_mirror(
                 &mut commands,
@@ -920,15 +969,21 @@ pub fn advance_clocks_system(
 /// computed between frames. When a powered rocket is flying, the mission flies it before every
 /// substep, since its engine and its `f64` state are not the scene's to integrate. See
 /// [`Scene::step_steered`] and `Mission::steer`.
+// A Bevy system: each argument is a resource it reads.
+#[allow(clippy::too_many_arguments)]
 pub fn step_scene_system(
-    clock: Res<SimulationClock>,
+    mut clock: ResMut<SimulationClock>,
     mut scene: ResMut<Scene>,
     trails: Option<ResMut<Trails>>,
     trail_config: Option<Res<TrailConfig>>,
     mut mission: Option<ResMut<Mission>>,
     collision: Option<Res<CollisionSettings>>,
     (gpu, solver): (Option<ResMut<GpuParticles>>, Option<Res<GpuSolver>>),
+    real_time: Option<Res<Time>>,
+    // The clock's time when the GPU took the scene: its simulated time since then is added to it.
+    mut gpu_started_at: Local<f64>,
 ) {
+    let real_time = real_time.map_or(0.0, |time| time.delta_seconds());
     // The detail the menu last set, for any impact this step. Compared first so a scene whose
     // setting has not changed is not written to for nothing.
     if let Some(collision) = collision {
@@ -937,22 +992,38 @@ pub fn step_scene_system(
         }
     }
 
-    // A scene made only of particles goes to the GPU when there is one: every substep of the frame
-    // runs there, and the scene comes back once, at the end. Trails and the mission then see the
-    // frame's end rather than each substep, which for a cloud of particles is as fine as a trail
-    // needs. Anything the GPU cannot step, or a read-back that failed, falls through to the CPU.
+    // A scene made only of particles lives on the GPU: uploaded once (again only when the scene is
+    // replaced), advanced there every frame without waiting, drawn from the GPU's buffer
+    // (`gpu_particles`), and copied back into the CPU's scene every few frames for what reads it
+    // (the overlay, trails, the mission). Anything the GPU cannot step, or a lost GPU, falls through
+    // to the CPU, from the last copy.
     if let Some(mut gpu) = gpu {
         if let Some(solver) = solver {
             gpu.solver = *solver;
         }
-        if can_step_on_gpu(&scene) && gpu.step(&mut scene, clock.last_step()).is_some() {
-            if let (Some(mut trails), Some(config)) = (trails, trail_config) {
-                trails.record_from(&scene, &config);
+        if can_step_on_gpu(&scene) && !gpu.has_failed() {
+            let step = clock.last_step();
+            if !gpu.holds(&scene) && gpu.upload(&scene) {
+                // The scene as uploaded is at the start of this frame's step.
+                *gpu_started_at = clock.elapsed_seconds() - step.seconds();
             }
-            if let Some(mission) = mission.as_mut() {
-                mission.observe(&scene);
+            let advanced = step.is_zero() || gpu.advance(step, real_time);
+            if advanced {
+                // The time shown is the time simulated: behind the clock when the GPU runs slow.
+                if let Some(simulated) = gpu.simulated_seconds() {
+                    clock.correct_elapsed(*gpu_started_at + simulated);
+                }
+                if gpu.sync(&mut scene) {
+                    if let (Some(mut trails), Some(config)) = (trails, trail_config) {
+                        trails.record_from(&scene, &config);
+                    }
+                    if let Some(mission) = mission.as_mut() {
+                        mission.observe(&scene);
+                    }
+                }
+                return;
             }
-            return;
+            gpu.release();
         }
     }
     // The mission flies a powered rocket before each substep (see `Mission::steer`), and both

@@ -31,8 +31,8 @@ egui, no window.
 | `contact.rs` | Narrow phase: `Contact`, `contact_between_meshes`, `contact_between_props`, `aabbs_overlap`. |
 | `resolve.rs` | Bounce response: `resolve_contacts`, `substep_count`. Restitution and Coulomb friction from the pair's combined `Material`. |
 | `absorb.rs` | Absorption: `absorb_contacts`. A prop touching one whose `absorbs` flag is set is merged into it — mass and momentum conserved — and **leaves the scene**. |
-| `collision.rs` | Collision between bodies held together by gravity. **Simulated contact:** `apply_contact_forces` (or `push_contacts` then `ContactPass::heat`, which `Scene::step` uses), `contact_is_simulated`, `shortest_contact_seconds`, `smoothing_length_m`, and the energy ledger `particle_energy` / `ParticleEnergy`. Particles whose material has a modulus push apart through a damped spring on every substep they overlap, friction spins them, and with a thermal material what the contacts dissipate becomes heat that pushes back: how two planets built from particles deform, merge and throw material off. **Instant merge:** `merge_contacts`, `CollisionEvent`, `gravity_dominated`. Two single-sphere planets that cannot escape each other become one in a step, with debris from the Leinhardt & Stewart law above their escape speed. |
-| `aggregate.rs` | Bodies made of particles: `ParticleBody`, `particle_body` (a planet as a face-centred cubic pile of equal particles), `lattice_spacing_m`, `lattice_points`, `particle_radius_m`, `contact_clusters`, which groups touching particles into bodies (through a grid, O(n)), and `impact_outcome` / `ImpactOutcome`, which sorts a collision's mass into the largest body, the disk, what falls back and what escapes. |
+| `collision.rs` | Collision between bodies held together by gravity. **Simulated contact:** `apply_contact_forces` (or `push_contacts` then `ContactPass::heat`, which `Scene::step` uses), `contact_is_simulated`, `shortest_contact_seconds`, `smoothing_length_m`, and the energy ledger `particle_energy` / `ParticleEnergy`. **Fluid particles** (`Material::fluid`): the same pass measures their density from their neighbours (`measure_fluid_densities`, through the grid `neighbour_pairs`), and they push by the Tillotson pressure and Monaghan's artificial viscosity, by smoothed-particle hydrodynamics; `fluid_smoothing_m`, `fluid_radius_m`, `fluid_courant_seconds` (their time step). Particles whose material has a modulus push apart through a damped spring on every substep they overlap, friction spins them, and with a thermal material what the contacts dissipate becomes heat that pushes back: how two planets built from particles deform, merge and throw material off. **Instant merge:** `merge_contacts`, `CollisionEvent`, `gravity_dominated`. Two single-sphere planets that cannot escape each other become one in a step, with debris from the Leinhardt & Stewart law above their escape speed. |
+| `aggregate.rs` | Bodies made of particles: `ParticleBody`, `particle_body` (a rubble planet as a face-centred cubic pile of equal particles), `hydrostatic_profile` / `PlanetProfile` (a fluid planet's structure: density and energy with depth for an iron core under a rock mantle), `LayeredBody`, `layered_particle_body` (a fluid planet of equal-mass particles following that profile), `lattice_spacing_m`, `lattice_points`, `particle_radius_m`, `contact_clusters`, which groups touching particles into bodies (through a grid, O(n)), and `impact_outcome` / `ImpactOutcome`, which sorts a collision's mass into the largest body, the disk, what falls back and what escapes. |
 
 ## The hull comes from the prop's *physical* size, not its drawn one
 
@@ -402,13 +402,80 @@ discrete element method (Cundall & Strack 1979), in `physics_utils::soft_contact
   `0.5` to within three percent. The thermal pressure needs no criterion of its own: its sound
   speed, a few km/s, is far below the springs' `45 km/s`.
 - **On the GPU.** A scene made only of particles is stepped on the GPU when there is one
-  ([`compute/`](../compute/README.md)), with these same laws in `f32`; the CPU path here is the
-  reference it is tested against.
+  ([`compute/`](../compute/README.md)), with these same laws in `f32`. Since 2026-11-22 the GPU path is
+  the simulation and this CPU code a frozen fallback (see that README's rules).
 - **The merge is not written anywhere.** In `experiment_1` the two piles meet at the time the
   free-fall law gives (`14.0 h`), the impactor flattens into the Earth, a tenth of the binding
   energy becomes heat, and the merged body comes to rest, puffed up by its heat.
 
-**Checked against Leinhardt & Stewart.** `impact_outcome` sorts the mass into the largest body,
+### Fluid planets, built (2026-11-22): smoothed-particle hydrodynamics
+
+The rubble planets above are elastic solids: springs of `1e13 Pa` and Byerlee's friction resist a
+change of shape as hard as a change of volume, so the Earth's tide, `78%` of the impactor's own
+surface gravity at contact in `experiment_8`, strains them by about `0.25%`. A planet resists
+compression but at its own scale hardly resists a change of shape at all: it flows. Fluid planets
+(the default; `PlanetModel::Fluid`, switchable under Configuration > Collisions) are built that way.
+
+- **The material.** `Material::fluid(eos)`: no modulus, no friction, no spring. Its particles
+  push on each other only through their pressure, the whole Tillotson equation of state
+  (`physics_utils::thermal::tillotson_pressure`), at a density measured from their neighbours.
+- **The density.** `ρ_a = Σ_b f_ab·m_b·W(r_ab, h̄)`, the standard summation of smoothed-particle
+  hydrodynamics with Woolfson's correction `f_ab = ρ₀_a/ρ₀_b` between materials, in its simplest
+  form, the ratio of the reference densities (Woolfson, M. M. (2007), The development of structure
+  in planetary interiors with smoothed particle hydrodynamics, *MNRAS* 376(3), 1173–1178,
+  doi:10.1111/j.1365-2966.2007.11498.x). Without it, basalt next to the core counted the iron's
+  mass as its own and read `40%` too dense, at `170 GPa`, and blew the planet apart. The smoothing
+  length follows the density, `1.3·(m/ρ)^(1/3)`, within `0.5` and `3` times its value at `ρ₀`.
+- **The forces.** The symmetric pressure force and the artificial viscosity of Monaghan, J. J.
+  (1992), Smoothed particle hydrodynamics, *Annual Review of Astronomy and Astrophysics* 30,
+  543–574, doi:10.1146/annurev.aa.30.090192.002551, with `α = 1`, `β = 2`, `ε = 0.01`. Equal and
+  opposite along the line between the two, so momentum and angular momentum are conserved exactly.
+- **The energy.** Each particle's own pressure does its compression work (`du_a/dt = Σ m_b·(P_a/ρ_a²
+  + Π/2)·v_ab·∇W_a`), booked at the mean of the substep's velocities like the rubble's heat, so the
+  books balance: `Prop::heat_j_kg` is the whole specific internal energy, compression included.
+- **The time step.** Monaghan's (1992) Courant condition, `0.3·h/(c·(1 + 1.2α) + 1.2β·max|μ|)`,
+  beside the other criteria (`fluid_courant_seconds`).
+- **Gravity softened over half a particle spacing** (`FLUID_SOFTENING_SPACINGS`). Fluid particles,
+  unlike rubble, can pass close to each other where the pressure has fallen to zero at the surface,
+  and at the giant impact's `100 km` softening two of them swung past in an orbit of seconds that
+  no step followed: a fluid Earth of `200` particles gained most of its binding energy in four
+  hours. Softened over half a spacing, it holds its energy to `2e-4` of the binding energy.
+- **The planets** (`aggregate.rs`). `hydrostatic_profile` integrates `dm/dr = 4πr²ρ` and
+  `dP/dr = −Gmρ/r²` outward from a bisected central pressure, an iron core of `30%` of the mass
+  (Canup, R. M. (2004), Simulations of a late lunar-forming impact, *Icarus* 168(2), 433–456,
+  doi:10.1016/j.icarus.2003.09.028) under a basalt mantle, each material on its cold isentrope
+  (`du/dρ = P/ρ²` from `ρ₀`, as WoMa builds planets: https://github.com/srbonilla/WoMa). The radius
+  is an outcome: the Earth comes out at `6,400 km` (true: `6,371`), its core at `3,154 km`
+  (PREM: `3,480`; Tillotson iron is more compressible than the real core, and `30%` is under the
+  Earth's `32%`), its centre at `446 GPa` (PREM: `364`). `layered_particle_body` lays a lattice in a
+  unit sphere and moves each shell of it to the radius enclosing its share of the mass, then
+  measures each particle's density as the simulation will and puts its energy on the cold
+  isentrope at that density, so pressure and energy agree from the first step.
+- **What it gives.** A fluid Earth settles once, its outermost particles sinking `15%` at `200`
+  particles and `10%` at `2,000` (the kernel reaching past the surface reads the outer mantle light),
+  and then stays one quiet body: energy within `2e-4` of the binding energy over four hours at `200`,
+  `3e-5` at `2,000`. In `experiment_8` the impactor is stretched towards the Earth before it hits:
+  from `1.000` to `1.296` in the ratio of its extent along the line between them to across it, at
+  `1.1` contact distances, at `2,000` particles a planet, and to `1.307` at `20,000`, so the stretch
+  does not depend on the detail; rubble goes from `1.000` to `1.010`
+  (`a_fluid_impactor_is_stretched_by_the_tide_before_it_hits_and_a_rubble_one_is_not`). After a
+  day the disk holds `0.79%` of the mass at `20,000` particles (`1.0%` at twelve hours), about `0.7`
+  lunar masses, just under the one to two of Canup (2004); rubble put `1.6%` there (`notes.md`).
+  A particle is drawn at the radius of its measured density but never larger than in uncompressed
+  rock (`fluid_radius_m`): drawn at the density a hot or flung particle measures, it swelled up to
+  `5.7` times and the merged body read `16,700 km` across, hiding most of the disk.
+- **On the GPU** with both neighbour searches (`density_pairs`, `density_tree`); it agrees with the
+  CPU to `55 m` and `4e-5` in density over ten minutes, and then the two part ways as a chaotic
+  system's runs do.
+- **Not built.** Ruiz-Bonilla, S., Borrow, J., Eke, V. R., Kegerreis, J. A., Massey, R. J.,
+  Sandnes, T. D. & Teodoro, L. F. A. (2022), Dealing with density discontinuities in planetary SPH
+  simulations, *MNRAS*, doi:10.1093/mnras/stac857 (arXiv:2202.00472): the better treatment of the
+  surface and the core's edge, which would remove most of the surface settling. A second-order
+  (kick-drift-kick) integrator. A temperature profile at build (the planets start at zero
+  temperature). A Balsara switch to keep the viscosity out of shear.
+
+**Checked against Leinhardt & Stewart** (the figures in this paragraph are the rubble model's; the
+fluid model's are in `CHANGELOG.md`). `impact_outcome` sorts the mass into the largest body,
 what is bound and falling back, what orbits clear of the surface (the disk), and what escapes.
 
 - **At the escape speed** (`experiment_1`) their simulations find a perfect merge, and so does

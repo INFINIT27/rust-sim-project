@@ -109,7 +109,9 @@
 use crate::collision::constants::{
     DEBRIS_MAX_SPEED_FACTOR, DEBRIS_MIN_MASS_FRACTION, DEBRIS_MIN_SPEED_FACTOR,
     DEBRIS_SPAWN_CLEARANCE, GRAVITY_DOMINATED_SPECIFIC_ENERGY_J_KG, SOFT_CONTACT_MAX_DAMPING_RATIO,
-    SOFT_CONTACT_MAX_NEIGHBOURS, SPH_SMOOTHING_FACTOR,
+    SOFT_CONTACT_MAX_NEIGHBOURS, SPH_COURANT, SPH_MAX_SMOOTHING_FRACTION,
+    SPH_MIN_SMOOTHING_FRACTION, SPH_SMOOTHING_FACTOR, SPH_SOUND_SPEED_FLOOR_FRACTION,
+    SPH_VISCOSITY_ALPHA, SPH_VISCOSITY_BETA, SPH_VISCOSITY_EPSILON,
 };
 use crate::constants::METRES_PER_UNIT;
 use crate::core::constants::MAX_DEBRIS_FRAGMENTS;
@@ -124,7 +126,8 @@ use crate::physics_utils::soft_contact::{
     contact_duration, contact_stiffness, damping_ratio_for_restitution, spring_dashpot_force,
 };
 use crate::physics_utils::thermal::{
-    cubic_spline_gradient, particle_density, sphere_moment_of_inertia, tillotson_thermal_pressure,
+    cubic_spline_gradient, cubic_spline_kernel, particle_density, sphere_moment_of_inertia,
+    tillotson_pressure, tillotson_sound_speed, tillotson_thermal_pressure, TillotsonParameters,
 };
 use crate::time::simulation::TimeStep;
 
@@ -135,7 +138,7 @@ use crate::time::simulation::TimeStep;
 /// merged by [`merge_contacts`]; [`apply_contact_forces`] alone acts on them.
 pub fn contact_is_simulated(a: &Prop, b: &Prop) -> bool {
     let soft = |prop: &Prop| {
-        prop.material.modulus_pa.is_some()
+        prop.material.is_particle()
             && prop.responds_to_forces()
             && matches!(prop.body, Body::Sphere { .. })
     };
@@ -176,6 +179,12 @@ pub fn contact_is_simulated(a: &Prop, b: &Prop) -> bool {
 ///
 ///   The work the pressure does comes out of the heat, so it creates no energy, and the force is
 ///   along `n`, so it creates no angular momentum. See [`crate::physics_utils::thermal`].
+///
+/// **Fluid particles** ([`Material::fluid`]) take none of the above. Their density is measured from
+/// their neighbours first (`fluid_densities`), and two of them push on each other by their
+/// Tillotson pressures and Monaghan's artificial viscosity (`fluid_pair_forces`), with each
+/// particle's own pressure doing its compression work in the heat pass. A fluid and a rubble
+/// particle feel only each other's gravity.
 ///
 /// Every force is evaluated from the state at the start of the substep, so the order the pairs are
 /// visited in changes nothing. [`particle_energy`] is the ledger it keeps: kinetic, spin, gravity,
@@ -237,7 +246,7 @@ pub fn push_contacts(props: &mut [Prop], step: TimeStep) -> ContactPass {
         return pass;
     }
 
-    let particles: Vec<Particle> = props
+    let mut particles: Vec<Particle> = props
         .iter()
         .enumerate()
         .filter(|(_, prop)| contact_is_simulated(prop, prop))
@@ -246,15 +255,32 @@ pub fn push_contacts(props: &mut [Prop], step: TimeStep) -> ContactPass {
     if particles.len() < 2 {
         return pass;
     }
+    measure_fluids(&mut particles, props);
 
     // Every neighbouring pair's forces and torques, from the start of the substep.
     let mut force = vec![DVec3::ZERO; particles.len()];
     let mut torque = vec![DVec3::ZERO; particles.len()];
-    for a in 0..particles.len() {
-        for b in a + 1..particles.len() {
+    // Only pairs within reach can act on each other; the grid finds them in O(n), in the same
+    // order the loop over every pair visited them.
+    let points: Vec<DVec3> = particles.iter().map(|p| p.position).collect();
+    let reach: Vec<f64> = particles
+        .iter()
+        .map(|p| p.fluid.map_or_else(|| p.reach(), |f| f.smoothing))
+        .collect();
+    {
+        for (a, b) in neighbour_pairs(&points, &reach) {
             let (first, second) = (&particles[a], &particles[b]);
-            let materials = (&props[first.index].material, &props[second.index].material);
-            let Some(pair) = pair_forces(first, second, materials, dt) else {
+            let pair = match (first.fluid.is_some(), second.fluid.is_some()) {
+                (true, true) => fluid_pair_forces(first, second),
+                (false, false) => {
+                    let materials = (&props[first.index].material, &props[second.index].material);
+                    pair_forces(first, second, materials, dt)
+                }
+                // A fluid and a rubble particle feel only each other's gravity: every scene is
+                // built of one model.
+                _ => None,
+            };
+            let Some(pair) = pair else {
                 continue;
             };
             force[a] -= pair.force_on_b;
@@ -346,9 +372,19 @@ impl ContactPass {
                 heating[*a] += 0.5 * work;
                 heating[*b] += 0.5 * work;
             }
+            if let Some(fluid) = &pair.fluid {
+                // The energy equation of smoothed-particle hydrodynamics (Monaghan 1992):
+                // `du_a/dt = Σ m_b·(P_a/ρ_a² + Π/2)·v_ab·∇W_a`, and `b`'s own pressure for `b`.
+                // Each particle's own pressure does its compression work, so cold rock squeezed
+                // next to hot rock heats only by its own pressure; the two shares add up to the
+                // work the pair's force did, so the books balance.
+                let rate = (velocity_a - velocity_b).dot(fluid.gradient_at_a);
+                heating[*a] += (fluid.own_a + 0.5 * fluid.viscous) * rate;
+                heating[*b] += (fluid.own_b + 0.5 * fluid.viscous) * rate;
+            }
         }
         for (particle, heat) in self.particles.iter().zip(&heating) {
-            if particle.thermal.is_some() {
+            if particle.thermal.is_some() || particle.fluid.is_some() {
                 let prop = &mut props[particle.index];
                 prop.heat_j_kg = (prop.heat_j_kg + heat * dt / particle.mass).max(0.0);
             }
@@ -366,8 +402,25 @@ struct Particle {
     radius: f64,
     mass: f64,
     inertia: f64,
-    /// The thermal pressure, smoothing length and density, when the material has a thermal part.
+    /// The thermal pressure, smoothing length and density, when the material has a thermal part
+    /// and is not a fluid.
     thermal: Option<Hot>,
+    /// The state of a fluid particle, when the material is one.
+    fluid: Option<Fluid>,
+}
+
+/// What a fluid particle brings to smoothed-particle hydrodynamics. The density, pressure and
+/// sound speed are measured by [`measure_fluids`] at the start of each substep.
+#[derive(Copy, Clone, Debug)]
+struct Fluid {
+    eos: TillotsonParameters,
+    /// The specific internal energy `u`, J/kg.
+    energy: f64,
+    /// The smoothing length, from the last substep's density.
+    smoothing: f64,
+    density: f64,
+    pressure: f64,
+    sound: f64,
 }
 
 /// What a particle with a thermal material brings to the pressure.
@@ -382,20 +435,43 @@ impl Particle {
     fn of(index: usize, prop: &Prop) -> Option<Self> {
         let radius = physical_radius_m(prop)?;
         let mass = f64::from(prop.mass_kg);
-        let thermal = prop.material.thermal.map(|eos| {
-            let density = particle_density(mass, radius);
-            Hot {
-                pressure: tillotson_thermal_pressure(
+        let fluid = match (prop.material.fluid, prop.material.thermal) {
+            (true, Some(eos)) => {
+                let eos = eos.parameters();
+                let density = if prop.density_kg_m3 > 0.0 {
+                    prop.density_kg_m3
+                } else {
+                    eos.reference_density_kg_m3
+                };
+                Some(Fluid {
+                    eos,
+                    energy: prop.heat_j_kg,
+                    smoothing: fluid_smoothing_m(mass, density, &eos),
                     density,
-                    prop.heat_j_kg,
-                    f64::from(eos.a),
-                    f64::from(eos.b),
-                    f64::from(eos.reference_energy_j_kg),
-                ),
-                density,
-                smoothing: smoothing_length_m(radius),
+                    pressure: tillotson_pressure(density, prop.heat_j_kg, &eos),
+                    sound: fluid_sound_speed(density, prop.heat_j_kg, &eos),
+                })
             }
-        });
+            _ => None,
+        };
+        let thermal = prop
+            .material
+            .thermal
+            .filter(|_| fluid.is_none())
+            .map(|eos| {
+                let density = particle_density(mass, radius);
+                Hot {
+                    pressure: tillotson_thermal_pressure(
+                        density,
+                        prop.heat_j_kg,
+                        f64::from(eos.a),
+                        f64::from(eos.b),
+                        f64::from(eos.reference_energy_j_kg),
+                    ),
+                    density,
+                    smoothing: smoothing_length_m(radius),
+                }
+            });
         Some(Self {
             index,
             position: prop.body.center() * METRES_PER_UNIT,
@@ -405,6 +481,7 @@ impl Particle {
             mass,
             inertia: sphere_moment_of_inertia(mass, radius),
             thermal,
+            fluid,
         })
     }
 
@@ -414,6 +491,411 @@ impl Particle {
         self.thermal
             .map_or(self.radius, |hot| hot.smoothing.max(self.radius))
     }
+}
+
+/// The smoothing length of a fluid particle of mass `mass_kg` at density `density_kg_m3`, in
+/// metres: [`SPH_SMOOTHING_FACTOR`] times its spacing `(m/ρ)^(1/3)`, kept within
+/// [`SPH_MIN_SMOOTHING_FRACTION`] and [`SPH_MAX_SMOOTHING_FRACTION`] of its value at the material's
+/// reference density. A density that is not positive counts as the reference density.
+///
+/// So a particle keeps about the same number of neighbours compressed in a core as thrown into a
+/// disk. The kernel reaches twice this.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::{fluid_smoothing_m, TillotsonParameters, SPH_SMOOTHING_FACTOR};
+///
+/// let rock = TillotsonParameters {
+///     reference_density_kg_m3: 2700.0,
+///     bulk_a_pa: 2.67e10,
+///     bulk_b_pa: 2.67e10,
+///     a: 0.5,
+///     b: 1.5,
+///     reference_energy_j_kg: 4.87e8,
+///     incipient_vaporisation_j_kg: 4.72e6,
+///     complete_vaporisation_j_kg: 1.82e7,
+///     alpha: 5.0,
+///     beta: 5.0,
+/// };
+/// let mass = 2700.0; // one cubic metre at the reference density
+/// assert!((fluid_smoothing_m(mass, 2700.0, &rock) - SPH_SMOOTHING_FACTOR).abs() < 1e-12);
+/// // Eight times denser: half the spacing.
+/// assert!((fluid_smoothing_m(mass, 8.0 * 2700.0, &rock) - 0.5 * SPH_SMOOTHING_FACTOR).abs() < 1e-12);
+/// // In near-vacuum, capped.
+/// assert!(fluid_smoothing_m(mass, 1e-6, &rock) <= 3.0 * SPH_SMOOTHING_FACTOR + 1e-12);
+/// ```
+pub fn fluid_smoothing_m(mass_kg: f64, density_kg_m3: f64, eos: &TillotsonParameters) -> f64 {
+    let reference = SPH_SMOOTHING_FACTOR * (mass_kg / eos.reference_density_kg_m3).cbrt();
+    let density = if density_kg_m3.is_finite() && density_kg_m3 > 0.0 {
+        density_kg_m3
+    } else {
+        eos.reference_density_kg_m3
+    };
+    let smoothing = SPH_SMOOTHING_FACTOR * (mass_kg / density).cbrt();
+    smoothing.clamp(
+        SPH_MIN_SMOOTHING_FRACTION * reference,
+        SPH_MAX_SMOOTHING_FRACTION * reference,
+    )
+}
+
+/// The radius a fluid particle of mass `mass_kg` is drawn with at density `density_kg_m3`, in
+/// metres, for a material of reference density `reference_density_kg_m3`: the radius of a sphere in
+/// a face-centred cubic packing of the density, the inverse of [`particle_density`], but never
+/// larger than at the reference density.
+///
+/// So a compressed planet's particles just touch, drawn smaller in its core; but a particle that has
+/// expanded, or been thrown clear of its neighbours, keeps the size it has in uncompressed rock. Its
+/// measured density there is not a size: alone in space a particle measures only itself, `1/186` of
+/// rock's density at the largest smoothing length, and drawn at that density it would be `5.7` times
+/// too large, which after an impact puffed every hot and flung particle up and, through
+/// [`crate::collision::aggregate::impact_outcome`], made the merged body read `16,700 km` across.
+/// Only drawing and the clustering of bodies ([`crate::collision::aggregate`]) read this radius;
+/// the forces read the smoothing length.
+///
+/// # Examples
+///
+/// ```
+/// use physics_sandbox::{fluid_radius_m, particle_density};
+///
+/// // Compressed: the packing radius of that density.
+/// let radius = fluid_radius_m(1.0e20, 3000.0, 2700.0);
+/// assert!((particle_density(1.0e20, radius) / 3000.0 - 1.0).abs() < 1e-12);
+/// // Expanded: no larger than in uncompressed rock.
+/// assert_eq!(fluid_radius_m(1.0e20, 10.0, 2700.0), fluid_radius_m(1.0e20, 2700.0, 2700.0));
+/// ```
+pub fn fluid_radius_m(mass_kg: f64, density_kg_m3: f64, reference_density_kg_m3: f64) -> f64 {
+    let density = density_kg_m3.max(reference_density_kg_m3);
+    (3.0 * mass_kg * FCC_PACKING_FRACTION / (4.0 * std::f64::consts::PI * density)).cbrt()
+}
+
+/// The sound speed of a fluid particle: [`tillotson_sound_speed`], floored at
+/// [`SPH_SOUND_SPEED_FLOOR_FRACTION`] of the material's bulk sound speed `√(A/ρ₀)` so that thin
+/// vapour still carries a signal.
+fn fluid_sound_speed(density: f64, energy: f64, eos: &TillotsonParameters) -> f64 {
+    let floor =
+        SPH_SOUND_SPEED_FLOOR_FRACTION * (eos.bulk_a_pa / eos.reference_density_kg_m3).sqrt();
+    tillotson_sound_speed(density, energy, eos).max(floor)
+}
+
+/// Every pair of `points` closer than the sum of their `reach`es, each pair once as `(a, b)` with
+/// `a < b`, found through a grid of cells as wide as the largest summed reach: O(n) for a body of
+/// particles, where testing every pair would be O(n²).
+pub(crate) fn neighbour_pairs(points: &[DVec3], reach: &[f64]) -> Vec<(usize, usize)> {
+    let largest = reach.iter().copied().fold(0.0_f64, f64::max);
+    let cell = 2.0 * largest;
+    let mut pairs = Vec::new();
+    if !(cell.is_finite() && cell > 0.0) {
+        return pairs;
+    }
+    let key = |p: DVec3| {
+        let c = (p / cell).floor();
+        (c.x as i64, c.y as i64, c.z as i64)
+    };
+    let mut grid: std::collections::HashMap<(i64, i64, i64), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, point) in points.iter().enumerate() {
+        grid.entry(key(*point)).or_default().push(i);
+    }
+    for (a, point) in points.iter().enumerate() {
+        let (x, y, z) = key(*point);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let Some(members) = grid.get(&(x + dx, y + dy, z + dz)) else {
+                        continue;
+                    };
+                    for &b in members {
+                        if b <= a {
+                            continue;
+                        }
+                        let limit = reach[a] + reach[b];
+                        if (points[b] - *point).length_squared() < limit * limit {
+                            pairs.push((a, b));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pairs.sort_unstable();
+    pairs
+}
+
+/// What [`fluid_densities`] needs of a fluid particle, in SI.
+#[derive(Copy, Clone, Debug)]
+struct FluidSample {
+    position: DVec3,
+    mass: f64,
+    smoothing: f64,
+    /// The material's reference density, for Woolfson's factor.
+    reference_density: f64,
+}
+
+/// The SPH density of each fluid particle in `particles`, in kg/m³:
+///
+/// ```text
+/// ρ_a = m_a·W(0, h_a) + Σ_b f_ab·m_b·W(r_ab, h̄),    f_ab = ρ₀_a / ρ₀_b
+/// ```
+///
+/// The factor `f_ab` is the density correction of Woolfson, M. M. (2007), The development of
+/// structure in planetary interiors with smoothed particle hydrodynamics, *Monthly Notices of the
+/// Royal Astronomical Society* 376(3), 1173–1178, doi:10.1111/j.1365-2966.2007.11498.x, in its
+/// simplest form: Woolfson's factor is the ratio of the two materials' densities at the same pressure
+/// and temperature, and here it is the ratio at zero pressure, exact at the surface and treating the
+/// two as equally compressed below it. Between two particles of one material it is `1`, the
+/// standard summation. Without it, rock next to iron counts the iron's mass as its own and reads
+/// far too dense: at 200 particles a planet's mantle at the core read 40% over its true density and
+/// blew the planet apart. The more accurate treatment of Ruiz-Bonilla, S. et al. (2022), Dealing
+/// with density discontinuities in planetary SPH simulations, *MNRAS*, doi:10.1093/mnras/stac857,
+/// is not built.
+fn fluid_densities(particles: &[FluidSample]) -> Vec<f64> {
+    let points: Vec<DVec3> = particles.iter().map(|p| p.position).collect();
+    let reach: Vec<f64> = particles.iter().map(|p| p.smoothing).collect();
+    let mut density: Vec<f64> = particles
+        .iter()
+        .map(|p| p.mass * cubic_spline_kernel(0.0, p.smoothing))
+        .collect();
+    for (a, b) in neighbour_pairs(&points, &reach) {
+        let (first, second) = (particles[a], particles[b]);
+        let distance = (second.position - first.position).length();
+        let weight = cubic_spline_kernel(distance, 0.5 * (first.smoothing + second.smoothing));
+        density[a] += second.mass * weight * (first.reference_density / second.reference_density);
+        density[b] += first.mass * weight * (second.reference_density / first.reference_density);
+    }
+    density
+}
+
+/// Measure the density of every fluid prop in `props` from its neighbours (as
+/// [`apply_contact_forces`] does at the start of each substep), write it to
+/// [`Prop::density_kg_m3`], and redraw each at the radius it gives. O(n) through a grid.
+///
+/// For a planet builder: a fluid particle's internal energy has to agree with the density the
+/// simulation will measure for it, not only with the density it was meant to have, or its first
+/// steps do work it never had the energy for (see [`crate::collision::aggregate`]).
+pub fn measure_fluid_densities(props: &mut [Prop]) {
+    let fluid: Vec<(usize, FluidSample)> = props
+        .iter()
+        .enumerate()
+        .filter(|(_, prop)| prop.material.fluid)
+        .filter_map(|(index, prop)| {
+            let eos = prop.material.thermal?.parameters();
+            let mass = f64::from(prop.mass_kg);
+            let density = if prop.density_kg_m3 > 0.0 {
+                prop.density_kg_m3
+            } else {
+                eos.reference_density_kg_m3
+            };
+            Some((
+                index,
+                FluidSample {
+                    position: prop.body.center() * METRES_PER_UNIT,
+                    mass,
+                    smoothing: fluid_smoothing_m(mass, density, &eos),
+                    reference_density: eos.reference_density_kg_m3,
+                },
+            ))
+        })
+        .collect();
+    let described: Vec<FluidSample> = fluid.iter().map(|f| f.1).collect();
+    for ((index, sample), density) in fluid.iter().zip(fluid_densities(&described)) {
+        let prop = &mut props[*index];
+        prop.density_kg_m3 = density;
+        if let Body::Sphere { radius, .. } = &mut prop.body {
+            *radius = (fluid_radius_m(sample.mass, density, sample.reference_density)
+                / METRES_PER_UNIT) as f32;
+        }
+    }
+}
+
+/// Measure the density of every fluid particle from its neighbours ([`fluid_densities`]), and from
+/// it its pressure and sound speed; write the density back to the prop (for the next substep's
+/// smoothing length) and redraw the prop at the radius it gives.
+fn measure_fluids(particles: &mut [Particle], props: &mut [Prop]) {
+    let (fluid, described): (Vec<usize>, Vec<FluidSample>) = particles
+        .iter()
+        .enumerate()
+        .filter_map(|(i, particle)| {
+            let state = particle.fluid?;
+            Some((
+                i,
+                FluidSample {
+                    position: particle.position,
+                    mass: particle.mass,
+                    smoothing: state.smoothing,
+                    reference_density: state.eos.reference_density_kg_m3,
+                },
+            ))
+        })
+        .unzip();
+    if fluid.is_empty() {
+        return;
+    }
+    let measured = fluid_densities(&described);
+    let mut density = vec![0.0; particles.len()];
+    for (&i, value) in fluid.iter().zip(measured) {
+        density[i] = value;
+    }
+    for &i in &fluid {
+        let particle = &mut particles[i];
+        let Some(state) = particle.fluid.as_mut() else {
+            continue;
+        };
+        state.density = density[i];
+        state.pressure = tillotson_pressure(state.density, state.energy, &state.eos);
+        state.sound = fluid_sound_speed(state.density, state.energy, &state.eos);
+        particle.radius = fluid_radius_m(
+            particle.mass,
+            state.density,
+            state.eos.reference_density_kg_m3,
+        );
+        let prop = &mut props[particle.index];
+        prop.density_kg_m3 = state.density;
+        if let Body::Sphere { radius, .. } = &mut prop.body {
+            *radius = (particle.radius / METRES_PER_UNIT) as f32;
+        }
+    }
+}
+
+/// The pressure and artificial-viscosity forces between two fluid neighbours, or `None` when they
+/// are not neighbours. With `h̄` the mean smoothing length and `∇W_a` the kernel's gradient at `a`:
+///
+/// ```text
+/// F_a = −m_a·m_b·(P_a/ρ_a² + P_b/ρ_b² + Π_ab)·∇W_a,     F_b = −F_a
+/// Π_ab = (−α·c̄·μ + β·μ²)/ρ̄,  μ = h̄·(v_ab·r_ab)/(r² + ε·h̄²)    when v_ab·r_ab < 0, else 0
+/// ```
+///
+/// Monaghan, J. J. (1992), Smoothed particle hydrodynamics, *Annual Review of Astronomy and
+/// Astrophysics* 30, 543–574, doi:10.1146/annurev.aa.30.090192.002551: the symmetric pressure force
+/// (equal and opposite, along the line between the two, so momentum and angular momentum are
+/// conserved exactly) and the viscosity, with [`SPH_VISCOSITY_ALPHA`], [`SPH_VISCOSITY_BETA`] and
+/// [`SPH_VISCOSITY_EPSILON`].
+fn fluid_pair_forces(a: &Particle, b: &Particle) -> Option<PairForces> {
+    let (fluid_a, fluid_b) = (a.fluid?, b.fluid?);
+    let offset = b.position - a.position;
+    let reach = fluid_a.smoothing + fluid_b.smoothing;
+    let distance_squared = offset.length_squared();
+    if distance_squared >= reach * reach {
+        return None;
+    }
+    let distance = distance_squared.sqrt();
+    if distance.is_nan() || distance <= 0.0 {
+        return None;
+    }
+    let smoothing = 0.5 * reach;
+    let slope = cubic_spline_gradient(distance, smoothing);
+    if slope >= 0.0 {
+        return None;
+    }
+    let normal = offset / distance;
+    // ∇W at a, from b: the slope along the unit vector from b to a.
+    let gradient_at_a = -normal * slope;
+    let masses = a.mass * b.mass;
+    let own_a = masses * fluid_a.pressure / (fluid_a.density * fluid_a.density);
+    let own_b = masses * fluid_b.pressure / (fluid_b.density * fluid_b.density);
+    // `v_ab·r_ab`, negative when they approach.
+    let approach = (a.velocity - b.velocity).dot(-offset);
+    let viscous = if approach < 0.0 {
+        let mu = smoothing * approach
+            / (distance_squared + SPH_VISCOSITY_EPSILON * smoothing * smoothing);
+        let sound = 0.5 * (fluid_a.sound + fluid_b.sound);
+        let density = 0.5 * (fluid_a.density + fluid_b.density);
+        masses * (-SPH_VISCOSITY_ALPHA * sound * mu + SPH_VISCOSITY_BETA * mu * mu) / density
+    } else {
+        0.0
+    };
+    let arm_a = distance * a.radius / (a.radius + b.radius);
+    Some(PairForces {
+        touching: distance < a.radius + b.radius,
+        normal,
+        arm_a,
+        arm_b: distance - arm_a,
+        // The force on a is −(…)·∇W_a, away from b when the bracket is positive; b takes the reverse.
+        force_on_b: gradient_at_a * (own_a + own_b + viscous),
+        torque_on_a: DVec3::ZERO,
+        torque_on_b: DVec3::ZERO,
+        dashpot: 0.0,
+        friction_on_b: DVec3::ZERO,
+        pressure: None,
+        fluid: Some(FluidPair {
+            own_a,
+            own_b,
+            viscous,
+            gradient_at_a,
+        }),
+    })
+}
+
+/// The time step the fluid particles of `props` allow, in seconds, or `None` when there are none:
+/// the Courant condition of Monaghan (1992),
+///
+/// ```text
+/// dt = C · min_a h_a / (c_a·(1 + 1.2·α) + 1.2·β·max_b |μ_ab|)
+/// ```
+///
+/// with [`SPH_COURANT`] for `C`, each particle's smoothing length and sound speed from its last
+/// measured density, and `μ_ab` the artificial viscosity's `μ` (see `fluid_pair_forces`) for each
+/// approaching neighbour `b`. `μ` peaks at about five times the approach speed for two particles a
+/// tenth of a smoothing length apart, so it, not the approach speed, sets the step in a shock.
+/// O(n), through the neighbour grid.
+///
+/// What [`crate::collision::resolve::substep_count`] divides each step by, beside its other
+/// criteria.
+pub fn fluid_courant_seconds(props: &[Prop]) -> Option<f64> {
+    struct State {
+        position: DVec3,
+        velocity: DVec3,
+        smoothing: f64,
+        sound: f64,
+    }
+    let fluids: Vec<State> = props
+        .iter()
+        .filter(|prop| prop.material.fluid && prop.responds_to_forces())
+        .filter_map(|prop| {
+            let eos = prop.material.thermal?.parameters();
+            let density = if prop.density_kg_m3 > 0.0 {
+                prop.density_kg_m3
+            } else {
+                eos.reference_density_kg_m3
+            };
+            Some(State {
+                position: prop.body.center() * METRES_PER_UNIT,
+                velocity: prop.velocity_units_s * METRES_PER_UNIT,
+                smoothing: fluid_smoothing_m(f64::from(prop.mass_kg), density, &eos),
+                sound: fluid_sound_speed(density, prop.heat_j_kg, &eos),
+            })
+        })
+        .collect();
+    if fluids.is_empty() {
+        return None;
+    }
+    let points: Vec<DVec3> = fluids.iter().map(|f| f.position).collect();
+    let reach: Vec<f64> = fluids.iter().map(|f| f.smoothing).collect();
+    let mut largest_mu = vec![0.0_f64; fluids.len()];
+    for (a, b) in neighbour_pairs(&points, &reach) {
+        let (first, second) = (&fluids[a], &fluids[b]);
+        let offset = first.position - second.position;
+        let approach = (first.velocity - second.velocity).dot(offset);
+        if approach >= 0.0 {
+            continue;
+        }
+        let smoothing = 0.5 * (first.smoothing + second.smoothing);
+        let mu = (smoothing * approach
+            / (offset.length_squared() + SPH_VISCOSITY_EPSILON * smoothing * smoothing))
+            .abs();
+        largest_mu[a] = largest_mu[a].max(mu);
+        largest_mu[b] = largest_mu[b].max(mu);
+    }
+    fluids
+        .iter()
+        .zip(&largest_mu)
+        .filter_map(|(fluid, mu)| {
+            let signal =
+                fluid.sound * (1.0 + 1.2 * SPH_VISCOSITY_ALPHA) + 1.2 * SPH_VISCOSITY_BETA * mu;
+            let dt = SPH_COURANT * fluid.smoothing / signal;
+            (dt.is_finite() && dt > 0.0).then_some(dt)
+        })
+        .reduce(f64::min)
 }
 
 /// What a pair of neighbours does to each other over a substep, and what the heat pass needs.
@@ -434,6 +916,20 @@ struct PairForces {
     friction_on_b: DVec3,
     /// `m_a·m_b·(P_a/ρ_a² + P_b/ρ_b²)` and the kernel gradient at `a`, for two hot neighbours.
     pressure: Option<(f64, DVec3)>,
+    /// The terms of two fluid neighbours' forces, for their energy equation.
+    fluid: Option<FluidPair>,
+}
+
+/// What [`ContactPass::heat`] needs of two fluid neighbours: their forces' three terms and the
+/// kernel gradient at `a`.
+struct FluidPair {
+    /// `m_a·m_b·P_a/ρ_a²`.
+    own_a: f64,
+    /// `m_a·m_b·P_b/ρ_b²`.
+    own_b: f64,
+    /// `m_a·m_b·Π_ab`, zero unless they approach.
+    viscous: f64,
+    gradient_at_a: DVec3,
 }
 
 /// The smoothing length of a particle of radius `radius_m` packed in a face-centred cubic lattice:
@@ -476,6 +972,7 @@ fn pair_forces(
         dashpot: 0.0,
         friction_on_b: DVec3::ZERO,
         pressure: None,
+        fluid: None,
     };
 
     let overlap = a.radius + b.radius - distance;

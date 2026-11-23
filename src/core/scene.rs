@@ -20,6 +20,7 @@ use crate::constants::{
     EARTH_MASS_KG, METRES_PER_UNIT, TWO_BODY_HEIGHT_UNITS, TWO_BODY_SEPARATION_UNITS,
     TWO_BODY_VISUAL_RADIUS_UNITS,
 };
+use crate::physics_utils::thermal::TillotsonParameters;
 use crate::time::simulation::TimeStep;
 
 pub use crate::core::integrator::GravityModel;
@@ -309,13 +310,36 @@ pub struct Material {
     /// hot neighbours push each other apart (see [`crate::collision::collision::apply_contact_forces`]).
     /// That is what lets a giant impact throw material off. Read per particle, never combined.
     pub thermal: Option<Tillotson>,
+    /// Whether the material is a **fluid**: a particle of it has no modulus, no friction and no
+    /// spring, and its [`thermal`](Self::thermal) equation of state is used whole, with a density
+    /// measured from its neighbours, by smoothed-particle hydrodynamics (see
+    /// [`crate::collision::collision::apply_contact_forces`]). `false`, the default. Set with
+    /// [`Material::fluid`], which also sets the equation of state; a fluid material without one is
+    /// invalid.
+    ///
+    /// That is how a planet behaves at its own scale: it resists compression with its pressure and
+    /// barely resists a change of shape at all, so a tide stretches it.
+    pub fluid: bool,
 }
 
-/// The thermal part of the Tillotson equation of state for a material: what
-/// [`crate::physics_utils::thermal::tillotson_thermal_pressure`] needs besides the density and the
-/// heat.
+/// The Tillotson equation of state of a material, stored in `f32` as a [`Material`] keeps all its
+/// numbers: the ten parameters of
+/// [`crate::physics_utils::thermal::TillotsonParameters`], with the same
+/// names and units.
+///
+/// - A **rubble** particle (one with a modulus) uses only `a`, `b` and `reference_energy_j_kg`,
+///   for its thermal pressure at reference density
+///   ([`crate::physics_utils::thermal::tillotson_thermal_pressure`]).
+/// - A **fluid** particle ([`Material::fluid`]) uses all ten
+///   ([`crate::physics_utils::thermal::tillotson_pressure`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Tillotson {
+    /// `ρ₀`: the density at which the cold material is under no pressure, kg/m³.
+    pub reference_density_kg_m3: f32,
+    /// `A`: the linear coefficient of the cold compression curve, Pa.
+    pub bulk_a_pa: f32,
+    /// `B`: the quadratic coefficient of the cold compression curve, Pa.
+    pub bulk_b_pa: f32,
     /// The Grüneisen parameter of rock heated far past `reference_energy_j_kg`. Dimensionless.
     pub a: f32,
     /// Added to `a`, the Grüneisen parameter of cool rock. Dimensionless.
@@ -323,17 +347,36 @@ pub struct Tillotson {
     /// `E₀`: the heat over which the Grüneisen parameter falls from `a + b` to `a`, in joules per
     /// kilogram.
     pub reference_energy_j_kg: f32,
+    /// `E_iv`: the energy at which expanded material begins to vaporise, J/kg.
+    pub incipient_vaporisation_j_kg: f32,
+    /// `E_cv`: the energy at which expanded material is completely vaporised, J/kg.
+    pub complete_vaporisation_j_kg: f32,
+    /// `α`: the decay rate of the thermal term's solid part in expanded vapour. Dimensionless.
+    pub alpha: f32,
+    /// `β`: the decay rate of the cold term in expanded vapour. Dimensionless.
+    pub beta: f32,
 }
 
 impl Tillotson {
-    /// All three finite, `a` and `b` non-negative, and `E₀` positive.
+    /// The parameters in `f64`, as the laws in [`crate::physics_utils::thermal`] take them.
+    pub fn parameters(&self) -> TillotsonParameters {
+        TillotsonParameters {
+            reference_density_kg_m3: f64::from(self.reference_density_kg_m3),
+            bulk_a_pa: f64::from(self.bulk_a_pa),
+            bulk_b_pa: f64::from(self.bulk_b_pa),
+            a: f64::from(self.a),
+            b: f64::from(self.b),
+            reference_energy_j_kg: f64::from(self.reference_energy_j_kg),
+            incipient_vaporisation_j_kg: f64::from(self.incipient_vaporisation_j_kg),
+            complete_vaporisation_j_kg: f64::from(self.complete_vaporisation_j_kg),
+            alpha: f64::from(self.alpha),
+            beta: f64::from(self.beta),
+        }
+    }
+
+    /// Valid as [`TillotsonParameters::is_valid`] says.
     pub fn is_valid(&self) -> bool {
-        self.a.is_finite()
-            && self.b.is_finite()
-            && self.a >= 0.0
-            && self.b >= 0.0
-            && self.reference_energy_j_kg.is_finite()
-            && self.reference_energy_j_kg > 0.0
+        self.parameters().is_valid()
     }
 }
 
@@ -345,6 +388,7 @@ impl Material {
         friction: DEFAULT_FRICTION,
         modulus_pa: None,
         thermal: None,
+        fluid: false,
     };
 
     /// A rigid material with the given restitution and friction. Not validated here; see
@@ -356,6 +400,7 @@ impl Material {
             friction,
             modulus_pa: None,
             thermal: None,
+            fluid: false,
         }
     }
 
@@ -375,8 +420,52 @@ impl Material {
         self
     }
 
-    /// Restitution finite and in `[0, 1]`, friction finite and non-negative, and a modulus, if
-    /// any, finite and positive.
+    /// A **fluid** with the equation of state `eos`: no bounce, no friction, no modulus. Its
+    /// particles meet through their pressure and an artificial viscosity, by smoothed-particle
+    /// hydrodynamics, never through a spring. See [`fluid`](Self::fluid).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use physics_sandbox::{Material, Tillotson};
+    ///
+    /// let basalt = Tillotson {
+    ///     reference_density_kg_m3: 2700.0,
+    ///     bulk_a_pa: 2.67e10,
+    ///     bulk_b_pa: 2.67e10,
+    ///     a: 0.5,
+    ///     b: 1.5,
+    ///     reference_energy_j_kg: 4.87e8,
+    ///     incipient_vaporisation_j_kg: 4.72e6,
+    ///     complete_vaporisation_j_kg: 1.82e7,
+    ///     alpha: 5.0,
+    ///     beta: 5.0,
+    /// };
+    /// let molten = Material::fluid(basalt);
+    /// assert!(molten.is_valid() && molten.is_particle());
+    /// assert_eq!(molten.modulus_pa, None);
+    /// ```
+    #[inline]
+    pub const fn fluid(eos: Tillotson) -> Self {
+        Self {
+            restitution: 0.0,
+            friction: 0.0,
+            modulus_pa: None,
+            thermal: Some(eos),
+            fluid: true,
+        }
+    }
+
+    /// Whether a prop of this material is a particle whose contacts are simulated as forces: it
+    /// has a modulus (a rubble particle, touching through springs) or it is a
+    /// [`fluid`](Self::fluid) (touching through its pressure).
+    #[inline]
+    pub const fn is_particle(&self) -> bool {
+        self.modulus_pa.is_some() || self.fluid
+    }
+
+    /// Restitution finite and in `[0, 1]`, friction finite and non-negative, a modulus, if
+    /// any, finite and positive, and a fluid with an equation of state and no modulus.
     ///
     /// Above `1` a bounce would create energy; below `0` the bodies would pass into each
     /// other. A negative friction would accelerate sliding.
@@ -385,10 +474,12 @@ impl Material {
         let modulus_ok = self
             .modulus_pa
             .is_none_or(|modulus| modulus.is_finite() && modulus > 0.0);
+        let fluid_ok = !self.fluid || (self.thermal.is_some() && self.modulus_pa.is_none());
         (0.0..=1.0).contains(&self.restitution)
             && self.friction.is_finite()
             && self.friction >= 0.0
             && modulus_ok
+            && fluid_ok
             && self.thermal.is_none_or(|thermal| thermal.is_valid())
     }
 
@@ -421,6 +512,7 @@ impl Material {
             },
             // Heat belongs to each particle, not to the contact: never combined.
             thermal: None,
+            fluid: self.fluid && other.fluid,
         }
     }
 }
@@ -468,13 +560,60 @@ pub struct CollisionSettings {
     /// How many bodies the debris of one instant merge is split into. `0` keeps all the mass in the
     /// merged body, which is a perfect merge. At most [`MAX_DEBRIS_FRAGMENTS`].
     pub debris_fragments: u32,
+    /// What a planet built from particles is made of: a fluid with an iron core, or rubble held
+    /// by springs. Read when a scene is **built**, like
+    /// [`particles_per_body`](Self::particles_per_body).
+    pub planet_model: PlanetModel,
+}
+
+/// What a planet built from particles is made of. See [`CollisionSettings::planet_model`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum PlanetModel {
+    /// A fluid, by smoothed-particle hydrodynamics: an iron core under a basalt mantle, in
+    /// hydrostatic equilibrium, each with its whole Tillotson equation of state. It resists
+    /// compression and not a change of shape, as a planet does, so a tide stretches it. The
+    /// default.
+    #[default]
+    Fluid,
+    /// Rubble: a uniform pile of basalt particles touching through damped springs, with
+    /// Byerlee's friction and a thermal pressure. Stiff against tides. The model before fluid
+    /// planets, kept to compare against.
+    Rubble,
+}
+
+impl PlanetModel {
+    /// Both models, in menu order.
+    pub const ALL: [Self; 2] = [Self::Fluid, Self::Rubble];
+
+    /// The model's name in `collision.toml`: `fluid` or `rubble`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fluid => "fluid",
+            Self::Rubble => "rubble",
+        }
+    }
+
+    /// The model a name in `collision.toml` stands for, or `None` for an unknown name.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|model| model.name() == name)
+    }
+
+    /// How the menu shows the model.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Fluid => "Fluid (SPH, iron core)",
+            Self::Rubble => "Rubble (springs)",
+        }
+    }
 }
 
 impl CollisionSettings {
-    /// [`DEFAULT_PARTICLES_PER_BODY`] particles and [`DEFAULT_DEBRIS_FRAGMENTS`] fragments.
+    /// [`DEFAULT_PARTICLES_PER_BODY`] particles, [`DEFAULT_DEBRIS_FRAGMENTS`] fragments, and fluid
+    /// planets.
     pub const DEFAULT: Self = Self {
         particles_per_body: DEFAULT_PARTICLES_PER_BODY,
         debris_fragments: DEFAULT_DEBRIS_FRAGMENTS,
+        planet_model: PlanetModel::Fluid,
     };
 
     /// Both counts inside their ranges.
@@ -674,7 +813,19 @@ pub struct Prop {
     /// Zero from every constructor. Only particles in simulated contact whose material has a
     /// [`thermal`](Material::thermal) part gain heat: the energy their contacts dissipate goes here,
     /// and it is what their thermal pressure is worked out from. Must be finite and non-negative.
+    ///
+    /// For a particle of a [`fluid`](Material::fluid) material it is the whole specific internal
+    /// energy `u` of the equation of state: the heat and the energy stored by compression, which
+    /// the pressure's work moves in and out reversibly.
     pub heat_j_kg: f64,
+    /// The density of a fluid particle, as smoothed-particle hydrodynamics last measured it from
+    /// its neighbours, in kilograms per cubic metre; `0` until it has been measured, and for every
+    /// other prop.
+    ///
+    /// Zero from every constructor; the planet builder sets it to the density of the planet at the
+    /// particle's depth. It sets the particle's smoothing length for the next substep, and is the
+    /// density the scene's ledger and the menu read.
+    pub density_kg_m3: f64,
 }
 
 impl Prop {
@@ -694,6 +845,7 @@ impl Prop {
             material: Material::ELASTIC,
             spin_rad_s: DVec3::ZERO,
             heat_j_kg: 0.0,
+            density_kg_m3: 0.0,
         }
     }
 
@@ -715,6 +867,7 @@ impl Prop {
             material: Material::ELASTIC,
             spin_rad_s: DVec3::ZERO,
             heat_j_kg: 0.0,
+            density_kg_m3: 0.0,
         }
     }
 
@@ -749,6 +902,7 @@ impl Prop {
             material: Material::ELASTIC,
             spin_rad_s: DVec3::ZERO,
             heat_j_kg: 0.0,
+            density_kg_m3: 0.0,
         }
     }
 
@@ -770,6 +924,7 @@ impl Prop {
             material: Material::ELASTIC,
             spin_rad_s: DVec3::ZERO,
             heat_j_kg: 0.0,
+            density_kg_m3: 0.0,
         }
     }
 
@@ -886,6 +1041,8 @@ impl Prop {
             && self.spin_rad_s.is_finite()
             && self.heat_j_kg.is_finite()
             && self.heat_j_kg >= 0.0
+            && self.density_kg_m3.is_finite()
+            && self.density_kg_m3 >= 0.0
     }
 
     /// Speed in world units per second: the magnitude of the velocity vector.
@@ -964,7 +1121,7 @@ impl Prop {
 /// - `next_id` (private): the next `u64` the id allocator will hand out.
 ///   Strictly greater than every id currently stored in `ids` or previously
 ///   returned by a successful `add` on this `Scene`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Scene {
     /// The props currently in the scene, in insertion order.
     pub props: Vec<Prop>,
@@ -1014,6 +1171,30 @@ pub struct Scene {
     /// and then increments `next_id`. Private so the allocator cannot be
     /// reset out from under live `BodyId`s.
     next_id: u64,
+    /// Which set of props this is: a fresh value from [`next_revision`] whenever the scene is built
+    /// or a prop is added or removed. The GPU stepper keeps a scene's particles between frames and
+    /// uploads them again only when this changes. Private so it cannot be set back.
+    revision: u64,
+}
+
+/// Two scenes are equal when their props, bounds, settings and ids are: the revision says which build
+/// a scene came from, not what is in it, so two scenes built alike compare equal.
+impl PartialEq for Scene {
+    fn eq(&self, other: &Self) -> bool {
+        self.props == other.props
+            && self.bounds == other.bounds
+            && self.softening_units == other.softening_units
+            && self.gravity_model == other.gravity_model
+            && self.collision == other.collision
+            && self.ids == other.ids
+            && self.next_id == other.next_id
+    }
+}
+
+/// A value no scene has had before: what [`Scene::revision`] is set to.
+fn next_revision() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Scene {
@@ -1064,6 +1245,7 @@ impl Scene {
             collision: CollisionSettings::DEFAULT,
             ids: Vec::new(),
             next_id: 0,
+            revision: next_revision(),
         }
     }
 
@@ -1118,6 +1300,7 @@ impl Scene {
             collision: CollisionSettings::DEFAULT,
             ids: Vec::new(),
             next_id: 0,
+            revision: next_revision(),
         };
 
         // The ground plane, and the only body in the starter scene. At y = 0
@@ -1296,6 +1479,7 @@ impl Scene {
         // `get` binary-searches `ids`, which this keeps sorted.
         debug_assert!(self.ids.last().is_none_or(|last| *last < id));
         self.ids.push(id);
+        self.revision = next_revision();
         id
     }
 
@@ -1311,6 +1495,11 @@ impl Scene {
     /// the frame's cost once a planet was built from thousands of particles: the render bridge
     /// looks every body up once a frame, which made the frame O(n²).
     #[inline]
+    /// Which set of props this is; see the field's docs. Changes whenever a prop is added or removed.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     pub fn get(&self, id: BodyId) -> Option<&Prop> {
         self.index_of(id).map(|index| &self.props[index])
     }
@@ -1373,6 +1562,7 @@ impl Scene {
         // the overlay's listing and in the `(i, j)` pair order the contact pass walks.
         self.ids.remove(index);
         let prop = self.props.remove(index);
+        self.revision = next_revision();
 
         debug_assert_eq!(
             self.ids.len(),

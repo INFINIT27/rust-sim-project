@@ -11,6 +11,169 @@ one exists. The convention is specified in
 
 ### Added
 
+- **The GPU pass timer** (`compute::profiler`, `RGA_GPU_PROFILE=on`). Before, only whole frames
+  were timed, on the CPU, which could not say where a GPU frame went.
+  - **How it works.** Each group of particle kernels (`GpuPhase`: sort, restore, drift, refit,
+    grid, density, pairs, gravity, tree, contacts, kick) is encoded as its own compute pass.
+    Timestamps are written at both ends of each pass (`wgpu::Features::TIMESTAMP_QUERY`; Bevy's
+    device asks for every feature the adapter has, and the headless device now asks for this one),
+    read back without waiting, and averaged per frame.
+  - **What else it counts.** `activate` sums the particles active in each tick into
+    `Control::active_sum`, which took the place of the padding word.
+  - **Where it shows.** Its rows appear in the debug overlay. While benchmarking, a `GPU_PROFILE`
+    line follows the `BENCH` line, averaged over the same window.
+  - **Cost.** Off, the advance encodes exactly as before. On, results are bit-identical
+    (`the_pass_timer_leaves_the_simulation_as_it_was`).
+  - **Measurement harness.** `measure_gpu_profile`.
+  - **What it found** at `200,000` particles a planet on an RTX 4070 SUPER (table in
+    `src/compute/README.md`):
+    - the frame fits only one tick, and `74%` of the particles are active in each tick;
+    - gravity, the neighbour forces and the density are `97–99%` of the GPU time;
+    - the sort, drift, refit and cell list together are about `2%`;
+    - Barnes–Hut at `θ = 0.9` with the grid is `60 ms` a tick, against `110 ms` with `θ = 0.5` and
+      the tree.
+
+- **Particle scenes live on the GPU** (performance step 2). Measured on an RTX 4070 SUPER with
+  fluid `experiment_8` at `20,000` particles a planet (`22,116` bodies) and the tree solver: the
+  app went from `2` to `41` frames a second.
+  - **Uploaded once, kept there** (`GpuParticles::upload`, `holds`, `advance`, `sync`): the scene
+    is uploaded when it is built or replaced (`Scene::revision`, a stamp that changes whenever a
+    prop is added or removed) and stepped on the GPU every frame without waiting. The CPU's scene
+    is copied back every `GPU_READBACK_INTERVAL_FRAMES` (`15`) frames, asynchronously, for the
+    overlay, trails and analysis.
+  - **The GPU chooses each substep's length** (kernels `limits`, `plan`, `begin`; the `Control`
+    record): every particle's step limit (`substep_count`'s criteria, the fluid Courant step with
+    its viscosity `μ` taken in the density pass) reduced on the GPU, so the CPU's substep count
+    (`87 ms` a frame at `22,000` bodies, mostly the fluid Courant step) is gone from the frame.
+  - **The GPU sorts the particles** (kernels `bounds`, `morton`, `bitonic`, `gather`): a bitonic sort
+    (Batcher, K. E. (1968), Sorting networks and their applications, *AFIPS Spring Joint Computer
+    Conference* 32, 307–314, doi:10.1145/1468075.1468121) of 30-bit Morton keys every frame,
+    replacing the CPU's sort and upload.
+  - **The renderer draws the physics buffer** (`render::gpu_particles`, `assets/shaders/gpu_particles.wgsl`):
+    the physics runs on Bevy's own device (`GpuDevice::from_render`, made in
+    `GpuPhysicsPlugin::finish`), and one instanced draw of a sphere per particle reads the buffer,
+    in place of an entity per particle. `drift` writes each particle's world position for it.
+  - **A frame budget instead of a collapse** (`GPU_FRAME_TIME_TARGET_SECONDS`, `1/30 s`): the host
+    queues only as many substeps as fit the budget from their measured cost; when the GPU cannot
+    keep up with the time scale the simulation runs in slow motion (at most a frame's time carried
+    over, the rest dropped) and the clock is corrected to the time simulated
+    (`SimulationClock::correct_elapsed`, from `GpuParticles::simulated_seconds`). Before, a slow
+    frame asked for a longer step and more substeps, and the frame rate fell to `2` a second.
+  - The overlay's distance rows no longer walk every pair to count the ones not shown (performance
+    step 1): `52 ms` a frame at `22,000` bodies, `1.3 s` at `110,000`, now `0.1 ms`.
+- **A cell list for the neighbour search** (performance step 4): `neighbours = "grid"`, also in the
+  menu. A grid of cells the size of the largest reach, hashed into buckets (the hash commonly attributed to Teschner, M. et al. (2003), Optimized
+  spatial hashing for collision detection of deformable objects, *Proc. VMV 2003*, 47–54; its
+  primes not checked against the paper's text, which could not be extracted), rebuilt every tick on the GPU by a counting sort with a multi-level prefix sum;
+  each active particle visits the `125` cells around it. Exact: it finds what every-pair testing
+  finds (`0.25 m` apart after a minute of fluid planets, from summation order). It pays only once
+  gravity is cheap: `63` against `55 ms` with direct gravity at `20,000` particles a planet, `210`
+  against `234 ms` with Barnes–Hut at `θ = 0.9` and `100,000`. The forces and the heat were fused
+  into one pass in step 3.
+- **Barnes–Hut with quadrupoles and a cooperative walk** (performance step 5).
+  - **Quadrupole moments** in every tree node, refit every tick (per unit mass, so a planet's
+    `1e38 kg·m²` fits in `f32`), as Bonsai keeps (Bédorf, J., Gaburov, E. & Portegies Zwart, S.
+    (2012), *J. Comput. Phys.* 231(7), 2825–2839, doi:10.1016/j.jcp.2011.12.024, section 3.2): the median force
+    error at `θ = 0.5` falls from `4.3e-3` to `5.2e-4`.
+  - **A cooperative walk** (`gravity_group`): a workgroup's `64` Morton-ordered particles walk the
+    tree together against the box around them, filling shared interaction lists with all their
+    threads, as Bonsai's groups do (Bédorf et al. 2012, sections 2.2 and 3.3); each thread then sums
+    the lists for its particle. Ten times more
+    accurate again (`5.0e-5` at `θ = 0.5`) and faster (`73` against `93 ms` at `20,000`).
+  - Together, Barnes–Hut at `θ = 0.9` with the grid: `42 ms` and `210 ms` a frame at `20,000` and
+    `100,000` particles a planet, against `101` and `667 ms` before steps 3–5, at seven times the
+    accuracy. Barnes–Hut's momentum error in the rubble giant impact falls from `2e-3` to `1e-5` of
+    the impact's, and `experiment_8`'s angular momentum is kept to five digits (it gained `0.33%`).
+  - The tree is still the implicit one over the GPU-sorted Morton order, re-sorted every frame and
+    refit every tick, not a Karras radix tree; see `src/compute/README.md`.
+  - The default solver is unchanged (the exact pair at `θ = 0.5`): changing it changes the shipped
+    `collision.toml`. For big runs, Barnes–Hut at `θ = 0.7` to `0.9` with the grid.
+- **Individual time steps with a kick-drift-kick leapfrog on the GPU** (performance step 3). Each
+  particle steps in a power-of-two multiple of a tick (Springel, V. (2005), The cosmological
+  simulation code GADGET-2, *MNRAS* 364(4), 1105–1134, doi:10.1111/j.1365-2966.2005.09655.x,
+  section 4.2) and is evaluated only when its step ends; macro steps are planned on the GPU. Kernels
+  `tick`, `activate`, `close_kick`, `open_kick`, `limits_first`, `restore_sph`; `kick`, `heat_pairs`
+  and `heat_tree` are gone (the heating is computed in the force pass, three passes a tick instead
+  of four). Measured on an RTX 4070 SUPER, fluid `experiment_8` at `20,000` particles a planet, one
+  frame's simulated time: `55 ms` with direct gravity (from `84 ms`), `92 ms` with the trees (from
+  `101 ms`).
+  - **Saitoh & Makino's time-step limiter** (`GPU_NEIGHBOUR_STEP_RATIO`, `4`: Saitoh, T. R. &
+    Makino, J. (2009), *ApJ* 697(2), L99–L102, doi:10.1088/0004-637X/697/2/L99, section II): without
+    it a particle in a long step answered a contact with a stale force and the rubble giant impact
+    gained `7.9%` of its binding energy; with it, `2.5e-3`. A woken particle's kick is corrected for
+    its shorter step (Durier, F. & Dalla Vecchia, C. (2012), *MNRAS* 419(1), 465–478,
+    doi:10.1111/j.1365-2966.2011.19712.x, appendix D).
+  - **An exact drift**: the position moves by whole multiples of its own `f32` spacing and keeps the
+    remainder beside it. Kahan summation was folded away by the GPU compiler; plain addition left a
+    particle `2.7e8 m` from the origin unmoved at fine steps.
+  - **Second order, measured**: `the_gpu_leapfrog_is_second_order_on_an_orbit` (ratio `4.21`
+    against `4.2` expected). The planets converge at first order (the rubble's friction cap, and,
+    most likely, the SPH terms' kinks).
+  - The GPU no longer agrees with the frozen CPU path to the rounding, since their integrators
+    differ: `740 m` (rubble, an hour) and `7.5 km` (fluid, ten minutes), from `16 m` and `55 m`. The
+    two tests are rescoped to catch a physics mismatch; `the_gpu_and_the_cpu_agree_to_the_rounding_over_an_hour`
+    is renamed `the_gpu_and_the_cpu_agree_over_an_hour`.
+  - Fixed on the way: an advance that adds no time no longer drops what is left of the last one.
+- **Particle simulations are GPU-only** (a rule change): the GPU path is the simulation, built and
+  tested on its own terms; the CPU particle code is a frozen fallback. GPU tests fail without a GPU
+  (CI has lavapipe). See `src/compute/README.md`.
+
+- **Fluid planets: smoothed-particle hydrodynamics with an iron core, the default planet model.**
+  - **Why.** In `experiment_8` the impactor did not stretch towards the Earth before it hit, though
+    the Earth's tide at contact is `78%` of the impactor's own surface gravity. The rubble planets'
+    `1e13 Pa` springs and Byerlee friction make them elastic solids, which that tide strains by about
+    `0.25%`. A planet at its own scale resists compression and hardly resists a change of shape: it
+    flows. Measured now at `2,000` particles a planet: the impactor's ratio of extent along the line
+    to the Earth over across it goes from `1.000` to `1.296` by `1.1` contact distances (`1.307` at
+    `20,000`), against `1.000` to `1.010` for rubble.
+  - **Switchable** (`PlanetModel`, `CollisionSettings::planet_model`): Configuration > Collisions >
+    Planet material, and `planet_model = "fluid" | "rubble"` in `collision.toml`, applied at launch.
+    Rubble is the model before this change, unchanged (its tests pass as they were).
+  - **The equation of state** (`physics_utils::thermal`): `TillotsonParameters`,
+    `tillotson_pressure` (every branch of Melosh 1989, appendix II; no tension),
+    `tillotson_sound_speed`, `tillotson_cold_energy` (the cold isentrope). The full basalt and iron
+    parameter sets (`BASALT_TILLOTSON_*`, `IRON_TILLOTSON_*`), checked in the SWIFT and WoMa codes,
+    which agree on every digit; full citations in `physics_constants.rs`. `Tillotson` gains the seven
+    new parameters; `BASALT_EOS` and `IRON_EOS` in `projects/interstellar/constants.rs`.
+  - **The material** (`Material::fluid`, `Material::is_particle`), and `Prop::density_kg_m3`, the
+    density last measured. For a fluid particle `Prop::heat_j_kg` is the whole internal energy.
+  - **The physics** (`collision::collision`): density by summation with Woolfson's (2007) correction
+    between materials (`measure_fluid_densities`), the symmetric pressure force and Monaghan's (1992)
+    artificial viscosity (`SPH_VISCOSITY_ALPHA` `1`, `_BETA` `2`, `_EPSILON` `0.01`), each particle's
+    own pressure doing its compression work in the heat pass, a smoothing length that follows the
+    density (`fluid_smoothing_m`, `SPH_MIN_SMOOTHING_FRACTION`, `SPH_MAX_SMOOTHING_FRACTION`), and
+    Monaghan's Courant step (`fluid_courant_seconds`, `SPH_COURANT` `0.3`,
+    `SPH_SOUND_SPEED_FLOOR_FRACTION`). Full citations on each.
+  - **The planets** (`collision::aggregate`): `hydrostatic_profile` / `PlanetProfile` (an iron core of
+    `PLANET_CORE_MASS_FRACTION` `30%`, after Canup 2004, under a basalt mantle, each on its cold
+    isentrope), and `LayeredBody` / `layered_particle_body` (equal-mass particles following it, their
+    energy set to agree with the density the simulation measures). The Earth comes out at
+    `6,400 km` (true `6,371`), its core at `3,154 km` (PREM `3,480`), its centre at `446 GPa`.
+    `giant_impact::add_planets` builds both giant impacts this way, cores drawn darker
+    (`PLANET_CORE_SHADE`), with gravity softened over half a particle spacing
+    (`FLUID_SOFTENING_SPACINGS`).
+  - **On the GPU** too: kernels `density_pairs` and `density_tree`, the fluid terms in the force and
+    heat kernels, and the density, smoothing length and drawn radius carried by `drift`. The
+    particle record grows to `32` floats; a fluid-state buffer at binding `7`.
+  - **What a fluid planet does.** It settles once (its outermost particles sink `15%` at `200`
+    particles, `10%` at `2,000`, the standard surface deficit of the method) and then stays one
+    quiet body, with energy held to `2e-4` of the binding energy over four hours at `200` and `3e-5`
+    at `2,000`. In `experiment_8` on the GPU (RTX 4070 SUPER), the impactor
+    is stretched from `1.000` to `1.296` at `2,000` particles a planet and `1.307` at `20,000` by `1.08`
+    contact distances (rubble: `1.012`). At `20,000` the disk holds `1.0%` of the mass twelve hours after
+    the impact and `0.79%` after a day, `0.9` and `0.7` lunar masses (`0.74%` at `2,000`): just under
+    the one to two lunar masses of Canup (2004). The merged body holds `92%`, with `6.5%` bound and
+    still falling back and `0.35%` escaping; rubble at `20,000` puts `1.6%` in the disk with `14%`
+    still falling back. See `notes.md` for what may account for the rest.
+  - **The CPU finds neighbours through a grid** (`neighbour_pairs`), O(n), for both models, in the
+    order the loop over every pair visited them; gravity still sums every pair.
+- **Tests:** the equation of state (`thermal_tests.rs`), the profile and the layered build
+  (`aggregate_tests.rs`), a fluid planet holding its shape and energy and its layers
+  (`giant_impact_tests.rs`), the tide (`a_fluid_impactor_is_stretched_by_the_tide_before_it_hits_and_a_rubble_one_is_not`,
+  ignored: two minutes in release), the GPU against the CPU for fluids (`particles_tests.rs`), and the
+  new key (`config_tests.rs`). `measure_moon_forming_detail` reports the impactor's elongation and
+  takes `RGA_MEASURE_MODEL=rubble`.
+
 - **GPU physics for scenes made of particles: a new layer, `src/compute/`.**
   - **What it does.** A scene whose every prop is a particle in simulated contact
     (`can_step_on_gpu`) is stepped on the GPU through `wgpu`: gravity, the contact force, friction
@@ -76,6 +239,15 @@ one exists. The convention is specified in
 
 ### Changed
 
+- **`experiment_1` and `experiment_8` are built of fluid planets by default.** Their figures from
+  earlier today (the `14.00 h` meeting, the `4%` lofted, the `1.6–2.0%` disk, the `3.6–4.9%` debris
+  at twice escape speed) are the rubble model's; the tests that state them now build rubble
+  explicitly (`rubble_planets_meet_on_time_…`, `each_rubble_planet_…`, and the GPU tests).
+- **`contact_clusters` lets fluid particles be half again past touching**
+  (`FLUID_CLUSTER_CONTACT_TOLERANCE` `0.5`): a fluid's particles do not stay on a lattice, and a
+  settled fluid Earth of `2,000` read as `572` bodies at the rubble's `5%`.
+- **Configuration > Collisions** gains the Planet material row; its note no longer says the CPU sums
+  every pair for contact.
 - **The planets' particles have friction and heat.** `PLANETARY_PARTICLE_MATERIAL` is now
   restitution `0`, friction `0.6` (Byerlee's law), modulus `1e13 Pa` and basalt's Tillotson
   parameters. In `experiment_1` a tenth of the binding energy becomes heat, the merged body is
@@ -95,6 +267,30 @@ one exists. The convention is specified in
 
 ### Fixed
 
+- **`F` locks onto the bodies of a particle scene again.** Since the GPU draws particles from its
+  own buffer there was no entity per particle to lock onto. Each body (contact cluster) of a
+  GPU-drawn scene now gets one lock target at its centre of mass, sized to its extent, rebuilt from
+  each copy of the particles on the async pool (`31 ms` at `22,000` particles, too long for a frame)
+  and moved at the body's velocity between copies (`render::gpu_particles::ClusterTarget`; at most
+  `CLUSTER_TARGET_MAX`, `32`, of `CLUSTER_TARGET_MIN_PARTICLES`, `2`, or more). A body keeps its
+  target, and the lock, while its lowest id lives; a body that merges into another releases it, as
+  absorption does. `GpuParticles::last_sync` gives the simulated time each copy was taken at.
+- **Speeding up past what the physics can step now says so.** The GPU steps a particle scene only
+  as fast as it can, and above that the clock's scale went up with each `]` while nothing sped up.
+  Measured on an RTX 4070 SUPER, fluid `experiment_8`, the most it reaches: about `18,000` simulated
+  seconds a second at `200` particles a planet, `2,700` at `2,000`, `465` at `20,000`. The binding
+  limit at `20,000` is the fluids' Courant step (a looser orbit criterion changed nothing there). The
+  overlay now adds "reaching x…" when the simulation falls below `SCALE_REACHED_SHOWN_BELOW` (`0.9`)
+  of its scale (`SimulationClock::reached_scale`). To go faster, lower the detail.
+- **Fluid particles no longer swell after an impact** (`fluid_radius_m` takes the material's
+  reference density, and the GPU's `drift` mirrors it). A fluid particle was drawn at the radius of
+  its measured density, and hot or flung particles measure low densities, down to `1/186` of rock's
+  for a particle alone, which drew it `5.7` times too large. Seen in the app as the particles growing
+  after the collision. The radius also sets the body's surface in `impact_outcome`, which read the
+  merged body as `16,700 km` across and so counted most of the disk as falling back: the disk at
+  `20,000` particles was `0.23%` of the mass before the fix and is `0.79%` after (a day after the
+  impact). A particle is now never drawn larger than in uncompressed rock; the forces never read
+  the radius. Test: `after_a_fluid_impact_no_particle_is_drawn_larger_than_in_uncompressed_rock`.
 - **Simulated contact friction now opposes sliding.** The force had the wrong sign and sped every
   slide up; no shipped scene had friction on its particles, so nothing showed it.
 - **Packed particles no longer flip their velocity every substep.** The damping cap of `ζ = 3` was

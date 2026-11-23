@@ -33,6 +33,7 @@ so two configurations can be compared without a rebuild. The API is documented i
 | `RGA_BLACK_HOLE_STARS` | `on` `off` | `on` | The lensed star field round the black hole. |
 | `RGA_BENCH` | `on` `off` | `off` | Runs the benchmark instead of an interactive session. |
 | `RGA_BENCH_WARMUP` / `RGA_BENCH_SECONDS` | seconds | `3` / `10` | Benchmark timing. |
+| `RGA_GPU_PROFILE` | `on` `off` | `off` | The GPU pass timer (`src/compute/profiler.rs`): the particle kernels' GPU time by group, in the debug overlay and, while benchmarking, on a `GPU_PROFILE` line after the `BENCH` line. Splits each substep into several passes, so it is off unless asked for. |
 
 ```sh
 RGA_AA=smaa RGA_FLOOR_ECLIPSE=off cargo run --release -- 3     # try a configuration

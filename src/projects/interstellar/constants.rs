@@ -28,7 +28,12 @@ pub use bevy::math::Vec3;
 
 use crate::core::scene::{Color, Material, Tillotson};
 use crate::physics_utils::physics_constants::{
-    BASALT_TILLOTSON_A, BASALT_TILLOTSON_B, BASALT_TILLOTSON_E0_J_KG,
+    BASALT_TILLOTSON_A, BASALT_TILLOTSON_ALPHA, BASALT_TILLOTSON_B, BASALT_TILLOTSON_BETA,
+    BASALT_TILLOTSON_BULK_A_PA, BASALT_TILLOTSON_BULK_B_PA, BASALT_TILLOTSON_E0_J_KG,
+    BASALT_TILLOTSON_ECV_J_KG, BASALT_TILLOTSON_EIV_J_KG, BASALT_TILLOTSON_RHO0_KG_M3,
+    IRON_TILLOTSON_A, IRON_TILLOTSON_ALPHA, IRON_TILLOTSON_B, IRON_TILLOTSON_BETA,
+    IRON_TILLOTSON_BULK_A_PA, IRON_TILLOTSON_BULK_B_PA, IRON_TILLOTSON_E0_J_KG,
+    IRON_TILLOTSON_ECV_J_KG, IRON_TILLOTSON_EIV_J_KG, IRON_TILLOTSON_RHO0_KG_M3,
 };
 use crate::projects::interstellar::black_hole::SStar;
 use crate::projects::interstellar::objects::StellarObject;
@@ -194,11 +199,132 @@ pub const PLANETARY_MATERIAL: Material = Material::new(0.0, 0.0);
 /// debris is thrown. Without friction the particles never spin.
 pub const PLANETARY_PARTICLE_MATERIAL: Material = Material::new(0.0, 0.6)
     .with_modulus(1.0e13)
-    .with_thermal(Tillotson {
-        a: BASALT_TILLOTSON_A as f32,
-        b: BASALT_TILLOTSON_B as f32,
-        reference_energy_j_kg: BASALT_TILLOTSON_E0_J_KG as f32,
-    });
+    .with_thermal(BASALT_EOS);
+
+/// Basalt's Tillotson equation of state, the rock of the planets' mantles: the ten parameters of
+/// `physics_utils::physics_constants`' `BASALT_TILLOTSON_*`.
+///
+/// **Why these values.** The basalt set of Benz, W. & Asphaug, E. (1999), Catastrophic disruptions
+/// revisited, *Icarus* 142(1), 5–20, doi:10.1006/icar.1999.6204, table II, as the SWIFT and WoMa
+/// codes implement it (sources and what was checked: `physics_constants.rs`). Basalt is the rock
+/// most Tillotson simulations of rocky planets use.
+///
+/// **Used by.** [`PLANETARY_PARTICLE_MATERIAL`] (its thermal part only) and [`PLANETARY_ROCK_FLUID`]
+/// (all of it).
+///
+/// **If you change it.** Every planet built from particles changes. A softer rock (a smaller `A`
+/// or `B`) makes fluid planets denser and smaller; the rubble planets read only `a`, `b` and `E₀`.
+pub const BASALT_EOS: Tillotson = Tillotson {
+    reference_density_kg_m3: BASALT_TILLOTSON_RHO0_KG_M3 as f32,
+    bulk_a_pa: BASALT_TILLOTSON_BULK_A_PA as f32,
+    bulk_b_pa: BASALT_TILLOTSON_BULK_B_PA as f32,
+    a: BASALT_TILLOTSON_A as f32,
+    b: BASALT_TILLOTSON_B as f32,
+    reference_energy_j_kg: BASALT_TILLOTSON_E0_J_KG as f32,
+    incipient_vaporisation_j_kg: BASALT_TILLOTSON_EIV_J_KG as f32,
+    complete_vaporisation_j_kg: BASALT_TILLOTSON_ECV_J_KG as f32,
+    alpha: BASALT_TILLOTSON_ALPHA as f32,
+    beta: BASALT_TILLOTSON_BETA as f32,
+};
+
+/// Iron's Tillotson equation of state, the metal of the planets' cores: the ten parameters of
+/// `physics_utils::physics_constants`' `IRON_TILLOTSON_*`.
+///
+/// **Why these values.** The iron set of Melosh, H. J. (1989), *Impact Cratering: A Geologic
+/// Process*, Oxford University Press, appendix II, as the SWIFT and WoMa codes implement it
+/// (sources and what was checked: `physics_constants.rs`).
+///
+/// **Used by.** [`PLANETARY_IRON_FLUID`].
+///
+/// **If you change it.** The cores of fluid planets change density, and with them the planets'
+/// radii.
+pub const IRON_EOS: Tillotson = Tillotson {
+    reference_density_kg_m3: IRON_TILLOTSON_RHO0_KG_M3 as f32,
+    bulk_a_pa: IRON_TILLOTSON_BULK_A_PA as f32,
+    bulk_b_pa: IRON_TILLOTSON_BULK_B_PA as f32,
+    a: IRON_TILLOTSON_A as f32,
+    b: IRON_TILLOTSON_B as f32,
+    reference_energy_j_kg: IRON_TILLOTSON_E0_J_KG as f32,
+    incipient_vaporisation_j_kg: IRON_TILLOTSON_EIV_J_KG as f32,
+    complete_vaporisation_j_kg: IRON_TILLOTSON_ECV_J_KG as f32,
+    alpha: IRON_TILLOTSON_ALPHA as f32,
+    beta: IRON_TILLOTSON_BETA as f32,
+};
+
+/// What the mantle particles of a fluid planet are made of: basalt as a fluid, with its whole
+/// equation of state ([`BASALT_EOS`]).
+///
+/// **Why.** At the scale of a planet, the stresses of gravity and of a giant impact are thousands
+/// of times rock's strength, so rock flows: it resists compression through its pressure and a
+/// change of shape hardly at all. The published simulations of the Moon-forming impact treat both
+/// planets as strengthless fluids (Canup, R. M. (2004), Simulations of a late lunar-forming impact,
+/// *Icarus* 168(2), 433–456, doi:10.1016/j.icarus.2003.09.028). That is what lets a tide stretch
+/// the impactor before it hits, which the rubble model's springs and friction resisted.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact`] and
+/// [`crate::projects::interstellar::moon_forming`], for the mantles of fluid planets.
+///
+/// **If you change it.** See [`BASALT_EOS`].
+pub const PLANETARY_ROCK_FLUID: Material = Material::fluid(BASALT_EOS);
+
+/// What the core particles of a fluid planet are made of: iron as a fluid ([`IRON_EOS`]).
+///
+/// **Why.** As [`PLANETARY_ROCK_FLUID`]. An iron core holds a third of a rocky planet's mass, and
+/// where it ends up after an impact (in the merged core, or in the disk) is one of the published
+/// results to compare against.
+///
+/// **Used by.** As [`PLANETARY_ROCK_FLUID`], for the cores.
+///
+/// **If you change it.** See [`IRON_EOS`].
+pub const PLANETARY_IRON_FLUID: Material = Material::fluid(IRON_EOS);
+
+/// The share of a fluid planet's mass in its iron core. Dimensionless.
+///
+/// **Why this value.** `0.30`: both the Earth and the impactor of Canup, R. M. (2004), Simulations
+/// of a late lunar-forming impact, *Icarus* 168(2), 433–456, doi:10.1016/j.icarus.2003.09.028, are
+/// 30% iron by mass, the round figure for the Earth's core (about `32%` of its mass; Dziewonski,
+/// A. M. & Anderson, D. L. (1981), Preliminary reference Earth model, *Physics of the Earth and
+/// Planetary Interiors* 25(4), 297–356, doi:10.1016/0031-9201(81)90046-7).
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact`] and
+/// [`crate::projects::interstellar::moon_forming`], building fluid planets.
+///
+/// **If you change it.** A larger core makes a denser, smaller planet; `0` is a planet of basalt
+/// alone.
+pub const PLANET_CORE_MASS_FRACTION: f64 = 0.30;
+
+/// How much darker a fluid planet's core particles are drawn than its mantle, as a factor on each
+/// colour channel. Dimensionless.
+///
+/// **Why this value.** `0.45`: dark enough to pick out each planet's core where the cut-away of an
+/// impact shows it, and its iron mixing into the other's, while still reading as that planet's
+/// colour. A display choice only.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact`], building fluid planets.
+///
+/// **If you change it.** `1` draws cores like mantles; `0` draws them black.
+pub const PLANET_CORE_SHADE: f32 = 0.45;
+
+/// The gravitational softening of a scene of fluid planets, as a fraction of their particles'
+/// spacing at basalt's reference density. Dimensionless.
+///
+/// **Why this value.** `0.5`. Rubble particles never come closer than touching, so the giant
+/// impact's `100 km` softening ([`GIANT_IMPACT_SOFTENING_UNITS`]) is only a guard. Fluid particles
+/// can: at a planet's surface, where the pressure has fallen to zero, two of them pass through each
+/// other, and a pair of particles each a few thousandths of an Earth mass swinging past at `100 km`
+/// is an orbit of seconds that no step followed. Measured on a fluid Earth of `200` particles: the
+/// energy grew by most of the binding energy in four hours, and fell `20` times with a sixth of the
+/// step. Smoothed-particle hydrodynamics codes soften gravity over about the smoothing length for
+/// this reason (Monaghan, J. J. (1992), Smoothed particle hydrodynamics, *Annual Review of Astronomy
+/// and Astrophysics* 30, 543–574, doi:10.1146/annurev.aa.30.090192.002551); half a spacing keeps the
+/// closest encounter at the scale the substep count already resolves, while gravity between
+/// particles a spacing or more apart is Newton's to a few percent.
+///
+/// **Used by.** [`crate::projects::interstellar::giant_impact`], building fluid planets.
+///
+/// **If you change it.** Smaller brings back the close encounters; larger weakens the planet's
+/// own gravity at the particle scale, which the pressure then over-supports.
+pub const FLUID_SOFTENING_SPACINGS: f64 = 0.5;
 
 /// Where the camera starts for the three-body ring, in world units.
 ///

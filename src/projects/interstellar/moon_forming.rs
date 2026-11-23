@@ -2,12 +2,13 @@
 //! particles, meeting at their mutual escape speed and at `45°`, the canonical giant impact thought
 //! to have made the Moon (Canup & Asphaug 2001, Nature 412:708; Canup 2004, Icarus 168:433).
 //!
-//! The same planets as `experiment_1` ([`super::giant_impact`]), made of the same rock
-//! ([`PLANETARY_PARTICLE_MATERIAL`]), but struck off-centre. That gives the pair angular momentum,
-//! `1.1` times the Earth and Moon's today, and the impact has to put it somewhere: into the merged
-//! body's spin, and into whatever material is thrown onto orbits that clear the surface, the disk a
-//! moon could form from. The particles spin too: friction at their contacts turns sliding into
-//! rotation, so that angular momentum is conserved exactly, orbit and spin together.
+//! The same planets as `experiment_1` ([`super::giant_impact`]), made of the same materials, but
+//! struck off-centre. That gives the pair angular momentum, `1.1` times the Earth and Moon's today,
+//! and the impact has to put it somewhere: into the merged body's spin, and into whatever material
+//! is thrown onto orbits that clear the surface, the disk a moon could form from. Rubble particles
+//! spin too: friction at their contacts turns sliding into rotation, so that angular momentum is
+//! conserved exactly, orbit and spin together. Fluid particles have no friction and push only along
+//! the line between them, which conserves it without spin.
 //!
 //! # The numbers
 //!
@@ -28,10 +29,16 @@
 //! impactor is `19` particles, each a fifth of the Moon's mass, so a disk is a handful of particles
 //! at best; what the run shows reliably is the merged body spinning with the impact's angular
 //! momentum. Raise Particles per planet (with the GPU) for a disk to resolve.
+//!
+//! # Fluid or rubble
+//!
+//! The planets are built as the configured planet model says (`giant_impact::add_planets`).
+//! Fluid planets (the default) flow as planets do, so the Earth's tide, `78%` of the impactor's own
+//! surface gravity at contact, stretches the impactor as it closes: by `30%`, measured at both
+//! `2,000` and `20,000` particles a planet. Rubble planets are elastic solids and stretch by `1%`.
 
 pub use bevy::math::{Quat, Vec3};
 
-use crate::collision::aggregate::{lattice_spacing_m, particle_body, ParticleBody};
 use crate::constants::METRES_PER_UNIT;
 use crate::core::scene::{Aabb, CollisionSettings, DVec3, Scene};
 use crate::physics_utils::physics_constants::GRAVITATIONAL_CONSTANT;
@@ -40,10 +47,9 @@ use crate::projects::interstellar::constants::{
     DEFAULT_RANDOM_SEED, GIANT_IMPACT_BOUNDS_MARGIN_UNITS, GIANT_IMPACT_CAMERA_POSITION_UNITS,
     GIANT_IMPACT_FRAMED_RADIUS_UNITS, GIANT_IMPACT_SOFTENING_UNITS, GIANT_IMPACT_TIME_SCALE,
     GIANT_IMPACT_TRAIL_LENGTH_UNITS, MOON_FORMING_IMPACT_ANGLE_DEG, MOON_FORMING_START_CONTACTS,
-    PLANETARY_PARTICLE_MATERIAL,
 };
 use crate::projects::interstellar::giant_impact::{
-    giant_impact_contact_m, giant_impact_impactor, giant_impact_target,
+    add_planets, giant_impact_contact_m, giant_impact_impactor, giant_impact_target,
 };
 
 /// `G` times the two planets' total mass, m³/s².
@@ -150,7 +156,7 @@ pub fn moon_forming_impact_with(settings: &CollisionSettings) -> Experiment {
     // About the centre of mass at the origin, at rest.
     let share_target = impactor.mass_kg / total_mass;
     let share_impactor = target.mass_kg / total_mass;
-    let bodies = [
+    let planets = [
         (
             &target,
             -relative_position * share_target,
@@ -170,21 +176,7 @@ pub fn moon_forming_impact_with(settings: &CollisionSettings) -> Experiment {
     });
     scene.softening_units = GIANT_IMPACT_SOFTENING_UNITS;
     scene.collision = *settings;
-
-    let spacing = lattice_spacing_m(target.radius_m, settings.particles_per_body);
-    for (planet, centre, velocity) in bodies {
-        let body = ParticleBody {
-            centre_units: centre,
-            velocity_units_s: velocity,
-            mass_kg: planet.mass_kg,
-            radius_m: planet.radius_m,
-            color: planet.color,
-            material: PLANETARY_PARTICLE_MATERIAL,
-        };
-        for particle in particle_body(&body, spacing) {
-            scene.add(particle);
-        }
-    }
+    add_planets(&mut scene, settings, planets);
 
     Experiment {
         scene,
