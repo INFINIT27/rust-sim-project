@@ -151,6 +151,8 @@ pub enum Action {
     ToggleHud,
     /// Show or hide the outline of the black hole's event horizon.
     ToggleOutline,
+    /// Show or hide the geometry view of the wormhole.
+    ToggleWormholeMap,
 }
 
 /// The description of one [`Action`]: a row of [`crate::constants::ACTIONS`].
@@ -170,7 +172,7 @@ pub struct ActionInfo {
 
 impl Action {
     /// Every action, in the order of [`crate::constants::ACTIONS`].
-    pub const ALL: [Action; 27] = [
+    pub const ALL: [Action; 28] = [
         Action::MoveForward,
         Action::MoveBack,
         Action::MoveLeft,
@@ -198,6 +200,7 @@ impl Action {
         Action::ToggleStars,
         Action::ToggleHud,
         Action::ToggleOutline,
+        Action::ToggleWormholeMap,
     ];
 
     /// This action's row of [`crate::constants::ACTIONS`].
@@ -238,7 +241,7 @@ impl Action {
 /// ```
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub struct KeyMap {
-    keys: [KeyCode; 27],
+    keys: [KeyCode; 28],
 }
 
 impl Default for KeyMap {

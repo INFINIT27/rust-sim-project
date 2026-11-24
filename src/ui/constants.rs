@@ -363,3 +363,133 @@ pub const ARRIVAL_HINT: &str = "Esc or ✕ closes this. R picks the next departu
 /// **If you change it.** Nearer `1` makes the note flicker on a simulation that keeps up; lower
 /// hides a real shortfall.
 pub const SCALE_REACHED_SHOWN_BELOW: f32 = 0.9;
+
+/// The wormhole's geometry view: its width, in logical pixels.
+///
+/// **Why this value.** Large enough to follow a path through the throat, small enough to leave the
+/// mouth, in the middle of the opening view, clear at `1920×1080`.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** The diagram scales to fit.
+pub const WORMHOLE_MAP_WIDTH_PX: f32 = 420.0;
+
+/// The geometry view's height, in logical pixels.
+///
+/// **Why this value.** As [`WORMHOLE_MAP_WIDTH_PX`].
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** The diagram scales to fit.
+pub const WORMHOLE_MAP_HEIGHT_PX: f32 = 380.0;
+
+/// The geometry view's distance from the window's bottom-right corner, in logical pixels.
+///
+/// **Why this value.** The compass's margin, near enough.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** It moves.
+pub const WORMHOLE_MAP_MARGIN_PX: f32 = 16.0;
+
+/// How far above the level the geometry view is seen from, in radians.
+///
+/// **Why this value.** About `23°`: the rings open into ellipses and the funnels still read as such.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Zero draws the rings as lines; larger hides the tunnel's length.
+pub const WORMHOLE_MAP_TILT_RAD: f32 = 0.4;
+
+/// The least and the most the geometry view shows beyond each mouth, in throat radii.
+///
+/// **Why this value.** The least keeps the throat large while the camera is near it; the most keeps
+/// the throat visible when it is not.
+///
+/// **Used by.** [`crate::ui::wormhole_map::reach_for`].
+///
+/// **If you change it.** A larger most shrinks the throat when the camera is far away.
+pub const WORMHOLE_MAP_REACH_THROATS: (f64, f64) = (2.5, 8.0);
+
+/// Rings drawn on each side of the geometry view.
+///
+/// **Why this value.** Packed towards the mouth, they draw its turn smoothly without crowding.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** More is denser and costs more lines.
+pub const WORMHOLE_MAP_RINGS: usize = 14;
+
+/// Lines down the geometry view's surface, round it.
+///
+/// **Why this value.** One every `15°`, as the test pattern's lines of longitude.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** More is denser.
+pub const WORMHOLE_MAP_MERIDIANS: usize = 24;
+
+/// Straight pieces each ring of the geometry view is drawn with.
+///
+/// **Why this value.** Smooth at its size.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Fewer shows corners.
+pub const WORMHOLE_MAP_RING_SEGMENTS: usize = 48;
+
+/// The most points of the light's path the geometry view draws, `0.04` throat radii apart.
+///
+/// **Why this value.** Forty throat radii: in from the edge and out of the other one, with several
+/// turns round the throat to spare.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Lower cuts the path short.
+pub const WORMHOLE_MAP_PATH_STEPS: usize = 1000;
+
+/// The near side's colour in the geometry view.
+///
+/// **Why this value.** The test pattern's orange for the same side.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Keep it unlike the far side's.
+pub const WORMHOLE_MAP_NEAR_SRGBA: [u8; 4] = [255, 170, 80, 255];
+
+/// The far side's colour in the geometry view.
+///
+/// **Why this value.** The test pattern's blue for the same side.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Keep it unlike the near side's.
+pub const WORMHOLE_MAP_FAR_SRGBA: [u8; 4] = [100, 180, 255, 255];
+
+/// The tunnel's colour in the geometry view.
+///
+/// **Why this value.** Neither side's.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Only the tunnel looks different.
+pub const WORMHOLE_MAP_TUNNEL_SRGBA: [u8; 4] = [220, 220, 220, 255];
+
+/// The camera's colour, and its light path's, in the geometry view.
+///
+/// **Why this value.** A green nothing else in it has.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Keep it unlike the surface's.
+pub const WORMHOLE_MAP_CAMERA_SRGBA: [u8; 4] = [120, 255, 120, 255];
+
+/// What the geometry view says of itself.
+///
+/// **Why this value.** The usual misreading of such a diagram is that the funnel is a hole *in*
+/// space with an inside.
+///
+/// **Used by.** [`crate::ui::wormhole_map`].
+///
+/// **If you change it.** Keep it short enough for [`WORMHOLE_MAP_WIDTH_PX`].
+pub const WORMHOLE_MAP_CAPTION: &str = "one slice: the sheet is space, the gaps are nowhere";

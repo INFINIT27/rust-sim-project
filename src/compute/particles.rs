@@ -256,7 +256,8 @@ impl Default for GpuSolver {
 /// [`contact_is_simulated`]), nothing absorbs, and gravity is Newtonian. Anything else is stepped
 /// on the CPU.
 pub fn can_step_on_gpu(scene: &Scene) -> bool {
-    scene.props.len() >= 2
+    scene.wormhole.is_none()
+        && scene.props.len() >= 2
         && scene.gravity_model == GravityModel::Newtonian
         && scene
             .props

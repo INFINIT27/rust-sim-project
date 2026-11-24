@@ -173,6 +173,10 @@ pub struct FreeFlyController {
     pub yaw: f32,
     /// Current pitch in radians, clamped to avoid gimbal flipping.
     pub pitch: f32,
+    /// What the world axes yaw and pitch are measured in have become: the rotation is `frame` times
+    /// the yaw and pitch, and `frame` times `+Y` is up. The identity everywhere but in a wormhole
+    /// (see `render::wormhole_camera`).
+    pub frame: Quat,
     /// Whether the cursor is currently captured for mouse-look.
     pub captured: bool,
 }
@@ -191,6 +195,7 @@ impl Default for FreeFlyController {
             look_sensitivity: LOOK_SENSITIVITY_RAD_PER_PX,
             yaw: 0.0,
             pitch: 0.0,
+            frame: Quat::IDENTITY,
             captured: false,
         }
     }
@@ -454,7 +459,8 @@ pub fn free_fly_camera_system(
         controller.yaw -= dx * controller.look_sensitivity;
         controller.pitch -= dy * controller.look_sensitivity;
         controller.pitch = clamp_pitch(controller.pitch);
-        transform.rotation = Quat::from_euler(EulerRot::YXZ, controller.yaw, controller.pitch, 0.0);
+        transform.rotation = controller.frame
+            * Quat::from_euler(EulerRot::YXZ, controller.yaw, controller.pitch, 0.0);
     }
 
     // ------------------------------------------------------------------
@@ -487,6 +493,7 @@ pub fn free_fly_camera_system(
     let keymap = keymap_or_default(&keymap);
     let forward: Vec3 = transform.forward().as_vec3();
     let right: Vec3 = transform.right().as_vec3();
+    let up: Vec3 = controller.frame * Vec3::Y;
 
     let mut delta = Vec3::ZERO;
     if keymap.pressed(&keys, Action::MoveForward) {
@@ -502,19 +509,19 @@ pub fn free_fly_camera_system(
         delta -= right;
     }
     if keymap.pressed(&keys, Action::MoveUp) {
-        delta += Vec3::Y;
+        delta += up;
     }
     if keymap.pressed(&keys, Action::MoveDown) {
-        delta -= Vec3::Y;
+        delta -= up;
     }
     // World `±Y`, the same axis as `Space`/`ControlLeft` above. Summed into the
     // same `delta`, so holding `E` and `Space` together is one unit of rise rather
     // than two — `delta.normalize()` sees a single direction, not a doubled one.
     if keymap.pressed(&keys, Action::MoveUpAlt) {
-        delta += Vec3::Y;
+        delta += up;
     }
     if keymap.pressed(&keys, Action::MoveDownAlt) {
-        delta -= Vec3::Y;
+        delta -= up;
     }
 
     if delta != Vec3::ZERO {
@@ -724,7 +731,7 @@ pub fn toggle_camera_lock_system(
     };
 
     let offset = target_transform.translation - eye;
-    (controller.yaw, controller.pitch) = yaw_pitch_towards(offset);
+    (controller.yaw, controller.pitch) = yaw_pitch_towards(controller.frame.inverse() * offset);
     lock.0 = Some(Orbit {
         target,
         distance: offset.length(),
@@ -783,7 +790,8 @@ pub fn orbit_camera_system(
     let (min, max) = orbit_distance_bounds(target.scale.max_element(), near, far);
     orbit.distance = zoom_distance(orbit.distance, lines, min, max);
 
-    transform.rotation = Quat::from_euler(EulerRot::YXZ, controller.yaw, controller.pitch, 0.0);
+    transform.rotation =
+        controller.frame * Quat::from_euler(EulerRot::YXZ, controller.yaw, controller.pitch, 0.0);
     transform.translation = target.translation - transform.forward().as_vec3() * orbit.distance;
 }
 

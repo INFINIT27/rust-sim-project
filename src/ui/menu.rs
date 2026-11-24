@@ -58,6 +58,10 @@ use crate::input::menu::{ConfigTab, MenuPage, MenuState, SettingsTab};
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
 use crate::projects::interstellar::catalog::ExperimentSpec;
+use crate::projects::interstellar::constants::{
+    WORMHOLE_HALF_LENGTH_RANGE, WORMHOLE_LENSING_WIDTH_RANGE, WORMHOLE_THROAT_RANGE_UNITS,
+};
+use crate::projects::interstellar::wormhole::WormholeSettings;
 use crate::render::mission::Mission;
 use crate::render::plugin::PhysicsBackend;
 use crate::render::trail::TrailConfig;
@@ -166,6 +170,8 @@ pub enum SaveTarget {
     Trails,
     /// `collision.toml`.
     Collisions,
+    /// `wormhole.toml`: the shape of the wormhole.
+    Wormhole,
     /// `spacecraft.toml`.
     Spacecraft,
 }
@@ -238,6 +244,7 @@ pub struct MenuResources<'w> {
     keymap: ResMut<'w, KeyMap>,
     trails: ResMut<'w, TrailConfig>,
     collision: ResMut<'w, CollisionSettings>,
+    wormhole: ResMut<'w, WormholeSettings>,
     solver: ResMut<'w, GpuSolver>,
     camera: ResMut<'w, CameraSettings>,
     crosshair: ResMut<'w, CrosshairConfig>,
@@ -322,6 +329,7 @@ pub fn menu_system(
                         ("Interface", MenuPage::Configuration(ConfigTab::Interface)),
                         ("Trails", MenuPage::Configuration(ConfigTab::Trails)),
                         ("Collisions", MenuPage::Configuration(ConfigTab::Collisions)),
+                        ("Wormhole", MenuPage::Configuration(ConfigTab::Wormhole)),
                         ("Spacecraft", MenuPage::Configuration(ConfigTab::Spacecraft)),
                     ],
                     page,
@@ -331,6 +339,7 @@ pub fn menu_system(
                     ConfigTab::Interface => interface_tab(ui, &mut resources),
                     ConfigTab::Trails => trails_tab(ui, &mut resources),
                     ConfigTab::Collisions => collisions_tab(ui, &mut resources),
+                    ConfigTab::Wormhole => wormhole_tab(ui, &mut resources),
                     ConfigTab::Spacecraft => spacecraft_tab(ui, &mut resources),
                 });
                 footer(ui, &mut resources.requests);
@@ -561,13 +570,13 @@ fn video_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
             ui.label("Floor shadows");
             ui.checkbox(&mut settings.floor_eclipse, "Eclipse shadows on the floor");
             ui.end_row();
-            ui.label("Black hole");
+            ui.label("Black hole, wormhole");
             ui.checkbox(
                 &mut settings.black_hole,
-                "Ray-marched on the GPU (off: a plain black ball)",
+                "Ray-marched on the GPU (off: a plain ball)",
             );
             ui.end_row();
-            ui.label("Black hole quality");
+            ui.label("Their quality");
             egui::ComboBox::from_id_source("menu_black_hole_quality")
                 .selected_text(black_hole_quality_label(settings.black_hole_quality))
                 .show_ui(ui, |ui| {
@@ -581,7 +590,10 @@ fn video_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
                 });
             ui.end_row();
             ui.label("Stars");
-            ui.checkbox(&mut settings.black_hole_stars, "Stars round the black hole");
+            ui.checkbox(
+                &mut settings.black_hole_stars,
+                "Stars round the black hole and the wormhole",
+            );
             ui.end_row();
         });
     });
@@ -894,6 +906,52 @@ fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     }
 }
 
+/// Configuration > Wormhole: `wormhole.toml`.
+fn wormhole_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
+    edit_copy(&mut resources.wormhole, |wormhole| {
+        settings_grid(ui, "menu_wormhole", |ui| {
+            for (label, value, (low, high)) in [
+                (
+                    "Throat radius (units)",
+                    &mut wormhole.throat_units,
+                    WORMHOLE_THROAT_RANGE_UNITS,
+                ),
+                (
+                    "Half length (throat radii)",
+                    &mut wormhole.half_length,
+                    WORMHOLE_HALF_LENGTH_RANGE,
+                ),
+                (
+                    "Lensing width (throat radii)",
+                    &mut wormhole.lensing_width,
+                    WORMHOLE_LENSING_WIDTH_RANGE,
+                ),
+            ] {
+                ui.label(label);
+                ui.add(egui::Slider::new(value, low..=high).logarithmic(true));
+                ui.end_row();
+            }
+        });
+    });
+    ui.label(
+        egui::RichText::new(
+            "The wormhole of experiment 9, applied at once. The length is the tunnel between the \
+             mouths; the lensing width is how gradually each mouth flares, and so how much of the \
+             sky round it is bent.",
+        )
+        .weak(),
+    );
+    let (reset, save) = reset_and_save(ui);
+    if reset {
+        edit_copy(&mut resources.wormhole, |w| {
+            *w = WormholeSettings::default()
+        });
+    }
+    if save {
+        resources.requests.request_save(SaveTarget::Wormhole);
+    }
+}
+
 /// Configuration > Spacecraft: `spacecraft.toml`.
 fn spacecraft_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
     let Some(mission) = resources.mission.as_mut() else {
@@ -1131,6 +1189,7 @@ impl Plugin for MenuPanelPlugin {
             .init_resource::<KeyMap>()
             .init_resource::<TrailConfig>()
             .init_resource::<CollisionSettings>()
+            .init_resource::<WormholeSettings>()
             .init_resource::<GpuSolver>()
             .init_resource::<CameraSettings>()
             .init_resource::<CrosshairConfig>()

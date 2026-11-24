@@ -1701,3 +1701,108 @@ pub const S_STARS: [SStar; 6] = [
         close_orbit_rg: 36.0,
     },
 ];
+
+// -----------------------------------------------------------------------
+// The wormhole (experiment_9)
+// -----------------------------------------------------------------------
+
+/// The wormhole's throat radius `ρ` as shipped, in world units.
+///
+/// **Why this value.** Only the ratios of the lengths show, so it is set for flying: at `5` units
+/// (`5` million km) the camera's normal speed crosses four throat radii a second and its precision
+/// speed a tenth of one, and the camera's `10⁻⁴`-unit near plane is far smaller than the throat.
+/// The paper's film wormhole is `1 km`, far below that near plane.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::WormholeSettings`], `experiment_9`'s builder.
+///
+/// **If you change it.** The opening camera distance is in throat radii, so the view is the same;
+/// only the flying speed feels different.
+pub const DEFAULT_WORMHOLE_THROAT_UNITS: f32 = 5.0;
+
+/// Half the wormhole's length as shipped, `a/ρ`.
+///
+/// **Why this value.** James et al. (2015), arXiv:1502.03809, fig. 13: the voyage through it, `2a = ρ`.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::WormholeSettings`].
+///
+/// **If you change it.** Longer shows more rings of the far sky inside the mouth, and a longer flight.
+pub const DEFAULT_WORMHOLE_HALF_LENGTH: f32 = 0.5;
+
+/// The wormhole's lensing width as shipped, `𝒲/ρ`.
+///
+/// **Why this value.** James et al. (2015), fig. 13 and the film: `0.05`.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::WormholeSettings`].
+///
+/// **If you change it.** Wider bends more of the sky round the mouth.
+pub const DEFAULT_WORMHOLE_LENSING_WIDTH: f32 = 0.05;
+
+/// The range of throat radii the settings take, in world units.
+///
+/// **Why this value.** The smallest is a thousand near planes; the largest still leaves the opening
+/// camera well inside the far plane.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::WormholeSettings`].
+///
+/// **If you change it.** Below, the near plane cuts into the mouth.
+pub const WORMHOLE_THROAT_RANGE_UNITS: (f32, f32) = (0.1, 100.0);
+
+/// The range of half-lengths the settings take, `a/ρ`.
+///
+/// **Why this value.** James et al. (2015), fig. 7: `2a` from `0.01 ρ` to `10 ρ`.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::WormholeSettings`].
+///
+/// **If you change it.** The accuracy tests cover this range only.
+pub const WORMHOLE_HALF_LENGTH_RANGE: (f32, f32) = (0.005, 5.0);
+
+/// The range of lensing widths the settings take, `𝒲/ρ`.
+///
+/// **Why this value.** James et al. (2015), fig. 9: from `0.014 ρ` to `0.43 ρ`.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::WormholeSettings`].
+///
+/// **If you change it.** The accuracy tests cover this range only.
+pub const WORMHOLE_LENSING_WIDTH_RANGE: (f32, f32) = (0.014, 0.43);
+
+/// How far from the mouth `experiment_9` opens, in throat radii.
+///
+/// **Why this value.** About the distance of James et al. (2015), fig. 7 (`6.25 ρ` from the mouth):
+/// the mouth is a quarter of the view high, with its Einstein ring round it.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::wormhole`].
+///
+/// **If you change it.** It must frame [`WORMHOLE_FRAMED_THROATS`].
+pub const WORMHOLE_CAMERA_DISTANCE_THROATS: f32 = 7.25;
+
+/// What `experiment_9`'s opening view must contain, in throat radii round the mouth.
+///
+/// **Why this value.** The mouth and the strongly bent sky round it.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::wormhole`].
+///
+/// **If you change it.** [`WORMHOLE_CAMERA_DISTANCE_THROATS`] must still frame it.
+pub const WORMHOLE_FRAMED_THROATS: f32 = 2.5;
+
+/// `experiment_9`'s simulated seconds per real second.
+///
+/// **Why this value.** Nothing in it moves by itself, so real time is the least surprising.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::wormhole`].
+///
+/// **If you change it.** Only objects placed with `B` could move differently.
+pub const WORMHOLE_TIME_SCALE: f32 = 1.0;
+
+/// The colour of the mouth's sphere, drawn only with the ray-marcher off.
+///
+/// **Why this value.** The test pattern's far-side blue.
+///
+/// **Used by.** [`crate::projects::interstellar::wormhole::wormhole`].
+///
+/// **If you change it.** Only that fallback looks different.
+pub const WORMHOLE_COLOR: Color = Color {
+    r: 0.15,
+    g: 0.5,
+    b: 1.0,
+    a: 1.0,
+};

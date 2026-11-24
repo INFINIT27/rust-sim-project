@@ -87,4 +87,5 @@ jobs:
     - uses: Swatinem/rust-cache@v2
 
     - name: GPU tests
-      run: cargo test --locked --lib gpu_tests:: -- --test-threads=1 --nocapture
+      run: |
+        cargo test --locked --lib gpu_tests:: -- --test-threads=1 --nocapture

@@ -4,6 +4,7 @@
 //! - [`crosshair`] — a small centre-screen crosshair marking the point the
 //!   camera is looking at.
 //! - [`compass`] — the three world axes, drawn top-right as an orientation gizmo.
+//! - [`wormhole_map`] — the geometry view of the wormhole, bottom-right.
 //! - [`menu`] — the `Esc` panel: current settings and the key bindings. The only
 //!   module here with an interactive widget; see its docs for why that does not
 //!   break Requirement 11.4.
@@ -21,3 +22,4 @@ pub mod hud;
 pub mod menu;
 pub mod overlay;
 pub mod placement;
+pub mod wormhole_map;

@@ -84,6 +84,8 @@ pub enum ConfigTab {
     Trails,
     /// `collision.toml`: how much detail impacts are simulated in.
     Collisions,
+    /// `wormhole.toml`: the shape of the wormhole.
+    Wormhole,
     /// `spacecraft.toml`.
     Spacecraft,
 }

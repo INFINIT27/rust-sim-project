@@ -1164,6 +1164,9 @@ pub struct Scene {
     /// See [`CollisionSettings`]. The app copies it from `config/collision.toml` (and the menu's
     /// Configuration > Collisions page) every frame, so a change applies to the next impact.
     pub collision: CollisionSettings,
+    /// The wormhole this scene is in, if it is in one: then its bodies coast through curved space and
+    /// nothing pulls on anything. See [`crate::core::wormhole`].
+    pub wormhole: Option<crate::core::wormhole::WormholeSpace>,
     /// `BodyId` for each entry in `props`, kept in lockstep (same length, same
     /// order). Private so callers cannot desynchronize the two vectors.
     ids: Vec<BodyId>,
@@ -1186,6 +1189,7 @@ impl PartialEq for Scene {
             && self.softening_units == other.softening_units
             && self.gravity_model == other.gravity_model
             && self.collision == other.collision
+            && self.wormhole == other.wormhole
             && self.ids == other.ids
             && self.next_id == other.next_id
     }
@@ -1243,6 +1247,7 @@ impl Scene {
             softening_units: GRAVITY_SOFTENING_UNITS,
             gravity_model: GravityModel::Newtonian,
             collision: CollisionSettings::DEFAULT,
+            wormhole: None,
             ids: Vec::new(),
             next_id: 0,
             revision: next_revision(),
@@ -1298,6 +1303,7 @@ impl Scene {
             softening_units: GRAVITY_SOFTENING_UNITS,
             gravity_model: GravityModel::Newtonian,
             collision: CollisionSettings::DEFAULT,
+            wormhole: None,
             ids: Vec::new(),
             next_id: 0,
             revision: next_revision(),
@@ -1661,7 +1667,7 @@ impl Scene {
             return;
         }
 
-        let substeps = crate::collision::resolve::substep_count(&self.props, step);
+        let substeps = self.substeps(step);
         let substep = step.split(substeps);
 
         for _ in 0..substeps {
@@ -1698,7 +1704,7 @@ impl Scene {
             return;
         }
 
-        let substeps = crate::collision::resolve::substep_count(&self.props, step);
+        let substeps = self.substeps(step);
         let substep = step.split(substeps);
 
         for _ in 0..substeps {
@@ -1708,8 +1714,21 @@ impl Scene {
         }
     }
 
+    /// How many substeps `step` is split into.
+    fn substeps(&self, step: TimeStep) -> u32 {
+        match &self.wormhole {
+            Some(space) => space.substeps(&self.props, step.seconds()),
+            None => crate::collision::resolve::substep_count(&self.props, step),
+        }
+    }
+
     /// One substep: simulated contact, gravity, then absorption, then merging, then the bounce.
     fn substep(&mut self, substep: TimeStep) {
+        if let Some(mut space) = self.wormhole.take() {
+            space.coast(self, substep);
+            self.wormhole = Some(space);
+            return;
+        }
         // Read once: `integrate_gravity` takes `&mut self.props`, so the field cannot be
         // borrowed from `self` inside the call.
         let softening = self.softening_units;

@@ -14,6 +14,7 @@
 //! | `ui.toml` | [`CrosshairConfig`], [`CompassConfig`], [`ArrivalPopupConfig`] |
 //! | `trails.toml` | [`TrailConfig`] |
 //! | `collision.toml` | [`CollisionSettings`], copied into the scene every frame |
+//! | `wormhole.toml` | [`WormholeSettings`] |
 //! | `performance.toml` | [`PerformanceSettings`], which the `RGA_*` variables override |
 //! | `controls.toml` | [`KeyMap`] |
 //!
@@ -39,14 +40,16 @@ use crate::bindings::KeyMap;
 use crate::compute::particles::GpuSolver;
 use crate::config::constants::{
     CAMERA_FILE, COLLISION_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
-    SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE,
+    SAVED_DIR_NAME, SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE, WORMHOLE_FILE,
 };
 use crate::config::files::{
     CameraFile, CollisionFile, ControlsFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile,
+    WormholeFile,
 };
 use crate::core::scene::CollisionSettings;
 use crate::input::camera::CameraSettings;
 use crate::performance::PerformanceSettings;
+use crate::projects::interstellar::wormhole::WormholeSettings;
 use crate::render::mission::Mission;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::Fleet;
@@ -101,6 +104,8 @@ pub struct Config {
     pub collision: CollisionSettings,
     /// From `collision.toml`: the GPU's algorithms.
     pub solver: GpuSolver,
+    /// From `wormhole.toml`.
+    pub wormhole: WormholeSettings,
     /// From `trails.toml`.
     pub trails: TrailConfig,
     /// From `performance.toml`, before the environment overrides it.
@@ -112,7 +117,22 @@ pub struct Config {
 impl Config {
     /// Read every configuration file in `dir`. A missing file keeps its built-in values.
     pub fn load(dir: &Path) -> Result<Self, ConfigError> {
-        let file = |name: &str| dir.join(name);
+        Self::load_layered(&[dir])
+    }
+
+    /// Read each configuration file from the first of `dirs` that has it. A file none of them has
+    /// keeps its built-in values.
+    pub fn load_layered(dirs: &[&Path]) -> Result<Self, ConfigError> {
+        let file = |name: &str| {
+            let found = dirs
+                .iter()
+                .map(|dir| dir.join(name))
+                .find(|path| path.is_file());
+            found.unwrap_or_else(|| {
+                dirs.first()
+                    .map_or_else(|| PathBuf::from(name), |dir| dir.join(name))
+            })
+        };
         let (crosshair, compass, arrival) =
             read::<UiFile, _>(&file(UI_FILE), UiFile::into_runtime)?;
         let (collision, solver) =
@@ -123,6 +143,7 @@ impl Config {
             crosshair,
             compass,
             arrival,
+            wormhole: read::<WormholeFile, _>(&file(WORMHOLE_FILE), WormholeFile::into_runtime)?,
             trails: read::<TrailsFile, _>(&file(TRAILS_FILE), TrailsFile::into_runtime)?,
             collision,
             solver,
@@ -143,6 +164,7 @@ impl Config {
             .insert_resource(self.crosshair)
             .insert_resource(self.compass)
             .insert_resource(self.arrival)
+            .insert_resource(self.wormhole)
             .insert_resource(self.trails)
             .insert_resource(self.collision)
             .insert_resource(self.solver)
@@ -150,7 +172,7 @@ impl Config {
     }
 }
 
-/// The directory the configuration was read from, which the menu's Save writes back to.
+/// The directory the menu saves to: see [`saved_dir`].
 #[derive(Resource, Clone, Debug, PartialEq, Eq)]
 pub struct ConfigDir(pub PathBuf);
 
@@ -162,7 +184,7 @@ pub struct ConfigPlugin {
 }
 
 impl ConfigPlugin {
-    /// Save into `dir`, normally [`config_dir`].
+    /// Save into `dir`, normally [`saved_dir`].
     pub fn new(dir: PathBuf) -> Self {
         Self { dir }
     }
@@ -186,6 +208,7 @@ pub struct Configured<'w> {
     crosshair: Option<Res<'w, CrosshairConfig>>,
     compass: Option<Res<'w, CompassConfig>>,
     arrival: Option<Res<'w, ArrivalPopupConfig>>,
+    wormhole: Option<Res<'w, WormholeSettings>>,
     trails: Option<Res<'w, TrailConfig>>,
     collision: Option<Res<'w, CollisionSettings>>,
     solver: Option<Res<'w, GpuSolver>>,
@@ -243,6 +266,11 @@ pub fn save_requested_system(
             dir,
             COLLISION_FILE,
             &CollisionFile::from_runtime(&or_default(&c.collision), &or_default(&c.solver)),
+        ),
+        SaveTarget::Wormhole => write_file(
+            dir,
+            WORMHOLE_FILE,
+            &WormholeFile::from_runtime(&or_default(&c.wormhole)),
         ),
         SaveTarget::Spacecraft => {
             let fleet = c
@@ -313,6 +341,18 @@ pub fn config_dir() -> PathBuf {
         in_crate
     } else {
         PathBuf::from(CONFIG_DIR_NAME)
+    }
+}
+
+/// Where the menu saves to: the directory named by [`CONFIG_DIR_VAR`] when it is set, which is the
+/// user's own; otherwise [`SAVED_DIR_NAME`] inside [`config_dir`], which git ignores, so that saving
+/// never changes a shipped file. A file saved there is read instead of the shipped one
+/// ([`Config::load_layered`]).
+pub fn saved_dir() -> PathBuf {
+    if std::env::var_os(CONFIG_DIR_VAR).is_some() {
+        config_dir()
+    } else {
+        config_dir().join(SAVED_DIR_NAME)
     }
 }
 

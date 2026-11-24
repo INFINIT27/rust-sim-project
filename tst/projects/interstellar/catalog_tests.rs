@@ -104,14 +104,16 @@ fn every_experiment_builds_a_valid_scene_and_spec() {
             "{:?} produced invalid bounds",
             id
         );
-        // Every experiment has at least one body. Most also have a floor; the black hole is alone
+        // Every experiment has at least one body, except the wormhole, whose subject is the space
+        // itself. Most also have a floor; the black hole is alone
         // in empty space, and others (the Jovian system, the ruler) have no floor either.
         assert!(
-            experiment
-                .scene
-                .props
-                .iter()
-                .any(|prop| !matches!(prop.body, Body::Plane { .. })),
+            experiment.scene.wormhole.is_some()
+                || experiment
+                    .scene
+                    .props
+                    .iter()
+                    .any(|prop| !matches!(prop.body, Body::Plane { .. })),
             "{:?} has no bodies",
             id
         );
@@ -153,6 +155,11 @@ fn every_experiment_frames_its_own_scene() {
             id,
             spec.framed_radius_units
         );
+
+        if experiment.scene.wormhole.is_some() {
+            // What it frames is the mouth, at its target.
+            continue;
+        }
 
         // A framed radius that contains nothing would satisfy the check above trivially.
         //

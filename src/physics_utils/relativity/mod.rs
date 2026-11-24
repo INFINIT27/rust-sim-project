@@ -93,3 +93,4 @@ pub mod spacetime;
 pub mod time_dilation;
 pub mod velocity;
 pub mod velocity_3d;
+pub mod wormhole;

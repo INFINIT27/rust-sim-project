@@ -14,8 +14,8 @@
 | File | Job |
 | --- | --- |
 | `mod.rs` | `Config` (every configured resource), `Config::load`, `Config::insert_into`, `ConfigError`, the pure `parse`, and `config_dir`. `ConfigPlugin`, `ConfigDir`, `save_requested_system` and `write_file`: saving a page when the menu asks. |
-| `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `CollisionFile`, `PerformanceFile`, `ControlsFile`): what the file may contain, its defaults, `into_runtime`, which checks the values and builds the runtime type, and `from_runtime`, which builds the file to save. |
-| `constants.rs` | `CONFIG_DIR_VAR` (`RGA_CONFIG`), `CONFIG_DIR_NAME` (`config`), the six file names, and `SAVED_FILE_HEADER`. |
+| `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `CollisionFile`, `WormholeFile`, `PerformanceFile`, `ControlsFile`): what the file may contain, its defaults, `into_runtime`, which checks the values and builds the runtime type, and `from_runtime`, which builds the file to save. |
+| `constants.rs` | `CONFIG_DIR_VAR` (`RGA_CONFIG`), `CONFIG_DIR_NAME` (`config`), the file names, `SAVED_DIR_NAME`, and `SAVED_FILE_HEADER`. |
 
 ## Rules and invariants
 

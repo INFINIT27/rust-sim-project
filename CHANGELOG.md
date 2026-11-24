@@ -9,8 +9,51 @@ one exists. The convention is specified in
 
 ## 2026-11-23
 
+### Added
+
+- **A traversable wormhole, `experiment_9`** (`wormhole`); what is left is in
+  `notes.md`.
+  - **The geometry** (`physics_utils::relativity::wormhole`): the three-parameter wormhole of James,
+    von Tunzelmann, Franklin & Thorne (2015), "Visualizing Interstellar's Wormhole", American Journal
+    of Physics, doi:10.1119/1.4916949, arXiv:1502.03809, and Ellis's. Light's paths are held to the
+    conserved quantity, to which paths cross (`B < ρ`), and to the Ellis bend's elliptic integral.
+    The paper prints the lensing width per flare as `1.42953` and, in a footnote, `1.42053`: it is the
+    first.
+  - **The view** (`render::wormhole_ray`, `wormhole_view`, `assets/shaders/wormhole.wgsl`): each
+    pixel's light followed to one of two skies. Its `f32` twin agrees with the `f64` paths to
+    `6·10⁻⁴` rad in at most `166` steps. `3.0 ms` a frame at `1920×1080`, medium, on an RTX 4070
+    SUPER, the whole frame, skies only (the black hole: `12.4 ms`).
+  - **Flying through** (`render::wormhole_camera`): the camera's place is `ℓ` and a label, and it
+    moves along the straightest paths, which are also light's, so it goes where the crosshair points.
+    `FreeFlyController` gains `frame`, what "level" has become after a slanted crossing; it is the
+    identity in every other experiment.
+  - **The geometry view** (`ui::wormhole_map`, `G`): the embedding diagram, bottom-right, with the
+    camera on it and the path of the light at the crosshair, which is also the way the camera would
+    fly. Its meridians have the lengths of the space they stand for.
+  - **Settings**: `config/wormhole.toml` and Configuration > Wormhole, applied at once. `V`, `N` and
+    the ray-marcher's quality are shared with the black hole.
+  - **The scene is empty**: bodies are placed with `B`. (It had a star and planets on each side for a
+    while; they read as orbiting it, which nothing does.)
+  - **Bodies on both sides, crossing** (`core::wormhole`, `Scene::wormhole`): each has a place, and
+    coasts along the straightest path at constant speed, in place of gravity. Nothing pulls on
+    anything there, by choice, for now. Energy and angular momentum are kept through the throat, it
+    crosses exactly when its impact parameter is under the throat's radius, and touching spheres
+    bounce, in the tunnel too. Speeds are not scaled with the throat, so none passes that of light.
+  - **Bodies seen through the lens**: the shader meets each sphere on the light's way, so a planet
+    behind the mouth is a ring round it and one on the other side is seen only through it. At most
+    `16`. `3.9 ms` a frame with eight in it, medium (first `11.6 ms`: the radius was worked out again for
+    every body at every step, and bodies out of reach along `ℓ` were tested).
+  - **Around it**: `B` places along the crosshair on whichever side that ends, `F` locks only onto
+    bodies of the camera's side, trails are not drawn, the overlay says which pairs are on different
+    sides, and the geometry view shows the bodies. The opening view is the same for any throat.
+
 ### Changed
 
+- **`the_weak_field_deficit_is_the_newtonian_potential` no longer fails for rare inputs**: its tolerance
+  left out the next term of the series it checks. The seed that showed it is kept.
+- **The menu saves to `config/user/`**, which git ignores, and a file saved there is read over the
+  shipped one (`saved_dir`, `Config::load_layered`). Saving used to change the shipped files, and so
+  fail `the_shipped_files_are_the_built_in_configuration`. With `RGA_CONFIG` set, it still saves there.
 - **The tests that open a GPU are behind a Cargo feature, `gpu-tests`** (on by default), in
   `tst/**/*_gpu_tests.rs`. CI's test step died with a SIGSEGV whose cause is not known; lavapipe,
   which runs the GPU tests inside the test process, is the suspect.

@@ -860,3 +860,32 @@ pub const COAST_SOLVE_PROBE_M_S: f64 = 0.01;
 /// **If you change it.** Smaller needs more iterations than it is allowed from a Lambert guess.
 /// Larger lets one bad step leave the guess's basin.
 pub const COAST_SOLVE_MAX_STEP_M_S: f64 = 1_000.0;
+
+/// Each step of a path followed through a wormhole, as a fraction of the length the geometry changes
+/// over.
+///
+/// **Why this value.** Paths are followed in `f64`, and only a few a frame, so it is ten times finer
+/// than the light's; `wormhole_camera_tests` checks that the camera goes where the light does.
+///
+/// **Used by.** [`crate::core::wormhole::travel`].
+///
+/// **If you change it.** Larger, and paths drift off the straight line.
+pub const WORMHOLE_TRAVEL_STEP_FRACTION: f64 = 0.02;
+
+/// How far a body coasts in one substep in a wormhole, in radii of the smallest body.
+///
+/// **Why this value.** Half a radius, so no two bodies pass through each other unseen.
+///
+/// **Used by.** [`crate::core::wormhole`].
+///
+/// **If you change it.** Above `1`, small fast bodies can.
+pub const WORMHOLE_SUBSTEP_RADII: f64 = 0.5;
+
+/// The most substeps one step takes in a wormhole.
+///
+/// **Why this value.** As many as any other scene may take.
+///
+/// **Used by.** [`crate::core::wormhole`].
+///
+/// **If you change it.** Lower, and a fast clock lets bodies pass through each other sooner.
+pub const WORMHOLE_MAX_SUBSTEPS: u32 = 256;

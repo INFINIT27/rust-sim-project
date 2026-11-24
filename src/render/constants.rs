@@ -1209,3 +1209,188 @@ pub const CLUSTER_TARGET_MIN_PARTICLES: usize = 2;
 ///
 /// **If you change it.** Larger makes smaller clumps lockable at a little cost each frame.
 pub const CLUSTER_TARGET_MAX: usize = 32;
+
+// -----------------------------------------------------------------------
+// The wormhole
+// -----------------------------------------------------------------------
+
+/// The wormhole's shader, under `assets/`.
+///
+/// **Why this value.** Where the file is.
+///
+/// **Used by.** [`crate::render::wormhole_view`].
+///
+/// **If you change it.** The file must move with it: a missing shader is a runtime error, logged,
+/// and the wormhole is not drawn.
+pub const WORMHOLE_SHADER_PATH: &str = "shaders/wormhole.wgsl";
+
+/// Each step of the wormhole's ray-marcher, as a fraction of the length the geometry changes over
+/// (the flare at the mouth, the distance from it further out).
+///
+/// **Why this value.** Measured against the `f64` paths by `wormhole_ray_tests`, over the paper's
+/// shapes; see the figures there. The limit is the mouth's edge, where the bend is strongest.
+///
+/// **Used by.** [`crate::render::wormhole_ray`]; the Video quality setting doubles or halves it.
+///
+/// **If you change it.** The cost per pixel is inversely proportional to it; the accuracy tests say
+/// how far it can grow.
+pub const WORMHOLE_RAY_STEP_FRACTION: f32 = 0.2;
+
+/// The most steps one ray of the wormhole's ray-marcher takes before it is abandoned (drawn black).
+///
+/// **Why this value.** Rays that reach a sky take under two hundred (`wormhole_ray_tests` prints the
+/// most); only light all but circling the throat, a hairline at the mouth's edge, takes more.
+///
+/// **Used by.** [`crate::render::wormhole_ray`].
+///
+/// **If you change it.** Lower, and that hairline widens; higher costs only those pixels.
+pub const WORMHOLE_RAY_MAX_STEPS: u32 = 600;
+
+/// How far beyond the mouth, in throat radii, a departing ray is taken to have reached the sky.
+///
+/// **Why this value.** What is left of the bend beyond it is under `ℳ/100` of a radian, less than a
+/// pixel for every shape in the menu's range, and steps grow with distance, so going further costs
+/// little.
+///
+/// **Used by.** [`crate::render::wormhole_ray`].
+///
+/// **If you change it.** Smaller cuts the bend short: the sky shifts near the mouth.
+pub const WORMHOLE_RAY_REACH: f32 = 300.0;
+
+/// The wormhole's camera-centred sphere: its radius in world units.
+///
+/// **Why this value.** Only its direction from the camera matters, since the shader is given the
+/// camera's place; well inside [`CAMERA_FAR_UNITS`] and far outside [`CAMERA_NEAR_UNITS`].
+///
+/// **Used by.** [`crate::render::wormhole_view`].
+///
+/// **If you change it.** Nothing looks different between the two planes; outside them it is clipped.
+pub const WORMHOLE_VIEW_SPHERE_UNITS: f32 = 1000.0;
+
+/// The exposure the wormhole's skies are tone-mapped at.
+///
+/// **Why this value.** The black hole's ([`BLACK_HOLE_EXPOSURE`]), so the same stars look the same.
+///
+/// **Used by.** [`crate::render::wormhole_view`].
+///
+/// **If you change it.** Brighter or darker stars and nebula.
+pub const WORMHOLE_EXPOSURE: f32 = BLACK_HOLE_EXPOSURE;
+
+/// Cells of noise per unit of direction in the far side's nebula: its largest features.
+///
+/// **Why this value.** Clouds about `25°` across, so several show at once through the mouth.
+///
+/// **Used by.** [`crate::render::wormhole_ray::nebula`] and the shader, which must match.
+///
+/// **If you change it.** Larger makes smaller clouds. Change the shader with it.
+pub const WORMHOLE_NEBULA_CELLS: f32 = 2.5;
+
+/// The noise levels at which the nebula begins and is full.
+///
+/// **Why this value.** About half the sky shows some nebula and the rest is clear, dark sky.
+///
+/// **Used by.** [`crate::render::wormhole_ray::nebula`] and the shader, which must match.
+///
+/// **If you change it.** Lower covers more of the sky. Change the shader with it.
+pub const WORMHOLE_NEBULA_EDGES: (f32, f32) = (0.45, 0.85);
+
+/// The nebula's first colour, linear light before exposure.
+///
+/// **Why this value.** A dim teal: clearly not the near side's black, and dim enough for the stars.
+///
+/// **Used by.** [`crate::render::wormhole_ray::nebula`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_NEBULA_COLOUR: Vec3 = Vec3::new(0.01, 0.05, 0.07);
+
+/// The nebula's second colour, linear light before exposure.
+///
+/// **Why this value.** A dim magenta, so the clouds are not one flat tint.
+///
+/// **Used by.** [`crate::render::wormhole_ray::nebula`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_NEBULA_TINT: Vec3 = Vec3::new(0.08, 0.015, 0.06);
+
+/// The spacing of the wormhole test pattern's lines of latitude and longitude, in radians.
+///
+/// **Why this value.** `15°`.
+///
+/// **Used by.** [`crate::render::wormhole_ray::pattern`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_PATTERN_SPACING_RAD: f32 = std::f32::consts::PI / 12.0;
+
+/// Half the width of the test pattern's lines, in radians.
+///
+/// **Why this value.** About three pixels either side at `1080` lines and a `45°` view.
+///
+/// **Used by.** [`crate::render::wormhole_ray::pattern`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_PATTERN_LINE_RAD: f32 = 0.003;
+
+/// The test pattern's colour on the near side.
+///
+/// **Why this value.** Orange, against the far side's blue.
+///
+/// **Used by.** [`crate::render::wormhole_ray::pattern`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_PATTERN_NEAR: Vec3 = Vec3::new(1.0, 0.45, 0.1);
+
+/// The test pattern's colour on the far side.
+///
+/// **Why this value.** Blue, against the near side's orange.
+///
+/// **Used by.** [`crate::render::wormhole_ray::pattern`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_PATTERN_FAR: Vec3 = Vec3::new(0.15, 0.5, 1.0);
+
+/// The longest piece of a ray in the tunnel, in throat radii, when there are bodies to find.
+///
+/// **Why this value.** The piece is tested against each body as a straight line; over `0.3` of a
+/// radian round the throat the line and the path differ by about `1%` of the throat radius.
+///
+/// **Used by.** [`crate::render::wormhole_ray`] and the shader, which must match.
+///
+/// **If you change it.** Longer, and bodies in the tunnel look bent; shorter costs steps.
+pub const WORMHOLE_RAY_TUNNEL_STEP: f32 = 0.3;
+
+/// The most bodies the wormhole shader draws.
+///
+/// **Why this value.** Every step of every ray is tested against each, and bodies are placed by hand.
+///
+/// **Used by.** [`crate::render::wormhole_view`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it. With more bodies than this, the nearest to the
+/// camera along the wormhole are drawn.
+pub const WORMHOLE_MAX_BODIES: usize = 16;
+
+/// How bright a glowing body is, times its colour, before exposure.
+///
+/// **Why this value.** Bright enough to saturate, as a star does in a photograph of its planets.
+///
+/// **Used by.** [`crate::render::wormhole_ray::body_light`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_BODY_GLOW: f32 = 0.6;
+
+/// How bright a lit body is, facing its star, times its colour, before exposure.
+///
+/// **Why this value.** Most of the way to white at [`WORMHOLE_EXPOSURE`].
+///
+/// **Used by.** [`crate::render::wormhole_ray::body_light`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_BODY_BRIGHTNESS: f32 = 0.25;
+
+/// What the dark side of a body keeps of that light.
+///
+/// **Why this value.** Enough to see where it is against the sky.
+///
+/// **Used by.** [`crate::render::wormhole_ray::body_light`] and the shader, which must match.
+///
+/// **If you change it.** Change the shader with it.
+pub const WORMHOLE_BODY_AMBIENT: f32 = 0.06;

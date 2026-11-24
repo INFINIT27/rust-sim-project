@@ -116,6 +116,7 @@ pub fn place_object_system(
     mut scene: ResMut<Scene>,
     mut names: Option<ResMut<BodyNames>>,
     camera: Query<&Transform, With<Camera3d>>,
+    traveller: Option<bevy::ecs::system::Res<crate::render::wormhole_camera::WormholeTraveller>>,
 ) {
     if !placer.place_requested() {
         return;
@@ -136,6 +137,20 @@ pub fn place_object_system(
         transform.forward().as_vec3(),
         object.contact_radius_units(),
     );
+
+    // In a wormhole, along the crosshair's own line, on whichever side that ends.
+    let started = traveller.and_then(|traveller| traveller.place);
+    if let (Some(space), Some(start)) = (&scene.wormhole, started) {
+        let ahead = position - transform.translation;
+        let direction = start.frame().inverse() * ahead.as_dvec3().normalize_or_zero();
+        let distance = f64::from(ahead.length());
+        let (place, _) = crate::core::wormhole::travel(&space.shape, start, direction, distance);
+        let id = scene.add_at(object.to_prop(position.as_dvec3()), place);
+        if let Some(names) = names.as_mut() {
+            names.insert(id, object.name);
+        }
+        return;
+    }
 
     let id = scene.add(object.to_prop(position.as_dvec3()));
     if let Some(names) = names.as_mut() {

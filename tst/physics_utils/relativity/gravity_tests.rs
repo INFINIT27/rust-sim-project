@@ -1071,6 +1071,8 @@ proptest! {
         let deficit = gravitational_rate_deficit(mass, multiple * horizon).expect("valid");
         let potential = 0.5 / multiple;
 
-        prop_assert!((deficit / potential - 1.0 - 0.25 / multiple).abs() < 1.0e-8 / multiple + 1.0e-14);
+        // With x = 1/multiple, 1 - sqrt(1 - x) = x/2 (1 + x/4 + x^2/8 + ...): the next term bounds it.
+        let next = 0.126 / (multiple * multiple);
+        prop_assert!((deficit / potential - 1.0 - 0.25 / multiple).abs() < next + 1.0e-14);
     }
 }

@@ -83,3 +83,23 @@ pub const CONTROLS_FILE: &str = "controls.toml";
 /// **If you change it.** Keep every line a TOML comment, or saved files stop loading.
 pub const SAVED_FILE_HEADER: &str = "# Saved from the in-app menu, which does not keep comments.\n\
 # Every key is optional; see config/README.md for what each one does.\n\n";
+
+/// The wormhole file: its throat, its length, and how sharply its mouths flare.
+///
+/// **Why this value.** Named for what it sets, as the other files are.
+///
+/// **Used by.** [`crate::config::Config::load`], and the menu's Save on the wormhole page.
+///
+/// **If you change it.** Rename the shipped file, or the built-in wormhole is used.
+pub const WORMHOLE_FILE: &str = "wormhole.toml";
+
+/// The directory inside `config/` the menu saves to.
+///
+/// **Why this value.** The user's own settings, apart from the shipped ones. `.gitignore` names it,
+/// so trying things out in the menu never changes a tracked file.
+///
+/// **Used by.** [`crate::config::saved_dir`].
+///
+/// **If you change it.** Change `.gitignore` with it; settings saved under the old name are no longer
+/// read.
+pub const SAVED_DIR_NAME: &str = "user";

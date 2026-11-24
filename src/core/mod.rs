@@ -15,6 +15,7 @@
 //!
 //! - [`scene`] — the data model: [`scene::Scene`], [`scene::Prop`] (a body plus
 //!   its velocity and mass), and the value types.
+//! - [`wormhole`] — bodies coasting through a wormhole, in place of gravity.
 //! - [`integrator`] — the body of the `Scene::step` seam: mutual gravitation,
 //!   composed entirely from [`crate::physics_utils`] functions.
 
@@ -22,3 +23,4 @@ pub mod constants;
 pub mod integrator;
 pub mod scene;
 pub mod transfer;
+pub mod wormhole;

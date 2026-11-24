@@ -68,6 +68,8 @@ pub enum ExperimentId {
     EarthMoon,
     /// The Earth and a Mars-mass body meeting at escape speed and 45°: the Moon-forming impact.
     MoonForming,
+    /// A traversable wormhole between two skies, to look into and fly through.
+    Wormhole,
 }
 
 impl Default for ExperimentId {
@@ -83,7 +85,7 @@ impl ExperimentId {
     ///
     /// The order is the order a `--list` prints and a picker would show, so it is
     /// stable and matches the slugs: `experiment_1` first.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::GiantImpact,
         Self::ThreeBodyRing,
         Self::SolarSystem,
@@ -92,9 +94,10 @@ impl ExperimentId {
         Self::BlackHole,
         Self::EarthMoon,
         Self::MoonForming,
+        Self::Wormhole,
     ];
 
-    /// The canonical slug: `"experiment_1"` through `"experiment_8"`.
+    /// The canonical slug: `"experiment_1"` through `"experiment_9"`.
     ///
     /// Numbered rather than named because that is how they are referred to in
     /// conversation and on the command line. [`name`](Self::name) is the human label
@@ -110,6 +113,7 @@ impl ExperimentId {
             Self::BlackHole => "experiment_6",
             Self::EarthMoon => "experiment_7",
             Self::MoonForming => "experiment_8",
+            Self::Wormhole => "experiment_9",
         }
     }
 
@@ -125,6 +129,7 @@ impl ExperimentId {
             Self::BlackHole => "Black hole",
             Self::EarthMoon => "Earth and Moon",
             Self::MoonForming => "Moon-forming impact",
+            Self::Wormhole => "Wormhole",
         }
     }
 
@@ -166,6 +171,10 @@ impl ExperimentId {
                  the impact thought to have made the Moon: they merge into one hot, spinning body \
                  that keeps the impact's angular momentum."
             }
+            Self::Wormhole => {
+                "A traversable wormhole 10 million km across between two skies, its light followed \
+                 along the exact paths: look through the mouth, then fly through it."
+            }
         }
     }
 
@@ -192,6 +201,7 @@ impl ExperimentId {
             Self::BlackHole => &["6", "black-hole", "black_hole", "blackhole", "sgr-a"],
             Self::EarthMoon => &["7", "earth-moon", "earth_moon", "earth", "moon", "luna"],
             Self::MoonForming => &["8", "moon-forming", "moon_forming", "oblique", "canonical"],
+            Self::Wormhole => &["9", "wormhole", "worm-hole", "worm_hole", "throat"],
         }
     }
 
@@ -230,6 +240,7 @@ impl ExperimentId {
             Self::BlackHole => super::black_hole::black_hole(),
             Self::EarthMoon => super::earth_moon::earth_moon_system(),
             Self::MoonForming => super::moon_forming::moon_forming_impact_with(settings),
+            Self::Wormhole => super::wormhole::wormhole(),
         }
     }
 

@@ -22,3 +22,6 @@ pub mod mission;
 pub mod placement;
 pub mod plugin;
 pub mod trail;
+pub mod wormhole_camera;
+pub mod wormhole_ray;
+pub mod wormhole_view;

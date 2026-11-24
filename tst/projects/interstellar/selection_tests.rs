@@ -111,14 +111,14 @@ fn help_and_list_short_circuit() {
 
 #[test]
 fn an_unknown_experiment_is_reported_with_the_token() {
-    let error = parse_args(["experiment_9"]).expect_err("must not parse");
+    let error = parse_args(["experiment_99"]).expect_err("must not parse");
     assert_eq!(
         error,
-        ParseError::UnknownExperiment("experiment_9".to_string())
+        ParseError::UnknownExperiment("experiment_99".to_string())
     );
     // The message has to name the token, or the user re-reads their own command line to
     // find out which word was wrong.
-    assert!(error.to_string().contains("experiment_9"));
+    assert!(error.to_string().contains("experiment_99"));
     assert!(error.to_string().contains("--list"));
 }
 

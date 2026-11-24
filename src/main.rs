@@ -24,12 +24,13 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use physics_sandbox::constants::{WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE, WINDOW_WIDTH_PX};
 use physics_sandbox::{
-    catalog_lines, config_dir, help_text, parse_args, AccretionDiscPlugin, ArrivalPopupPlugin,
-    BlackHoleViewPlugin, Command, CompassPlugin, Config, ConfigPlugin, CrosshairPlugin,
-    DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, GpuPhysicsPlugin, HudPlugin,
-    LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin, PerformancePlugin,
-    PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin, PlacementPlugin, ScenePlugin,
-    Selection, SimulationControlsPlugin, TrailPlugin,
+    catalog_lines, config_dir, help_text, parse_args, saved_dir, AccretionDiscPlugin,
+    ArrivalPopupPlugin, BlackHoleViewPlugin, Command, CompassPlugin, Config, ConfigPlugin,
+    CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, GpuPhysicsPlugin,
+    HudPlugin, LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin,
+    PerformancePlugin, PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin,
+    PlacementPlugin, ScenePlugin, Selection, SimulationControlsPlugin, TrailPlugin,
+    WormholeMapPlugin, WormholeViewPlugin,
 };
 
 fn main() {
@@ -58,8 +59,9 @@ fn main() {
     // The configuration files (`config/*.toml`; see `src/config/`). Same contract again: a bad
     // file stops the run, naming the file and the key, rather than running on a setting that
     // silently did nothing.
-    let dir = config_dir();
-    let config = match Config::load(&dir) {
+    let shipped = config_dir();
+    let dir = saved_dir();
+    let config = match Config::load_layered(&[&dir, &shipped]) {
         Ok(config) => config,
         Err(error) => {
             eprintln!("error: {error}");
@@ -155,12 +157,16 @@ fn run(selection: Selection, dir: PathBuf, config: Config, performance: Performa
     .add_plugins(AccretionDiscPlugin)
     // The hole ray-marched on the GPU, after the disc, whose CPU drawing it switches off.
     .add_plugins(BlackHoleViewPlugin)
+    // The wormhole, after the black hole, whose view and star keys it shares.
+    .add_plugins(WormholeViewPlugin)
     .add_plugins(FreeFlyCameraPlugin)
     .add_plugins(DebugUiPlugin)
     .add_plugins(CrosshairPlugin)
     // The orientation compass, top-right. Like the crosshair, it guards against
     // double-adding `EguiPlugin`, so plugin order among the egui users is free.
     .add_plugins(CompassPlugin)
+    // The geometry view of the wormhole, bottom-right, in its experiment.
+    .add_plugins(WormholeMapPlugin)
     // Clock control (pause, single-step, speed) goes after `ScenePlugin`, which is
     // what inserts the `SimulationClock` these keys mutate.
     .add_plugins(SimulationControlsPlugin)

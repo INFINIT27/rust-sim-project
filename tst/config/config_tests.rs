@@ -4,7 +4,7 @@
 use super::*;
 use crate::compute::particles::{GravitySolver, NeighbourSearch};
 use crate::config::files::{
-    CameraFile, CollisionFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile,
+    CameraFile, CollisionFile, PerformanceFile, SpacecraftFile, TrailsFile, UiFile, WormholeFile,
 };
 use crate::performance::AntiAliasing;
 use crate::spacecraft::{Propulsion, Spacecraft, Trip};
@@ -37,6 +37,7 @@ fn the_shipped_files_are_the_built_in_configuration() {
     assert_eq!(config.compass, CompassConfig::default());
     assert_eq!(config.arrival, ArrivalPopupConfig::default());
     assert_eq!(config.trails, TrailConfig::default());
+    assert_eq!(config.wormhole, WormholeSettings::default());
     assert_eq!(config.collision, CollisionSettings::default());
     assert_eq!(config.performance, PerformanceSettings::default());
     assert_eq!(config.keymap, KeyMap::default());
@@ -367,6 +368,22 @@ fn every_page_saves_a_file_that_loads_back_as_what_was_saved() {
     let reloaded = save_and_reload(TRAILS_FILE, &TrailsFile::from_runtime(&trails));
     assert_eq!(reloaded.trails, trails);
 
+    let wormhole = WormholeSettings {
+        throat_units: 12.5,
+        half_length: 2.0,
+        lensing_width: 0.2,
+    };
+    let reloaded = save_and_reload(WORMHOLE_FILE, &WormholeFile::from_runtime(&wormhole));
+    assert_eq!(reloaded.wormhole, wormhole);
+    for bad in [
+        "throat_units = 0.0",
+        "half_length = 9.0",
+        "lensing_width = nan",
+    ] {
+        let error = parse(bad, WormholeFile::into_runtime).unwrap_err();
+        assert!(error.contains(&bad[..8]), "{error}");
+    }
+
     let performance = PerformanceSettings {
         anti_aliasing: AntiAliasing::Fxaa,
         vsync: false,
@@ -567,4 +584,25 @@ fn the_gpu_algorithms_load_by_name_and_a_bad_name_or_angle_is_an_error_naming_it
         let error = parse(bad, CollisionFile::into_runtime).unwrap_err();
         assert!(error.contains(key), "{bad}: {error}");
     }
+}
+
+#[test]
+fn a_saved_file_is_read_over_the_shipped_one_and_the_rest_are_still_read() {
+    let (saved, base) = (scratch("layer_saved"), scratch("layer_base"));
+    std::fs::write(base.join(TRAILS_FILE), "visible = false").unwrap();
+    std::fs::write(base.join(CAMERA_FILE), "move_speed_units_s = 7.0").unwrap();
+    std::fs::write(saved.join(CAMERA_FILE), "move_speed_units_s = 9.0").unwrap();
+    let config = Config::load_layered(&[&saved, &base]).unwrap();
+    assert_eq!(config.camera.move_speed, 9.0);
+    assert!(!config.trails.visible);
+    // With no directory for saved settings yet, the shipped ones.
+    let config = Config::load_layered(&[Path::new("no/such/directory"), &base]).unwrap();
+    assert_eq!(config.camera.move_speed, 7.0);
+}
+
+#[test]
+fn saved_settings_go_where_git_does_not_look() {
+    let ignored = std::fs::read_to_string(shipped().parent().unwrap().join(".gitignore")).unwrap();
+    let line = format!("/{CONFIG_DIR_NAME}/{SAVED_DIR_NAME}/");
+    assert!(ignored.lines().any(|found| found.trim() == line));
 }

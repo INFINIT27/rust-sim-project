@@ -4,6 +4,9 @@
 # Benchmark logs written by src/performance/scripts/bench.sh (default $RGA_BENCH_LOG).
 bench.tsv
 
+# Settings saved from the menu (SAVED_DIR_NAME), read over the shipped config files.
+/config/user/
+
 # Editors and OS clutter.
 .idea/
 .vscode/

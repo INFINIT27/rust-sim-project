@@ -102,6 +102,7 @@ cargo run --release -- moons    # Jupiter and the Galilean moons
 cargo run --release -- scale    # the planets side by side at true size
 cargo run --release -- black-hole  # Sgr A*, the Milky Way's central black hole
 cargo run --release -- earth-moon  # the Earth and the Moon at true size and distance
+cargo run --release -- wormhole    # a traversable wormhole to fly through
 ```
 
 Running with no argument starts `experiment_1`, the giant impact: the Earth and a Mars-mass body at true

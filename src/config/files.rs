@@ -24,6 +24,10 @@ use crate::core::scene::{CollisionSettings, Color, PlanetModel};
 use crate::input::camera::CameraSettings;
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
+use crate::projects::interstellar::constants::{
+    WORMHOLE_HALF_LENGTH_RANGE, WORMHOLE_LENSING_WIDTH_RANGE, WORMHOLE_THROAT_RANGE_UNITS,
+};
+use crate::projects::interstellar::wormhole::WormholeSettings;
 use crate::render::trail::TrailConfig;
 use crate::spacecraft::constants::{CRAFT_COLOR, CRAFT_RADIUS_M, LAUNCH_ALTITUDE_M};
 use crate::spacecraft::{Engine, Fleet, Propulsion, Spacecraft, Stage, Trip};
@@ -429,6 +433,66 @@ impl CollisionFile {
             },
             solver,
         ))
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// wormhole.toml
+// ---------------------------------------------------------------------------------------------
+
+/// `wormhole.toml`: the shape of the wormhole in `experiment_9`. Applies at once.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct WormholeFile {
+    /// The throat radius `ρ`, in world units (`10⁹ m`), `0.1` to `100`.
+    pub throat_units: f32,
+    /// Half the tunnel length over the throat radius, `a/ρ`, `0.005` to `5`.
+    pub half_length: f32,
+    /// The lensing width over the throat radius, `𝒲/ρ`, `0.014` to `0.43`: how gradually the
+    /// mouths flare.
+    pub lensing_width: f32,
+}
+
+impl Default for WormholeFile {
+    fn default() -> Self {
+        Self::from_runtime(&WormholeSettings::default())
+    }
+}
+
+impl WormholeFile {
+    /// The file that describes `settings`, for saving.
+    pub fn from_runtime(settings: &WormholeSettings) -> Self {
+        Self {
+            throat_units: settings.throat_units,
+            half_length: settings.half_length,
+            lensing_width: settings.lensing_width,
+        }
+    }
+
+    /// The [`WormholeSettings`] this file describes, or a message naming the bad key.
+    pub fn into_runtime(self) -> Result<WormholeSettings, String> {
+        for (key, value, (low, high)) in [
+            (
+                "throat_units",
+                self.throat_units,
+                WORMHOLE_THROAT_RANGE_UNITS,
+            ),
+            ("half_length", self.half_length, WORMHOLE_HALF_LENGTH_RANGE),
+            (
+                "lensing_width",
+                self.lensing_width,
+                WORMHOLE_LENSING_WIDTH_RANGE,
+            ),
+        ] {
+            if !(low..=high).contains(&value) {
+                return Err(format!("`{key}` must be from {low} to {high}, got {value}"));
+            }
+        }
+        Ok(WormholeSettings {
+            throat_units: self.throat_units,
+            half_length: self.half_length,
+            lensing_width: self.lensing_width,
+        })
     }
 }
 

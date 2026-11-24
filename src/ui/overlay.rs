@@ -391,6 +391,16 @@ pub fn distance_lines(scene: &Scene) -> Vec<String> {
             if lines.len() >= MAX_DISTANCE_ROWS {
                 break 'rows;
             }
+            // Bodies on different sides of a wormhole are in different spaces, and the difference of
+            // their positions is not a distance.
+            let far = |id| {
+                let place = scene.wormhole.as_ref().and_then(|space| space.place(id));
+                place.is_some_and(|place| place.l < 0.0)
+            };
+            if far(*id_a) != far(*id_b) {
+                lines.push(format!("#{}-#{}: on different sides", id_a.0, id_b.0));
+                continue;
+            }
             let separation_units = (prop_b.body.center() - prop_a.body.center()).length();
             lines.push(format!(
                 "#{}-#{}: {:.4e} m",
@@ -457,7 +467,19 @@ pub fn debug_overlay_system(
     camera: Query<&Transform, With<Camera3d>>,
     controllers: Query<(&FreeFlyController, Option<&CameraLock>)>,
     gpu: Option<Res<crate::compute::particles::GpuParticles>>,
+    (traveller, wormhole): (
+        Option<Res<crate::render::wormhole_camera::WormholeTraveller>>,
+        Option<Res<crate::projects::interstellar::wormhole::WormholeSettings>>,
+    ),
 ) {
+    // Where the camera is in the wormhole, in its experiment.
+    let wormhole_row = traveller
+        .as_deref()
+        .and_then(|traveller| traveller.place)
+        .zip(wormhole.as_deref())
+        .map(|(place, settings)| {
+            crate::render::wormhole_camera::place_line(&place, &settings.shape())
+        });
     // The GPU pass timer's rows, while it is on (`RGA_GPU_PROFILE`).
     let profile_rows = gpu
         .as_deref()
@@ -510,6 +532,9 @@ pub fn debug_overlay_system(
         ui.label(experiment_row);
         ui.label(format!("FPS: {:.1}", fps));
         ui.label(format!("props: {}", prop_count));
+        if let Some(row) = &wormhole_row {
+            ui.label(row);
+        }
         if let Some(rows) = &profile_rows {
             ui.separator();
             for row in rows {

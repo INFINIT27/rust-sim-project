@@ -1,0 +1,8 @@
+# The wormhole of experiment_9. Every key is optional; see config/README.md.
+
+# The throat radius, in world units of 1e9 m.
+throat_units = 5.0
+# Half the tunnel length, in throat radii.
+half_length = 0.5
+# How gradually the mouths flare (the lensing width), in throat radii.
+lensing_width = 0.05

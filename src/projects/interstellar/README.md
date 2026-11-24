@@ -1,7 +1,7 @@
 # `src/projects/interstellar/` — the interstellar experiments
 
 > **Purpose:** The catalog of runnable simulations (giant impact, three-body ring, solar system,
-> Jovian moons, size ruler, black hole, Earth and Moon), each one's clock scale and starting camera, the command-line
+> Jovian moons, size ruler, black hole, Earth and Moon, wormhole), each one's clock scale and starting camera, the command-line
 > parsing, and the objects the `B` key places.
 > **Edit here to:** add or change an experiment, change planet or moon data, starting camera
 > poses, CLI arguments or `--help`, the random seed, or the `B`-key objects.
@@ -34,8 +34,9 @@ description of a world, not a renderer.
 | `black_hole.rs` | `experiment_6`: Sgr A*, spinning, with an accretion disc and six real S-stars on their measured orbits. `black_hole`, `SStar` and `s_star_state` (a measured orbit to a position and velocity), `spinning_horizon_units`, `BlackHoleRadii` and `black_hole_radii` (the non-spinning radii, for comparison), `black_hole_centre_units`, `SGR_A_STAR_NAME`. |
 | `earth_moon.rs` | `experiment_7`: the Earth and the Moon alone, at true size and distance, both orbiting their barycentre. `earth_moon_system`, `earth_moon_primary`, `earth_moon_satellite`, `earth_moon_mass_fraction`, `earth_moon_orbit_speed_units_s`, `earth_moon_orbit_period_seconds`. |
 | `moon_forming.rs` | `experiment_8`: the Moon-forming impact, the same planets as `experiment_1` meeting at escape speed and `45°`. `moon_forming_impact_with`, `moon_forming_impact_seconds` (Barker's equation for the parabolic approach), `moon_forming_impact_speed_m_s`, `moon_forming_angular_momentum`. |
+| `wormhole.rs` | `experiment_9`: `WormholeSettings` (throat, length, lensing width; `config/wormhole.toml`), `wormhole`, `is_wormhole`. Empty but for what `B` places. No gravity. |
 
-## The eight experiments
+## The nine experiments
 
 | Slug | Also | What it is |
 | --- | --- | --- |
@@ -47,6 +48,7 @@ description of a world, not a renderer.
 | `experiment_6` | `6`, `black-hole`, `sgr-a` | Sgr A*, spinning at `a = 0.9`, with a glowing accretion disc dragged round it. |
 | `experiment_7` | `7`, `earth-moon`, `earth`, `moon`, `luna` | The Earth and the Moon alone, at true size and true distance, both orbiting their barycentre every `27.3` days. |
 | `experiment_8` | `8`, `moon-forming`, `oblique`, `canonical` | The Moon-forming impact: the same particle planets meeting at their mutual escape speed (`9.25 km/s`) and at `45°` after `1.5` hours, with `1.1` times the Earth–Moon system's angular momentum. They merge into one hot, spinning body and throw material onto orbits that clear its surface. The particles spin, so angular momentum is kept exactly. Measured on the GPU after a day: `1.6%` to `2.0%` of the mass in the disk from `2,000` to `20,000` particles per planet, `1.5` lunar masses, inside the one to two Canup (2004) finds. |
+| `experiment_9` | `9`, `wormhole` | A traversable wormhole (James et al. 2015) `10` million km across between two skies: look into the mouth, fly through it and back. `V` draws both skies' latitudes and longitudes; `G` shows or hides the geometry view; the shape is Configuration > Wormhole, applied at once. |
 
 ```bash
 cargo run --release                          # experiment_1
@@ -58,6 +60,7 @@ cargo run --release -- scale                 # the size-comparison row
 cargo run --release -- black-hole            # Sgr A*, spinning, with its disc
 cargo run --release -- earth-moon            # the Earth and the Moon
 cargo run --release -- moon-forming          # the Moon-forming impact
+cargo run --release -- wormhole              # a traversable wormhole
 cargo run --release -- --list                # the catalog
 ```
 

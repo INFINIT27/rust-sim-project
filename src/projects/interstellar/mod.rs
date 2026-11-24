@@ -20,6 +20,7 @@
 //! | [`scale_check`] | `experiment_5`: a static size-comparison row. A ruler, not a simulation. |
 //! | [`black_hole`] | `experiment_6`: Sgr A*, spinning, with an accretion disc. |
 //! | [`earth_moon`] | `experiment_7`: the Earth and the Moon alone, at true size and distance. |
+//! | [`wormhole`] | `experiment_9`: a traversable wormhole, and its settings. |
 //! | [`constants`] | The layer's tunables: ring geometry, speed window, camera poses, fallback seed. |
 //!
 //! # The experiments
@@ -44,6 +45,8 @@
 //!   and glowing with the heat of its friction, under the exact Kerr equation of motion. See [`black_hole`].
 //! - **`experiment_7` — the Earth and the Moon.** The two bodies alone, at true size and true
 //!   distance, both orbiting their barycentre. See [`earth_moon`].
+//! - **`experiment_9` — the wormhole.** Two skies joined by a throat, seen along exact light paths and
+//!   flown through. See [`wormhole`].
 //!
 //! # Determinism, and why the seed is recorded
 //!
@@ -85,3 +88,4 @@ pub mod random;
 pub mod scale_check;
 pub mod selection;
 pub mod solar_system;
+pub mod wormhole;

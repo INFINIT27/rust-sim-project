@@ -13,6 +13,7 @@ Bevy resolves `ShaderRef::Path` against this directory, and it holds two files:
 | File | Job |
 | --- | --- |
 | `shaders/eclipse.wgsl` | The fragment shader that draws eclipse shadows. Mirrors `star_visible_fraction` in [`src/render/eclipse.rs`](../src/render/eclipse.rs). |
+| `shaders/wormhole.wgsl` | The fragment shader that ray-marches the wormhole: each pixel's light followed back to the near or the far sky. Mirrors [`src/render/wormhole_ray.rs`](../src/render/wormhole_ray.rs); its stars are the same text as `black_hole.wgsl`'s (both checked by tests). |
 | `shaders/black_hole.wgsl` | The fragment shader that ray-marches the black hole: each pixel's light followed backwards along its exact Kerr path to the disc, the shadow, or the sky. A transcription of [`src/render/kerr_ray.rs`](../src/render/kerr_ray.rs), where the physics is tested; `black_hole_view_tests::the_shader_mirrors_its_twin` checks this file's text for the twin's functions and thresholds. Drawn on a sphere by [`src/render/black_hole_view.rs`](../src/render/black_hole_view.rs). While the outline is on (`O`) it also outlines the event horizon, where its mirror of `horizon_measure` is zero. |
 
 ## Why there is a shader at all

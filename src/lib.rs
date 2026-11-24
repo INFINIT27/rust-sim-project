@@ -68,6 +68,9 @@ pub use crate::projects::interstellar::catalog::{
 };
 pub use crate::projects::interstellar::random::Rng;
 
+// The wormhole: its settings and its scene.
+pub use crate::projects::interstellar::wormhole::{is_wormhole, wormhole, WormholeSettings};
+
 // The interstellar objects the `B` key can place, and the catalog they come from.
 pub use crate::projects::interstellar::objects::{stellar_object, StellarObject};
 
@@ -214,10 +217,11 @@ pub use crate::compute::profiler::{
 // Configuration files: `config/*.toml`, read once at startup into the resources above.
 pub use crate::config::constants::{
     CAMERA_FILE, COLLISION_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
-    SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE,
+    SAVED_DIR_NAME, SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE, WORMHOLE_FILE,
 };
 pub use crate::config::{
-    config_dir, save_requested_system, write_file, Config, ConfigDir, ConfigError, ConfigPlugin,
+    config_dir, save_requested_system, saved_dir, write_file, Config, ConfigDir, ConfigError,
+    ConfigPlugin,
 };
 
 pub use crate::spacecraft::{
@@ -289,6 +293,7 @@ pub use crate::render::plugin::{
 };
 
 // Motion trails: the last few units of each body's path, fading out behind it.
+pub use crate::core::wormhole::{separation, WormholeSpace};
 pub use crate::render::accretion_disc::{
     advance_accretion_disc_system, blackbody_rgb, disc_source, ergosphere_outline, AccretionDisc,
     AccretionDiscPlugin, DiscParticle, DiscProfile, Plunge,
@@ -309,6 +314,15 @@ pub use crate::render::light_streams::{
 pub use crate::render::trail::{
     apply_experiment_trail_length, draw_trails_system, record_trails_system, toggle_trails_system,
     TrailConfig, TrailGizmos, TrailPath, TrailPlugin, TrailSegment, Trails,
+};
+pub use crate::render::wormhole_camera::{
+    far_rotation, place_line, travel, wormhole_camera_system, WormholePlace, WormholeTraveller,
+};
+pub use crate::render::wormhole_ray::{RayBody, RaySky, RayWormhole};
+pub use crate::render::wormhole_view::{
+    ray_wormhole, reshape_wormhole_system, sync_wormhole_bodies_system, sync_wormhole_mouth_system,
+    sync_wormhole_view_system, WormholeMaterial, WormholeMouth, WormholeSphere, WormholeUniform,
+    WormholeViewPlugin,
 };
 
 // The floor grid: a tracing aid drawn on the ground plane as render-only entities.
@@ -404,6 +418,10 @@ pub use crate::ui::menu::{
 
 pub use crate::ui::compass::{
     compass_axes, compass_system, CompassAxis, CompassConfig, CompassPlugin,
+};
+pub use crate::ui::wormhole_map::{
+    toggle_wormhole_map_system, wormhole_map_system, WormholeMap, WormholeMapPlugin,
+    WormholeMapVisibility,
 };
 
 // Re-export the crosshair surface. `crosshair_segments` is public so the

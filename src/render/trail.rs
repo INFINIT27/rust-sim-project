@@ -631,7 +631,8 @@ pub fn draw_trails_system(
     trails: Res<Trails>,
     mut gizmos: Gizmos<TrailGizmos>,
 ) {
-    if !config.visible {
+    // In a wormhole a straight line between two places is not where light would show it.
+    if !config.visible || scene.wormhole.is_some() {
         return;
     }
 
