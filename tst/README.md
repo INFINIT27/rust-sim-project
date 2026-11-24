@@ -17,7 +17,7 @@ conventional `tests/`, so Cargo is pointed at it explicitly in `Cargo.toml`.
 | `headless_app.rs` | The only true integration test: builds `MinimalPlugins` + `ScenePlugin`, ticks 5 frames, asserts the Scene↔ECS mirror invariants. Declared as a `[[test]]` target in `Cargo.toml`. |
 | `core/` | Unit + property tests for `src/core/`. |
 | `collision/` | Unit + property tests for `src/collision/`, including the end-to-end "the spheres bounce instead of phasing through" check. |
-| `compute/` | Unit tests for `src/compute/`: the GPU particle stepper, including the whole giant impact on the GPU. Needs a GPU (lavapipe on CI) and fails without one. |
+| `compute/` | Unit tests for `src/compute/`: the GPU particle stepper, including the whole giant impact on the GPU. The `*_gpu_tests.rs` need a GPU and fail without one; see [GPU tests](#gpu-tests). |
 | `render/` | Unit + property tests for `src/render/`, including the floor grid's geometry, the trails' length and fade, and both features' render-only-ness. |
 | `input/` | Unit + property tests for `src/input/`. |
 | `ui/` | Unit tests for `src/ui/`. |
@@ -49,13 +49,33 @@ tests outside `tests/`, so each one needs its own `[[test]]` block in
 `Cargo.toml`. Adding a file here will *not* run it unless you either add that
 block or wire it in via a `#[path]` stub.
 
+## GPU tests
+
+A unit test that opens a GPU goes in `tst/<layer>/<module>_gpu_tests.rs`, wired in beside `tests`:
+
+```rust
+#[cfg(all(test, feature = "gpu-tests"))]
+#[path = "../../tst/<layer>/<module>_gpu_tests.rs"]
+mod gpu_tests;
+```
+
+- **`cargo test`** includes them (the `gpu-tests` feature is on by default), and they fail without
+  a GPU. They never skip themselves.
+- **`cargo test --no-default-features`** leaves them out. CI's required job runs this.
+- **Forgetting to mark one is a compile error, not a gap.** Without the feature,
+  `GpuDevice::request` and `GpuParticles::request` do not exist in a unit-test build. Two things
+  get round this, so do neither: opening a raw `wgpu::Instance` in a test, or opening a GPU from an
+  integration or doc test, which sees the library as the app does.
+- **CI's `gpu` job** runs every `gpu_tests` module on lavapipe, one test at a time. It does not
+  fail the workflow. Name the module `gpu_tests`: the job finds them by that name.
+
 ## Rules and invariants
 
 - **Mirror the `src/` path exactly.** A test file's location is derived from its
   subject's location, so `src/a/b.rs` ⇒ `tst/a/b_tests.rs`. No exceptions, so
   that "where are this file's tests?" never needs a search.
-- **All tests run headlessly** — no window. The GPU tests (`compute/`, and anything stepping particle
-  scenes on the GPU) need a GPU and fail without one; CI provides lavapipe. Bevy tests use
+- **All tests run headlessly** — no window. The GPU tests need a GPU and fail without one (see
+  [GPU tests](#gpu-tests)). Bevy tests use
   `MinimalPlugins` and `init_resource` the asset collections by hand, because
   `MinimalPlugins` omits `AssetPlugin`.
 - **`cargo test --release` must pass too.** Tests asserting `debug_assert!`

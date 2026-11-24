@@ -23,6 +23,14 @@ path = "src/main.rs"
 name = "headless_app"
 path = "tst/headless_app.rs"
 
+[features]
+# `gpu-tests` compiles the unit tests that open a GPU (`tst/**/*_gpu_tests.rs`). On by default: they
+# fail on a machine without one. CI's required job turns it off (`--no-default-features`). Without
+# it a unit-test build has no `GpuDevice::request`, so a GPU test left unmarked does not compile.
+# It changes nothing in the app. See `tst/README.md`.
+default = ["gpu-tests"]
+gpu-tests = []
+
 [dependencies]
 # The code is written against Bevy 0.14's API (`PbrBundle`, `Camera3dBundle`, `SmaaSettings`).
 # Default features include `smaa_luts` and `tonemapping_luts`, which `src/performance/` and the

@@ -480,3 +480,8 @@ pub fn update_cluster_targets_system(
 #[cfg(test)]
 #[path = "../../tst/render/gpu_particles_tests.rs"]
 mod tests;
+
+/// The tests that open a GPU: see the `gpu-tests` feature in `Cargo.toml`.
+#[cfg(all(test, feature = "gpu-tests"))]
+#[path = "../../tst/render/gpu_particles_gpu_tests.rs"]
+mod gpu_tests;

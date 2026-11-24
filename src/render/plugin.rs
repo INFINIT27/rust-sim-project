@@ -163,7 +163,7 @@ impl Plugin for GpuPhysicsPlugin {
         };
         let backend = if !gpu_physics_enabled() {
             PhysicsBackend::Cpu("RGA_GPU_PHYSICS is off")
-        } else if let Some(mut gpu) = from_render.or_else(GpuParticles::request) {
+        } else if let Some(mut gpu) = from_render.or_else(own_device) {
             let name = gpu.describe();
             bevy::log::info!("physics: particle scenes step on the GPU, {name}");
             if crate::compute::profiler::gpu_profile_enabled() {
@@ -183,6 +183,16 @@ impl Plugin for GpuPhysicsPlugin {
         };
         app.insert_resource(backend);
     }
+}
+
+/// A GPU of the physics' own, for an app with no renderer to share one with.
+///
+/// `None` in a unit-test build without the `gpu-tests` feature, where no test may open a GPU.
+fn own_device() -> Option<GpuParticles> {
+    #[cfg(any(not(test), feature = "gpu-tests"))]
+    return GpuParticles::request();
+    #[cfg(all(test, not(feature = "gpu-tests")))]
+    return None;
 }
 
 /// ECS component that marks an entity as a render-time mirror of a body

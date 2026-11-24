@@ -7,6 +7,21 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-23
+
+### Changed
+
+- **The tests that open a GPU are behind a Cargo feature, `gpu-tests`** (on by default), in
+  `tst/**/*_gpu_tests.rs`. CI's test step died with a SIGSEGV whose cause is not known; lavapipe,
+  which runs the GPU tests inside the test process, is the suspect.
+  - CI's required job tests with `--no-default-features`. There, `GpuDevice::request` and
+    `GpuParticles::request` are not compiled into unit tests, so a GPU test left unmarked is a
+    compile error. (A `--skip` list of names would miss a new test silently.)
+  - A second CI job, `gpu`, runs them on lavapipe one at a time and cannot fail the workflow.
+  - `a_device_found_describes_itself` now fails without a GPU, as the others do, instead of
+    skipping.
+  - See "GPU tests" in `tst/README.md`.
+
 ## 2026-11-22
 
 ### Added

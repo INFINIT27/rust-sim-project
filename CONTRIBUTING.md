@@ -15,7 +15,7 @@ This file is the entry point. The full rules are the standard operating procedur
 
 ```bash
 cargo run --release -- solar-system   # see the change in the real app
-cargo test                            # headless; the GPU tests need a GPU
+cargo test                            # headless; add `--no-default-features` without a GPU
 cargo test --release                  # must pass too; see tst/README.md
 cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps
@@ -33,24 +33,27 @@ A change to `assets/shaders/eclipse.wgsl` is not verified by the tests alone. Se
 
 GitHub runs these checks on every push to `main` and every pull request into it
 ([`.github/workflows/rust.yml`](.github/workflows/rust.yml)). Run the same commands locally, in
-this order, and push only if all five pass:
+this order, and push only if all six pass:
 
 ```bash
 cargo fmt --check                                    # formatting (fix with `cargo fmt`)
 cargo clippy --all-targets --locked -- -D warnings   # lints: any warning fails
 cargo build --locked                                 # the build
-cargo test --locked --all-targets                    # unit and integration tests
+cargo test --locked --all-targets                    # unit and integration tests, GPU ones too
+cargo test --locked --lib --no-default-features      # no unmarked GPU test (what CI requires)
 cargo test --locked --doc -- --test-threads=4        # doc tests
 ```
 
-CI runs the doc tests inside a single `cargo test`. Here they run on their own with four threads,
+CI requires the suite without the GPU tests and runs those in a second job that cannot fail the
+workflow, so your machine is what checks them. CI runs the doc tests inside a single `cargo test`.
+Here they run on their own with four threads,
 because compiling all of them at once fails spuriously on Windows. `--locked` fails if
 `Cargo.lock` would change, as it does in CI.
 
 In Windows PowerShell 5.1, which has no `&&`, the same as one line that stops at the first failure:
 
 ```powershell
-cargo fmt --check; if ($?) { cargo clippy --all-targets --locked -- -D warnings }; if ($?) { cargo build --locked }; if ($?) { cargo test --locked --all-targets }; if ($?) { cargo test --locked --doc -- --test-threads=4 }
+cargo fmt --check; if ($?) { cargo clippy --all-targets --locked -- -D warnings }; if ($?) { cargo build --locked }; if ($?) { cargo test --locked --all-targets }; if ($?) { cargo test --locked --lib --no-default-features }; if ($?) { cargo test --locked --doc -- --test-threads=4 }
 ```
 
 CI and your machine both use the Rust version pinned in [`rust-toolchain.toml`](rust-toolchain.toml),

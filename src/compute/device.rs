@@ -8,11 +8,9 @@
 //! Particle simulations need a GPU (see `src/compute/README.md`): without one [`GpuDevice::request`]
 //! returns `None` and the app falls back to the frozen CPU path. A machine with no GPU driver at all (a CI runner, a remote session) can still have
 //! one through a software Vulkan driver such as Mesa's `lavapipe`, which `wgpu` finds like any
-//! other; it is slow, and it is how CI tests the GPU path.
+//! other; it is slow, and CI runs the GPU tests on it in a job that is not required.
 
-use std::sync::Arc;
-
-use bevy::render::renderer::{RenderDevice, RenderQueue, WgpuWrapper};
+use bevy::render::renderer::{RenderDevice, RenderQueue};
 
 use crate::compute::constants::GPU_PHYSICS_ENV;
 
@@ -37,6 +35,10 @@ impl GpuDevice {
     /// Prefers a high-performance adapter, which on a laptop with two GPUs is the discrete one.
     /// Blocks while the driver answers, which takes milliseconds at startup and never happens
     /// again.
+    ///
+    /// Not compiled into unit tests without the `gpu-tests` feature, so a GPU test that is not marked
+    /// as one fails to compile there (see `tst/README.md`).
+    #[cfg(any(not(test), feature = "gpu-tests"))]
     pub fn request() -> Option<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -64,7 +66,9 @@ impl GpuDevice {
         .ok()?;
         Some(Self::watched(
             RenderDevice::from(device),
-            RenderQueue(Arc::new(WgpuWrapper::new(queue))),
+            RenderQueue(std::sync::Arc::new(
+                bevy::render::renderer::WgpuWrapper::new(queue),
+            )),
             info,
         ))
     }
@@ -149,3 +153,8 @@ pub fn gpu_physics_enabled() -> bool {
 #[cfg(test)]
 #[path = "../../tst/compute/device_tests.rs"]
 mod tests;
+
+/// The tests that open a GPU: see the `gpu-tests` feature in `Cargo.toml`.
+#[cfg(all(test, feature = "gpu-tests"))]
+#[path = "../../tst/compute/device_gpu_tests.rs"]
+mod gpu_tests;

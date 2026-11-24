@@ -546,6 +546,10 @@ fn colour_code(color: crate::core::scene::Color) -> f32 {
 impl GpuParticles {
     /// Find a GPU and compile the kernels for it, or `None` when there is none. In the app the
     /// physics uses Bevy's device instead ([`GpuDevice::from_render`]); this is for tests.
+    ///
+    /// Not compiled into unit tests without the `gpu-tests` feature, so a GPU test that is not marked
+    /// as one fails to compile there (see `tst/README.md`).
+    #[cfg(any(not(test), feature = "gpu-tests"))]
     pub fn request() -> Option<Self> {
         GpuDevice::request().map(Self::new)
     }
@@ -1701,3 +1705,8 @@ fn write_back(values: &[f32], origin: DVec3, scene: &mut Scene) {
 #[cfg(test)]
 #[path = "../../tst/compute/particles_tests.rs"]
 mod tests;
+
+/// The tests that open a GPU: see the `gpu-tests` feature in `Cargo.toml`.
+#[cfg(all(test, feature = "gpu-tests"))]
+#[path = "../../tst/compute/particles_gpu_tests.rs"]
+mod gpu_tests;
