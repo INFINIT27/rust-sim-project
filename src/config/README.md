@@ -14,6 +14,7 @@
 | File | Job |
 | --- | --- |
 | `mod.rs` | `Config` (every configured resource), `Config::load`, `Config::insert_into`, `ConfigError`, the pure `parse`, and `config_dir`. `ConfigPlugin`, `ConfigDir`, `save_requested_system` and `write_file`: saving a page when the menu asks. |
+| `relaunch.rs` | Restart and the Experiments page: `relaunch_requested_system` writes every page to a fresh directory in the temporary directory and starts the program again with the chosen experiment, naming that directory in `RGA_RELAUNCH_CONFIG`; `take_relaunch_dir` and `discard_relaunch_dir` let `main.rs` read it first and delete it. |
 | `files.rs` | One `…File` type per file (`SpacecraftFile`, `CameraFile`, `UiFile`, `TrailsFile`, `CollisionFile`, `WormholeFile`, `PerformanceFile`, `ControlsFile`): what the file may contain, its defaults, `into_runtime`, which checks the values and builds the runtime type, and `from_runtime`, which builds the file to save. |
 | `constants.rs` | `CONFIG_DIR_VAR` (`RGA_CONFIG`), `CONFIG_DIR_NAME` (`config`), the file names, `SAVED_DIR_NAME`, and `SAVED_FILE_HEADER`. |
 
@@ -41,7 +42,7 @@
 
 ## Tests
 
-`tst/config/config_tests.rs`, `#[path]`-included into `mod.rs`.
+`tst/config/config_tests.rs`, `#[path]`-included into `mod.rs`, and `tst/config/relaunch_tests.rs`, into `relaunch.rs`.
 
 ## Adding a setting or a file
 

@@ -24,13 +24,13 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use physics_sandbox::constants::{WINDOW_HEIGHT_PX, WINDOW_MODE, WINDOW_TITLE, WINDOW_WIDTH_PX};
 use physics_sandbox::{
-    catalog_lines, config_dir, help_text, parse_args, saved_dir, AccretionDiscPlugin,
-    ArrivalPopupPlugin, BlackHoleViewPlugin, Command, CompassPlugin, Config, ConfigPlugin,
-    CrosshairPlugin, DebugUiPlugin, FloorGridPlugin, FreeFlyCameraPlugin, GpuPhysicsPlugin,
-    HudPlugin, LaunchInputPlugin, MenuInputPlugin, MenuPanelPlugin, MissionPlugin,
-    PerformancePlugin, PerformanceSettings, PlacementInputPlugin, PlacementPanelPlugin,
-    PlacementPlugin, ScenePlugin, Selection, SimulationControlsPlugin, TrailPlugin,
-    WormholeMapPlugin, WormholeViewPlugin,
+    catalog_lines, config_dir, discard_relaunch_dir, help_text, parse_args, saved_dir,
+    take_relaunch_dir, AccretionDiscPlugin, ArrivalPopupPlugin, BlackHoleViewPlugin, Command,
+    CompassPlugin, Config, ConfigPlugin, CrosshairPlugin, DebugUiPlugin, FloorGridPlugin,
+    FreeFlyCameraPlugin, GpuPhysicsPlugin, HudPlugin, LaunchInputPlugin, MenuInputPlugin,
+    MenuPanelPlugin, MissionPlugin, PerformancePlugin, PerformanceSettings, PlacementInputPlugin,
+    PlacementPanelPlugin, PlacementPlugin, ScenePlugin, Selection, SimulationControlsPlugin,
+    TrailPlugin, WormholeMapPlugin, WormholeViewPlugin,
 };
 
 fn main() {
@@ -59,9 +59,22 @@ fn main() {
     // The configuration files (`config/*.toml`; see `src/config/`). Same contract again: a bad
     // file stops the run, naming the file and the key, rather than running on a setting that
     // silently did nothing.
+    // A run started from the menu (Restart, or the Experiments page) is handed the settings the
+    // last run had, saved or not, in a directory read ahead of the others and deleted once read.
+    // See `src/config/relaunch.rs`.
     let shipped = config_dir();
     let dir = saved_dir();
-    let config = match Config::load_layered(&[&dir, &shipped]) {
+    let relaunched = take_relaunch_dir();
+    let layers: Vec<&std::path::Path> = relaunched
+        .iter()
+        .map(PathBuf::as_path)
+        .chain([dir.as_path(), shipped.as_path()])
+        .collect();
+    let loaded = Config::load_layered(&layers);
+    if let Some(relaunched) = &relaunched {
+        discard_relaunch_dir(relaunched);
+    }
+    let config = match loaded {
         Ok(config) => config,
         Err(error) => {
             eprintln!("error: {error}");

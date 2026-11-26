@@ -217,7 +217,12 @@ pub use crate::compute::profiler::{
 // Configuration files: `config/*.toml`, read once at startup into the resources above.
 pub use crate::config::constants::{
     CAMERA_FILE, COLLISION_FILE, CONFIG_DIR_NAME, CONFIG_DIR_VAR, CONTROLS_FILE, PERFORMANCE_FILE,
-    SAVED_DIR_NAME, SAVED_FILE_HEADER, SPACECRAFT_FILE, TRAILS_FILE, UI_FILE, WORMHOLE_FILE,
+    RELAUNCH_CONFIG_VAR, RELAUNCH_DIR_PREFIX, SAVED_DIR_NAME, SAVED_FILE_HEADER, SPACECRAFT_FILE,
+    TRAILS_FILE, UI_FILE, WORMHOLE_FILE,
+};
+// Starting another run from the menu: the program is started again with the new selection.
+pub use crate::config::relaunch::{
+    discard_relaunch_dir, is_relaunch_dir, relaunch_requested_system, take_relaunch_dir,
 };
 pub use crate::config::{
     config_dir, save_requested_system, saved_dir, write_file, Config, ConfigDir, ConfigError,

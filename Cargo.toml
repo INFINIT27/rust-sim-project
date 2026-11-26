@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.87"
 description = "A desktop 3D physics sandbox: the solar system under Newtonian gravity, at true scale."
+license = "MIT"
 publish = false
 
 # Tests live in `tst/`, not Cargo's conventional `tests/`. Unit tests are `#[path]`-included into

@@ -103,3 +103,31 @@ pub const WORMHOLE_FILE: &str = "wormhole.toml";
 /// **If you change it.** Change `.gitignore` with it; settings saved under the old name are no longer
 /// read.
 pub const SAVED_DIR_NAME: &str = "user";
+
+/// The environment variable a relaunched run finds the previous run's settings by.
+///
+/// **Why this value.** The menu's Restart and Experiments page start the program again
+/// ([`crate::config::relaunch`]), and the settings changed in the menu must survive that whether
+/// or not they were saved. The old run writes every page to a fresh directory and names it here;
+/// the new one reads that directory ahead of the saved and shipped ones, then deletes it. `RGA_`
+/// like the crate's other variables.
+///
+/// **Used by.** [`crate::config::relaunch::relaunch_requested_system`], which sets it, and
+/// [`crate::config::relaunch::take_relaunch_dir`], which reads it in `main.rs`.
+///
+/// **If you change it.** Both ends are in this crate, so nothing outside it notices.
+pub const RELAUNCH_CONFIG_VAR: &str = "RGA_RELAUNCH_CONFIG";
+
+/// How the directory a relaunch writes its settings to is named, in the system's temporary
+/// directory.
+///
+/// **Why this value.** The new run deletes the directory once it has read it, so it must be sure
+/// the directory is one a relaunch made: it deletes only a directory directly inside the temporary
+/// directory whose name starts with this. A variable set by hand to a directory of the user's is
+/// still read, and never deleted.
+///
+/// **Used by.** [`crate::config::relaunch`].
+///
+/// **If you change it.** Directories left by a crash under the old name are no longer cleaned up;
+/// they are a few kilobytes each, in the temporary directory.
+pub const RELAUNCH_DIR_PREFIX: &str = "physics-sandbox-relaunch-";

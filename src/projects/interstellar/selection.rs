@@ -93,6 +93,30 @@ impl Selection {
             .map(|since| since.as_nanos() as u64)
             .unwrap_or(DEFAULT_RANDOM_SEED)
     }
+
+    /// The command-line arguments that select this again: the experiment's slug, then
+    /// `--seed <value>` when the seed is fixed. [`parse_args`] reads them back to `self`.
+    ///
+    /// This is how the menu's Restart and Experiments page start a run: they launch the
+    /// program again with these arguments (see `config::relaunch`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use physics_sandbox::{parse_args, Command, ExperimentId, Selection};
+    ///
+    /// let selection = Selection { id: ExperimentId::ThreeBodyRing, seed: Some(42) };
+    /// assert_eq!(selection.to_args(), ["experiment_2", "--seed", "42"]);
+    /// assert_eq!(parse_args(selection.to_args()), Ok(Command::Run(selection)));
+    /// ```
+    pub fn to_args(&self) -> Vec<String> {
+        let mut args = vec![self.id.slug().to_string()];
+        if let Some(seed) = self.seed {
+            args.push("--seed".to_string());
+            args.push(seed.to_string());
+        }
+        args
+    }
 }
 
 /// What `main.rs` should do.

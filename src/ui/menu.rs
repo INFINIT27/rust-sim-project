@@ -6,8 +6,11 @@
 //!
 //! # The pages
 //!
-//! - **Main**, where the menu always opens: Settings, Configuration, Exit (which quits the app),
-//!   and a read-only summary of the run ([`settings_rows`]).
+//! - **Main**, where the menu always opens: Restart (and, for a randomised experiment, Restart
+//!   with a new seed), Experiments, Settings, Configuration, Exit (which quits the app), and a
+//!   read-only summary of the run ([`settings_rows`]).
+//! - **Experiments**: every experiment in the catalog with its description; clicking one starts
+//!   it in place of the current run.
 //! - **Settings**, with two tabs. *Controls* lists every binding ([`crate::bindings::binding_rows`]);
 //!   a rebindable one is a button, and clicking it waits for the next key. *Video* has the
 //!   anti-aliasing mode, vsync, and the floor's eclipse shadows.
@@ -20,6 +23,16 @@
 //! made; Save only makes them survive a restart. Saving is done by the `config` layer, which this
 //! one may not import: the page posts a [`SaveTarget`] in [`MenuRequests`] and shows the
 //! [`MenuRequests::status`] it gets back.
+//!
+//! # Starting another run relaunches the app
+//!
+//! Restart and the Experiments page post a [`Selection`] in [`MenuRequests`], and the `config`
+//! layer starts the program again with it and closes this one (`config::relaunch`). A new
+//! process rather than a rebuilt world, because a run's state is spread over two dozen plugins'
+//! resources, entities, GPU buffers and startup systems, each written to be built once; tearing
+//! all of that down in place is where stale state would hide. The settings changed in the menu
+//! are written for the new process to read, saved or not, so settings marked "from the next
+//! launch" (the particle count) take effect on Restart.
 //!
 //! # Edits are written back only when they change something
 //!
@@ -57,10 +70,11 @@ use crate::input::camera::CameraSettings;
 use crate::input::menu::{ConfigTab, MenuPage, MenuState, SettingsTab};
 use crate::performance::{AntiAliasing, BlackHoleQuality, PerformanceSettings};
 use crate::physics_utils::physics_constants::STANDARD_GRAVITY_M_S2;
-use crate::projects::interstellar::catalog::ExperimentSpec;
+use crate::projects::interstellar::catalog::{ExperimentId, ExperimentSpec};
 use crate::projects::interstellar::constants::{
     WORMHOLE_HALF_LENGTH_RANGE, WORMHOLE_LENSING_WIDTH_RANGE, WORMHOLE_THROAT_RANGE_UNITS,
 };
+use crate::projects::interstellar::selection::Selection;
 use crate::projects::interstellar::wormhole::WormholeSettings;
 use crate::render::mission::Mission;
 use crate::render::plugin::PhysicsBackend;
@@ -176,13 +190,31 @@ pub enum SaveTarget {
     Spacecraft,
 }
 
+impl SaveTarget {
+    /// Every page that has a file, so the whole configuration can be written at once (which is
+    /// what a relaunch does, to carry unsaved changes into the new run).
+    pub const ALL: [Self; 8] = [
+        Self::Controls,
+        Self::Video,
+        Self::Camera,
+        Self::Interface,
+        Self::Trails,
+        Self::Collisions,
+        Self::Wormhole,
+        Self::Spacecraft,
+    ];
+}
+
 /// What the menu has asked of the layer that writes files, and what it heard back.
 ///
 /// The menu sets a save request; `config::save_requested_system` takes it, writes the file, and
-/// sets the status the menu then shows under its buttons.
+/// sets the status the menu then shows under its buttons. A relaunch request (Restart, or a run
+/// picked on the Experiments page) goes the same way, to `config::relaunch_requested_system`,
+/// because starting a run means writing the configuration for it and this layer may not.
 #[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
 pub struct MenuRequests {
     save: Option<SaveTarget>,
+    relaunch: Option<Selection>,
     status: Option<String>,
 }
 
@@ -196,6 +228,17 @@ impl MenuRequests {
     /// The save asked for, if any, clearing it. Taken by whoever writes the file.
     pub fn take_save(&mut self) -> Option<SaveTarget> {
         self.save.take()
+    }
+
+    /// Ask for the app to start `selection` in place of the current run.
+    pub fn request_relaunch(&mut self, selection: Selection) {
+        self.relaunch = Some(selection);
+        self.status = None;
+    }
+
+    /// The run asked for, if any, clearing it. Taken by whoever starts it.
+    pub fn take_relaunch(&mut self) -> Option<Selection> {
+        self.relaunch.take()
     }
 
     /// Report the outcome of the last save.
@@ -288,6 +331,7 @@ pub fn menu_system(
     let page = menu.page();
     let title = match page {
         MenuPage::Main => "Menu",
+        MenuPage::Experiments => "Experiments",
         MenuPage::Settings(_) => "Settings",
         MenuPage::Configuration(_) => "Configuration",
     };
@@ -301,7 +345,16 @@ pub fn menu_system(
         // are taken by the overlay (top-left) and the compass (top-right).
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .show(ctx, |ui| match page {
-            MenuPage::Main => main_page(ui, &mut menu, &resources, &mut exit),
+            MenuPage::Main => main_page(ui, &mut menu, &mut resources, &mut exit),
+            MenuPage::Experiments => {
+                let next = sub_page_header(ui, &[], page);
+                body(ui, |ui| experiments_page(ui, &mut resources));
+                footer(ui, &mut resources.requests);
+                if let Some(next) = next {
+                    resources.requests.clear_status();
+                    menu.show(next);
+                }
+            }
             MenuPage::Settings(tab) => {
                 let next = sub_page_header(
                     ui,
@@ -351,15 +404,59 @@ pub fn menu_system(
         });
 }
 
-/// The first page: the way into everything else, Exit, and what the run is doing.
+/// What the hover text of every button that starts a run says it keeps and loses.
+const RELAUNCH_NOTE: &str = "The app restarts. Settings changed in this menu carry over, \
+     saved or not; spacecraft in flight and the clock do not.";
+
+/// The selection that runs the current experiment again: the same seed, so a randomised one
+/// replays exactly, or a fresh seed when `new_seed` is set.
+pub fn restart_selection(spec: &ExperimentSpec, new_seed: bool) -> Selection {
+    Selection {
+        id: spec.id,
+        seed: if new_seed { None } else { Some(spec.seed) },
+    }
+}
+
+/// The first page: Restart, the way into everything else, Exit, and what the run is doing.
 fn main_page(
     ui: &mut egui::Ui,
     menu: &mut MenuState,
-    resources: &MenuResources,
+    resources: &mut MenuResources,
     exit: &mut EventWriter<AppExit>,
 ) {
     let size = egui::vec2(MENU_MAIN_BUTTON_WIDTH_PX, 0.0);
     ui.vertical_centered(|ui| {
+        if ui
+            .add(egui::Button::new("Restart").min_size(size))
+            .on_hover_text(format!(
+                "Start {} again from the beginning, with the same seed. {RELAUNCH_NOTE}",
+                resources.spec.id.name()
+            ))
+            .clicked()
+        {
+            let selection = restart_selection(&resources.spec, false);
+            resources.requests.request_relaunch(selection);
+        }
+        if resources.spec.id.is_randomised()
+            && ui
+                .add(egui::Button::new("Restart with a new seed").min_size(size))
+                .on_hover_text(format!(
+                    "Start {} again with new random initial conditions. {RELAUNCH_NOTE}",
+                    resources.spec.id.name()
+                ))
+                .clicked()
+        {
+            let selection = restart_selection(&resources.spec, true);
+            resources.requests.request_relaunch(selection);
+        }
+        if ui
+            .add(egui::Button::new("Experiments").min_size(size))
+            .on_hover_text("Switch to another experiment")
+            .clicked()
+        {
+            resources.requests.clear_status();
+            menu.show(MenuPage::Experiments);
+        }
         if ui
             .add(egui::Button::new("Settings").min_size(size))
             .clicked()
@@ -399,7 +496,43 @@ fn main_page(
             }
         });
     ui.add_space(MENU_SECTION_GAP_PX);
+    footer(ui, &mut resources.requests);
     ui.label(egui::RichText::new("Esc closes the menu.").weak());
+}
+
+/// The Experiments page: every experiment in the catalog, with its description. Clicking one
+/// starts it with a fresh seed, in place of the current run.
+fn experiments_page(ui: &mut egui::Ui, resources: &mut MenuResources) {
+    let running = resources.spec.id;
+    for id in ExperimentId::ALL {
+        let label = if id == running {
+            format!("{} (running)", id.name())
+        } else {
+            id.name().to_string()
+        };
+        let hover = if id == running {
+            format!(
+                "Start {} again from the beginning. {RELAUNCH_NOTE}",
+                id.name()
+            )
+        } else {
+            format!("Switch to {}. {RELAUNCH_NOTE}", id.name())
+        };
+        ui.horizontal(|ui| {
+            if ui
+                .selectable_label(id == running, egui::RichText::new(label).strong())
+                .on_hover_text(hover)
+                .clicked()
+            {
+                resources
+                    .requests
+                    .request_relaunch(Selection { id, seed: None });
+            }
+            ui.label(egui::RichText::new(id.slug()).weak());
+        });
+        ui.label(id.description());
+        ui.add_space(MENU_SECTION_GAP_PX);
+    }
 }
 
 /// A sub-page's top row: Back, then one tab per entry. Returns the page to go to, if one was

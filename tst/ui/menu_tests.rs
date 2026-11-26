@@ -244,3 +244,73 @@ fn an_unchanged_edit_does_not_mark_the_resource_changed() {
         });
     assert!(changed);
 }
+
+// -----------------------------------------------------------------------
+// Starting another run: Restart and the Experiments page.
+// -----------------------------------------------------------------------
+
+#[test]
+fn restart_keeps_the_seed_so_the_run_replays_and_a_new_seed_drops_it() {
+    let spec = ExperimentId::ThreeBodyRing.build(42).spec;
+    assert_eq!(
+        restart_selection(&spec, false),
+        Selection {
+            id: ExperimentId::ThreeBodyRing,
+            seed: Some(42),
+        }
+    );
+    assert_eq!(
+        restart_selection(&spec, true),
+        Selection {
+            id: ExperimentId::ThreeBodyRing,
+            seed: None,
+        }
+    );
+}
+
+#[test]
+fn a_relaunch_request_is_taken_once_and_clears_the_last_status() {
+    let mut requests = MenuRequests::default();
+    requests.set_status("Saved somewhere".to_string());
+    let selection = Selection {
+        id: ExperimentId::Wormhole,
+        seed: None,
+    };
+
+    requests.request_relaunch(selection);
+    assert_eq!(
+        requests.status(),
+        None,
+        "an old save's outcome would be misleading"
+    );
+    assert_eq!(requests.take_save(), None, "a relaunch is not a save");
+    assert_eq!(requests.take_relaunch(), Some(selection));
+    assert_eq!(
+        requests.take_relaunch(),
+        None,
+        "taken once, not every frame"
+    );
+}
+
+#[test]
+fn every_page_with_a_file_is_in_save_target_all() {
+    // A relaunch writes `SaveTarget::ALL`; a page missing from it would lose its unsaved edits on
+    // Restart. The match fails to compile when a target is added, pointing here.
+    for target in SaveTarget::ALL {
+        match target {
+            SaveTarget::Controls
+            | SaveTarget::Video
+            | SaveTarget::Camera
+            | SaveTarget::Interface
+            | SaveTarget::Trails
+            | SaveTarget::Collisions
+            | SaveTarget::Wormhole
+            | SaveTarget::Spacecraft => {}
+        }
+    }
+    for (i, a) in SaveTarget::ALL.iter().enumerate() {
+        for b in &SaveTarget::ALL[i + 1..] {
+            assert_ne!(a, b, "listed twice");
+        }
+    }
+}

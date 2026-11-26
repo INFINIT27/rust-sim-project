@@ -27,11 +27,12 @@
 
 pub mod constants;
 pub mod files;
+pub mod relaunch;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use bevy::app::{App, Plugin, Update};
+use bevy::app::{App, AppExit, Plugin, Update};
 use bevy::ecs::system::{Res, ResMut, Resource, SystemParam};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -194,7 +195,11 @@ impl Plugin for ConfigPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ConfigDir(self.dir.clone()))
             .init_resource::<MenuRequests>()
-            .add_systems(Update, save_requested_system);
+            .add_event::<AppExit>()
+            .add_systems(
+                Update,
+                (save_requested_system, relaunch::relaunch_requested_system),
+            );
     }
 }
 
@@ -230,9 +235,17 @@ pub fn save_requested_system(
     let Some(target) = requests.take_save() else {
         return;
     };
-    let c = &configured;
-    let dir = &dir.0;
-    let result = match target {
+    let result = write_page(&dir.0, target, &configured);
+    requests.set_status(match result {
+        Ok(path) => format!("Saved {}", path.display()),
+        Err(error) => format!("Could not save: {error}"),
+    });
+}
+
+/// Write `target`'s page of the running configuration to its file in `dir`, returning the path
+/// written. Shared by Save and by a relaunch, which writes every page ([`relaunch`]).
+fn write_page(dir: &Path, target: SaveTarget, c: &Configured) -> Result<PathBuf, ConfigError> {
+    match target {
         SaveTarget::Controls => write_file(
             dir,
             CONTROLS_FILE,
@@ -279,11 +292,7 @@ pub fn save_requested_system(
                 .map_or_else(Fleet::default, |mission| mission.fleet.clone());
             write_file(dir, SPACECRAFT_FILE, &SpacecraftFile::from_runtime(&fleet))
         }
-    };
-    requests.set_status(match result {
-        Ok(path) => format!("Saved {}", path.display()),
-        Err(error) => format!("Could not save: {error}"),
-    });
+    }
 }
 
 /// Write `file` as TOML to `dir/name`, after [`SAVED_FILE_HEADER`], creating `dir` if needed.

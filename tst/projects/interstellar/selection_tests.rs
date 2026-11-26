@@ -207,3 +207,19 @@ fn the_help_text_lists_every_experiment_and_the_window_keys() {
     assert!(text.contains("Pause"));
     assert!(text.contains("time scale"));
 }
+
+/// The menu restarts and switches experiments by launching the program with
+/// `Selection::to_args`, so every selection must survive the trip through the parser.
+#[test]
+fn to_args_parses_back_to_the_same_selection() {
+    for id in ExperimentId::ALL {
+        for seed in [None, Some(0), Some(42), Some(u64::MAX)] {
+            let selection = Selection { id, seed };
+            assert_eq!(
+                parse_args(selection.to_args()),
+                Ok(Command::Run(selection)),
+                "{selection:?} did not survive to_args and parse_args",
+            );
+        }
+    }
+}

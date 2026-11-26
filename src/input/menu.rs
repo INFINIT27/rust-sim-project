@@ -53,9 +53,12 @@ use crate::input::popup::PopupState;
 /// The menu always opens on [`Main`](Self::Main), the page with the way into everything else.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum MenuPage {
-    /// The first page: Settings, Configuration, Exit, and what the run is doing.
+    /// The first page: Restart, Experiments, Settings, Configuration, Exit, and what the run is
+    /// doing.
     #[default]
     Main,
+    /// Every experiment in the catalog, to switch to one.
+    Experiments,
     /// The controls and video settings.
     Settings(SettingsTab),
     /// The runtime configuration from `config/*.toml`.

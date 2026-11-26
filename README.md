@@ -35,7 +35,7 @@ view, so you will see the Sun and the orbit trails. Fly toward a planet to see i
 | `F`, then mouse / scroll | Lock onto the body at the crosshair, orbit it, zoom in/out |
 | `R`, then `R` | Rocket: aim at the departure body and press `R`, then at the destination and press `R`. It flies under real gravity and its path is drawn |
 | `P` / `]` / `[` | Pause, or double/halve the time scale |
-| `Esc` | Close a pop-up, or open the menu: settings (rebind any key, video), configuration (including which spacecraft `R` launches and the kind of trip; see below), exit |
+| `Esc` | Close a pop-up, or open the menu: restart the experiment, switch to another, settings (rebind any key, video), configuration (including which spacecraft `R` launches and the kind of trip; see below), exit |
 | `Cmd`-`Q` / `Alt`-`F4` | Quit |
 
 ### The spacecraft
@@ -105,11 +105,16 @@ cargo run --release -- earth-moon  # the Earth and the Moon at true size and dis
 cargo run --release -- wormhole    # a traversable wormhole to fly through
 ```
 
+Inside the window, `Esc` > Experiments lists them all, and clicking one switches to it.
+`Esc` > Restart starts the current one again with the same seed; for the three-body ring, which
+is random, Restart with a new seed gives a different run. Both restart the app. Settings changed
+in the menu carry over whether or not you saved them; the run's progress does not.
+
 Running with no argument starts `experiment_1`, the giant impact: the Earth and a Mars-mass body at true
 size, each built from particles, falling together from rest and colliding at `9 km/s`. The contact is
 simulated particle by particle, so the two deform, flow into each other and settle into one body.
 How many particles they are made of is set under `Esc` > Configuration > Collisions (from the next
-launch). The impact's heat puffs the merged body up; at twice the escape speed it throws debris
+launch, or at once with `Esc` > Restart). The impact's heat puffs the merged body up; at twice the escape speed it throws debris
 off. `experiment_8` (`moon-forming`) is the same pair meeting at `45°`, the impact thought to have
 made the Moon: one spinning body, and material on orbits that clear it.
 
@@ -176,3 +181,7 @@ The history of changes is in [`CHANGELOG.md`](CHANGELOG.md). Contribution rules 
   update your GPU drivers.
 - **Mouse-look stops responding:** the window has probably lost focus. Switch back to it and
   left-click.
+
+## License
+
+Released under the [MIT License](LICENSE).

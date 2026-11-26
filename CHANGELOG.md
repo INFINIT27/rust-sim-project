@@ -7,6 +7,29 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-26
+
+### Added
+
+- **Restart and switch experiments from the menu** (`Esc`). Restart replays the current run with
+  the same seed. For the three-body ring, the only randomised experiment
+  (`ExperimentId::is_randomised`), there is also Restart with a new seed. A new Experiments page
+  lists the catalog with each experiment's description, and clicking one starts it. Before this,
+  the only way to restart or change experiment was to quit and relaunch from the shell.
+- **Both work by relaunching the app** (`src/config/relaunch.rs`), using the same arguments
+  `--seed` takes (`Selection::to_args`). A run's state is spread across many plugins, each built
+  once at startup, and tearing them down in place risked stale state. The menu's current settings
+  are written to a temporary directory that the new run reads first (`RGA_RELAUNCH_CONFIG`), so
+  unsaved edits carry over. A setting that applies "from the next launch", like the particle
+  count, now takes effect on Restart.
+
+## 2026-11-24
+
+### Added
+
+- **The MIT licence** (`LICENSE`, `license` in `Cargo.toml`, and a README section): without one, nobody
+  else had the right to use or change the code.
+
 ## 2026-11-23
 
 ### Added

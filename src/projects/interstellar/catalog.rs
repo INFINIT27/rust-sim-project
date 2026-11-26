@@ -211,6 +211,13 @@ impl ExperimentId {
         token == self.slug() || self.aliases().iter().any(|alias| *alias == token)
     }
 
+    /// Does the seed change this experiment? Only the three-body ring draws random initial
+    /// conditions ([`three_body_ring`]); every other experiment is built the same whatever the
+    /// seed. The menu offers "Restart with a new seed" only where it would differ.
+    pub fn is_randomised(&self) -> bool {
+        matches!(self, Self::ThreeBodyRing)
+    }
+
     /// Build the experiment: its scene, and the spec that says how to run it.
     ///
     /// `seed` is used only by experiments with randomised initial conditions; a

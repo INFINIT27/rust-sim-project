@@ -533,3 +533,19 @@ fn a_key_that_cannot_be_bound_is_ignored_while_rebinding() {
         KeyCode::KeyP
     );
 }
+
+#[test]
+fn the_experiments_page_is_reached_from_the_first_page_and_opening_returns_there() {
+    let mut menu = MenuState::default();
+    menu.open();
+    menu.show(MenuPage::Experiments);
+    assert_eq!(menu.page(), MenuPage::Experiments);
+
+    menu.close();
+    menu.open();
+    assert_eq!(
+        menu.page(),
+        MenuPage::Main,
+        "the menu always opens on its first page"
+    );
+}

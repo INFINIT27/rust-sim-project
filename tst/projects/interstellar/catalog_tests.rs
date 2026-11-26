@@ -599,3 +599,20 @@ proptest! {
         }
     }
 }
+
+/// `is_randomised` is what the menu uses to decide whether "Restart with a new seed" would
+/// change anything, so it must say exactly which experiments a seed changes.
+#[test]
+fn is_randomised_names_exactly_the_experiments_a_seed_changes() {
+    for id in ExperimentId::ALL {
+        let differs = id.build(1).scene.props != id.build(2).scene.props;
+        assert_eq!(
+            id.is_randomised(),
+            differs,
+            "{}: is_randomised() is {} but two seeds {} the same scene",
+            id.slug(),
+            id.is_randomised(),
+            if differs { "do not build" } else { "build" },
+        );
+    }
+}
