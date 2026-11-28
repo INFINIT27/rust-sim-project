@@ -23,7 +23,7 @@ and the heat the contacts make. The app falls back to the CPU for everything els
 | File | Job |
 | --- | --- |
 | `mod.rs` | Declares the layer and its import restrictions. |
-| `constants.rs` | `GPU_WORKGROUP_SIZE` (`64`), `GPU_LEAF_SIZE` (`16`), the opening angle's default and range, `GPU_PHYSICS_ENV` (`RGA_GPU_PHYSICS`), the pass timer's `GPU_PROFILE_ENV` (`RGA_GPU_PROFILE`) and `GPU_PROFILE_WINDOW_FRAMES` (`30`), the residency and frame budget (`GPU_READBACK_INTERVAL_FRAMES`, `GPU_FRAME_TIME_TARGET_SECONDS`, `GPU_MIN_SUBSTEP_BUDGET`), and the individual time steps (`GPU_TIME_BIN_HEADROOM`, `GPU_MAX_TIME_BINS`, `GPU_NEIGHBOUR_STEP_RATIO`). |
+| `constants.rs` | `GPU_WORKGROUP_SIZE` (`64`), `GPU_LEAF_SIZE` (`16`), the opening angle's default and range, the gravity interval's default and limit (`DEFAULT_GRAVITY_INTERVAL`, `MAX_GRAVITY_INTERVAL`), `GPU_PHYSICS_ENV` (`RGA_GPU_PHYSICS`), the pass timer's `GPU_PROFILE_ENV` (`RGA_GPU_PROFILE`) and `GPU_PROFILE_WINDOW_FRAMES` (`30`), the residency and frame budget (`GPU_READBACK_INTERVAL_FRAMES`, `GPU_FRAME_TIME_TARGET_SECONDS`, `GPU_MIN_SUBSTEP_BUDGET`), and the individual time steps (`GPU_TIME_BIN_HEADROOM`, `GPU_MAX_TIME_BINS`, `GPU_NEIGHBOUR_STEP_RATIO`). |
 | `device.rs` | `GpuDevice::from_render`: the physics on Bevy's own device, so the renderer can draw its buffer. `GpuDevice::request`: a device of its own (headless), or `None`; it logs and remembers a lost device or an error instead of letting `wgpu` panic. `gpu_physics_enabled`: the switch. |
 | `particles.rs` | `GpuParticles`: compile the kernels; keep a scene on the GPU (`upload`, `holds`, `advance`, `sync`, `particle_buffer`, `simulated_seconds`); for tests, `step` a scene in one blocking call and `step_in` at a given fixed step count. `GpuSolver`, `GravitySolver`, `NeighbourSearch`. `can_step_on_gpu`. `morton_order`. |
 | `profiler.rs` | The GPU pass timer, on with `RGA_GPU_PROFILE=on`: each group of kernels (`GpuPhase`: sort, restore, drift, refit, grid, density, pairs, gravity, tree, contacts, kick) as its own compute pass with a timestamp at each end (`wgpu::Features::TIMESTAMP_QUERY`), read back without waiting, and averaged a frame (`GpuProfile`): per phase, between passes, ticks run against substeps queued, and the fraction of particles active a tick (`activate`'s count, `Control::active_sum`). Shown in the debug overlay and printed by the benchmark. |
@@ -146,6 +146,40 @@ first order: the rubble's drag cap scales as `1/dt` by design, and the fluid's e
 two per halving, most likely from the SPH terms' kinks (viscosity only on approach, pressure floored
 at zero; not proven).
 
+### Gravity every few ticks
+
+Gravity changes on the planets' dynamical time, the fluid on its sound-crossing time, which is much
+shorter, so evaluating gravity at every fluid step wastes most of the evaluations (Grudić, M. Y.
+2021, *MNRAS* 507, 1324, doi:10.1093/mnras/stab2208, arXiv:2010.13792; read from the abstract).
+With `gravity_interval` above `1` (`collision.toml`, or `Esc` > Configuration > Collisions),
+Barnes–Hut's cooperative walk evaluates a particle's gravity only once its last evaluation is that
+many ticks old (`gravity_due`). On the ticks between, `close_kick` kicks it with its gravity
+predicted from the last two evaluations: the last value plus their difference over their time
+apart, times the time since (`predicted_gravity`). The workgroup walks when any of its active
+particles is due and then evaluates all of them, so neighbours stay in step. A particle whose own
+step is the interval or longer is always evaluated. The last gravity, its time and the jerk ride in
+`kinematics.d` and `.e`, which the sort carries.
+
+How this differs from Grudić's scheme: the jerk is a difference of evaluations, not the solver's
+own; and the interval is one setting for every particle, not each particle's tidal time.
+
+Measured on an RTX 4070 SUPER, fluid `experiment_8`, Barnes–Hut at `θ = 0.9`, tree neighbours:
+
+| | gravity every tick | every `8` ticks |
+| --- | --- | --- |
+| `200,000` a planet, a tick after contact | `39.1 ms` (gravity `19–20`) | `23.3 ms` (gravity `2.8–3.1`) |
+| `20,000` a planet, a tick after contact | `7.1 ms` | `5.8 ms` |
+| `20,000` a planet, worst energy drift over `3 h` | `9.7e-5` | `7.4e-5` |
+| `20,000` a planet, worst angular momentum drift | `4.2e-3` | `4.7e-3` |
+
+After an hour of approach at `2,000` a planet, the particles are `4e-5`, `3e-4` and `6e-4` radii
+(median) from where gravity every tick puts them at intervals `2`, `4` and `8`: the error grows
+with the interval, as it should. The worst is `6e-3` radii at `8`
+(`gravity_every_few_ticks_follows_gravity_every_tick`). With the prediction switched off and the
+same skipped ticks, the energy drifted `38%`, so the prediction is doing the work. Past `8` the
+gravity pass hardly gets cheaper (`0.33` and `0.32 ms` at `8` and `16`, `20,000` a planet). The
+default stays `1` (unchanged); choose `8` for big Barnes–Hut runs.
+
 ## Agreement with the CPU
 
 The frozen CPU path integrates with one global step and symplectic Euler, whose velocities sit
@@ -182,8 +216,29 @@ Before the performance work of 2026-11-22 (global substeps chosen on the CPU, mo
 particle walking alone) Barnes–Hut at `θ = 0.5` with the tree took `101 ms` and `667 ms`. Barnes–Hut
 at `θ = 0.9` with the grid is `2.4` and `3.2` times faster, and seven times more accurate (median
 force error `6.0e-4` against `4.3e-3`). The default stays the exact pair at `θ = 0.5` for now
-(changing it changes the shipped `collision.toml`); for big runs choose Barnes–Hut, `θ = 0.7` to
-`0.9`, and the grid.
+(changing it changes the shipped `collision.toml`). **For big runs choose Barnes–Hut, `θ = 0.7` to
+`0.9`, the tree, and gravity every `8` ticks** (see Gravity every few ticks), not the grid: the frames above are all before the planets touch, and the
+grid does not survive the impact (below).
+
+**Through the impact** (`measure_through_the_impact`; same GPU, fluid `experiment_8`, Barnes–Hut
+at `θ = 0.9`, every tick done; contact at `1.51 h`). The grid's cell is the largest reach of any
+particle. The impact throws debris out to the largest smoothing length allowed
+(`SPH_MAX_SMOOTHING_FRACTION`, `3×`), and after it the largest reach is `3.6×` the median, with more
+than `1%` of the particles there. Every particle then searches about `47×` the space a cell of
+the median would need. The tree's boxes follow each node's own particles, so it does not notice.
+Milliseconds a tick:
+
+| | before contact | after contact |
+| --- | --- | --- |
+| `20,000` a planet, grid | `4.8–5.5` | `31–36` |
+| `20,000` a planet, tree | `6.1–6.3` | `5.9–6.6` |
+| `200,000` a planet, grid | `46–50` | the GPU was lost within ten minutes of contact, in two runs out of two |
+| `200,000` a planet, tree | `38–47` | `45–50` (gravity `20–24`, neighbours `15`, density `10`) |
+
+Why the device was lost was not found (a single dispatch past Windows' two-second limit is the
+likely cause, not confirmed). The fix, if the grid is wanted, is a grid per size of reach, as
+Winchenbach & Kolb build on the GPU (*Comput. Graph. Forum*, 2020, doi:10.1111/cgf.14090, read
+from the abstract only); with the tree already as fast, it has not been built.
 
 **Where a frame goes** (`measure_gpu_profile`, the pass timer; same GPU, fluid `experiment_8` at
 `200,000` a planet, `221,518` bodies, a frame at a time as the app runs it). The frame budget fits

@@ -65,9 +65,10 @@ use crate::collision::constants::{
     SPH_SOUND_SPEED_FLOOR_FRACTION, SPH_VISCOSITY_ALPHA, SPH_VISCOSITY_BETA, SPH_VISCOSITY_EPSILON,
 };
 use crate::compute::constants::{
-    DEFAULT_OPENING_ANGLE, GPU_FRAME_TIME_TARGET_SECONDS, GPU_LEAF_SIZE, GPU_MAX_TIME_BINS,
-    GPU_MIN_SUBSTEP_BUDGET, GPU_NEIGHBOUR_STEP_RATIO, GPU_READBACK_INTERVAL_FRAMES,
-    GPU_TIME_BIN_HEADROOM, GPU_WORKGROUP_SIZE, MAX_OPENING_ANGLE, MIN_OPENING_ANGLE,
+    DEFAULT_GRAVITY_INTERVAL, DEFAULT_OPENING_ANGLE, GPU_FRAME_TIME_TARGET_SECONDS, GPU_LEAF_SIZE,
+    GPU_MAX_TIME_BINS, GPU_MIN_SUBSTEP_BUDGET, GPU_NEIGHBOUR_STEP_RATIO,
+    GPU_READBACK_INTERVAL_FRAMES, GPU_TIME_BIN_HEADROOM, GPU_WORKGROUP_SIZE, MAX_GRAVITY_INTERVAL,
+    MAX_OPENING_ANGLE, MIN_OPENING_ANGLE,
 };
 use crate::compute::device::GpuDevice;
 use crate::compute::profiler::{GpuPhase, GpuProfile, GpuProfiler};
@@ -85,11 +86,11 @@ pub const PARTICLES_SHADER: &str = include_str!("particles.wgsl");
 /// material, thermal, the equation of state's cold and decay parameters, and the fluid state.
 const FLOATS_PER_PARTICLE: usize = 32;
 
-/// Bytes per particle, per force record, per integrator slot (four vec4s; `Slot` in the shader), and
+/// Bytes per particle, per force record, per integrator slot (five vec4s; `Slot` in the shader), and
 /// per tree node.
 const BYTES_PER_PARTICLE: u64 = (FLOATS_PER_PARTICLE * 4) as u64;
 const BYTES_PER_FORCE: u64 = 32;
-const BYTES_PER_SLOT: u64 = 64;
+const BYTES_PER_SLOT: u64 = 80;
 const BYTES_PER_NODE: u64 = 112;
 /// Bytes per fluid state (density, pressure, sound speed, largest viscosity `μ`).
 const BYTES_PER_SPH: u64 = 16;
@@ -132,6 +133,11 @@ pub enum NeighbourSearch {
     Tree,
     /// Only the particles in the 125 cells of a grid around this one, the grid rebuilt every tick
     /// on the GPU by a counting sort: O(N). Exact, since a cell is the largest reach.
+    ///
+    /// That is also its weakness: one particle's reach sets every cell, so once an impact throws
+    /// out debris at the largest smoothing length, every particle searches about `47×` the space it
+    /// needs and a tick is about seven times slower (`measure_through_the_impact`). Use
+    /// [`Tree`](Self::Tree) for runs through an impact.
     Grid,
 }
 
@@ -142,6 +148,11 @@ pub struct GpuSolver {
     pub neighbours: NeighbourSearch,
     /// Barnes–Hut's opening angle `θ`; used only by [`GravitySolver::BarnesHut`].
     pub opening_angle: f32,
+    /// Ticks between gravity evaluations, a power of two up to [`MAX_GRAVITY_INTERVAL`] (`1`: every
+    /// tick). Between them a particle's gravity is predicted from its last two evaluations; a
+    /// particle stepping this long or longer is evaluated every step. Honoured only by Barnes–Hut
+    /// through the cooperative walk; see [`DEFAULT_GRAVITY_INTERVAL`].
+    pub gravity_interval: u32,
 }
 
 impl GpuSolver {
@@ -157,6 +168,7 @@ impl GpuSolver {
         gravity: GravitySolver::BarnesHut,
         neighbours: NeighbourSearch::Tree,
         opening_angle: DEFAULT_OPENING_ANGLE,
+        gravity_interval: DEFAULT_GRAVITY_INTERVAL,
     };
 
     /// Exactly what the CPU does, every pair, both jobs: the reference the tests compare against.
@@ -164,11 +176,15 @@ impl GpuSolver {
         gravity: GravitySolver::Direct,
         neighbours: NeighbourSearch::AllPairs,
         opening_angle: DEFAULT_OPENING_ANGLE,
+        gravity_interval: DEFAULT_GRAVITY_INTERVAL,
     };
 
-    /// The opening angle within [`MIN_OPENING_ANGLE`] and [`MAX_OPENING_ANGLE`].
+    /// The opening angle within [`MIN_OPENING_ANGLE`] and [`MAX_OPENING_ANGLE`], and the gravity
+    /// interval a power of two no longer than [`MAX_GRAVITY_INTERVAL`].
     pub fn is_valid(&self) -> bool {
         (MIN_OPENING_ANGLE..=MAX_OPENING_ANGLE).contains(&self.opening_angle)
+            && self.gravity_interval.is_power_of_two()
+            && self.gravity_interval <= MAX_GRAVITY_INTERVAL
     }
 
     /// Does either job use the tree?
@@ -911,15 +927,17 @@ impl GpuParticles {
         self.gpu.queue.write_buffer(&buffers.particles, 0, &bytes);
         // The integrator starts with no acceleration and no step; its half-step state is the
         // particle's own (the first tick evaluates the forces without moving: `Control::prime`).
-        let mut kinematics = Vec::with_capacity(count * 16);
-        let mut timing = Vec::with_capacity(count * 16);
+        let floats_per_slot = BYTES_PER_SLOT as usize / 4;
+        let mut kinematics = Vec::with_capacity(count * floats_per_slot);
+        let mut timing = Vec::with_capacity(count * floats_per_slot);
         for prop in &scene.props {
             let velocity = prop.velocity_units_s * METRES_PER_UNIT;
             let spin = prop.spin_rad_s;
             kinematics.extend_from_slice(&[0.0; 8]);
             // `c.w`: its neighbours' least step limit, unknown until its first evaluation.
             kinematics.extend_from_slice(&[spin.x as f32, spin.y as f32, spin.z as f32, 3.0e38]);
-            kinematics.extend_from_slice(&[0.0; 4]);
+            // `d`, `e`: no gravity remembered yet (`e.w = 0`), so the first tick evaluates it.
+            kinematics.extend_from_slice(&[0.0; 8]);
             // No step limit known yet: it constrains no neighbour until its first evaluation.
             timing.extend_from_slice(&[3.0e38, 0.0, 0.0, 0.0]);
             timing.extend_from_slice(&[
@@ -928,8 +946,7 @@ impl GpuParticles {
                 velocity.z as f32,
                 prop.heat_j_kg as f32,
             ]);
-            timing.extend_from_slice(&[0.0; 4]);
-            timing.extend_from_slice(&[0.0; 4]);
+            timing.extend_from_slice(&[0.0; 12]);
         }
         let le =
             |values: &[f32]| -> Vec<u8> { values.iter().flat_map(|f| f.to_le_bytes()).collect() };
@@ -1157,7 +1174,14 @@ impl GpuParticles {
         };
         word(&mut bytes, solver.flags() | group);
         word(&mut bytes, GPU_LEAF_SIZE as u32);
-        word(&mut bytes, 0);
+        // `gravity_interval`: only the cooperative walk skips ticks; every other path evaluates
+        // gravity with the rest of the forces, every tick.
+        let interval = if group != 0 {
+            solver.gravity_interval
+        } else {
+            1
+        };
+        word(&mut bytes, interval);
         for value in [
             SPH_VISCOSITY_ALPHA,
             SPH_VISCOSITY_BETA,

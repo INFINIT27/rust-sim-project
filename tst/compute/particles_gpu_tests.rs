@@ -320,6 +320,7 @@ fn measure_gpu_speed() {
                     gravity,
                     neighbours,
                     opening_angle: theta,
+                    ..GpuSolver::DEFAULT
                 };
                 let mut s = scene.clone();
                 gpu.step(&mut s, step);
@@ -865,7 +866,7 @@ fn accelerations(gpu: &mut GpuParticles, scene: &Scene, solver: GpuSolver) -> Ve
     let mut out = vec![DVec3::ZERO; count];
     for (particle, slot) in particles
         .chunks_exact(FLOATS_PER_PARTICLE)
-        .zip(slots.chunks_exact(16))
+        .zip(slots.chunks_exact(BYTES_PER_SLOT as usize / 4))
     {
         out[particle[15] as usize] =
             DVec3::new(f64::from(slot[0]), f64::from(slot[1]), f64::from(slot[2]));
@@ -912,6 +913,7 @@ fn measure_tree_force_error() {
                 gravity: GravitySolver::BarnesHut,
                 neighbours: NeighbourSearch::AllPairs,
                 opening_angle: theta,
+                ..GpuSolver::DEFAULT
             },
         );
         let (median, p99) = force_errors(&tree, &exact);
@@ -939,6 +941,7 @@ fn the_tree_s_forces_match_the_direct_sum() {
         gravity: GravitySolver::BarnesHut,
         neighbours: NeighbourSearch::AllPairs,
         opening_angle: 0.5,
+        ..GpuSolver::DEFAULT
     };
     for (cooperative, median_bound, p99_bound) in [(false, 2.0e-3, 1.0e-2), (true, 5.0e-4, 5.0e-3)]
     {
@@ -1024,6 +1027,7 @@ fn the_pass_timer_times_every_kernel_group_the_solver_runs() {
         gravity: GravitySolver::BarnesHut,
         neighbours: NeighbourSearch::Grid,
         opening_angle: 0.7,
+        ..GpuSolver::DEFAULT
     };
     gpu.cooperative = true;
     assert!(gpu.upload(&fluid_impact(200)));
@@ -1069,6 +1073,7 @@ fn the_pass_timer_leaves_the_simulation_as_it_was() {
         gravity: GravitySolver::BarnesHut,
         neighbours: NeighbourSearch::Tree,
         opening_angle: 0.7,
+        ..GpuSolver::DEFAULT
     };
     let start = fluid_impact(200);
     let mut run = |profiling: bool| -> Scene {
@@ -1118,6 +1123,7 @@ fn measure_gpu_profile() {
         gravity: GravitySolver::BarnesHut,
         neighbours,
         opening_angle: theta,
+        ..GpuSolver::DEFAULT
     };
     // The 1000× clock at 30 frames a second.
     let frame = seconds(1000.0 / 30.0);
@@ -1157,4 +1163,313 @@ fn measure_gpu_profile() {
         }
         eprintln!("MEASURE   {profile}");
     }
+}
+
+/// Every particle's smoothing length (its reach, for a fluid) as the GPU holds it now, waiting for
+/// the GPU. For measurements; the scene's props do not carry it.
+fn smoothing_lengths(gpu: &mut GpuParticles) -> Vec<f32> {
+    let (Some(resident), Some(buffers)) = (gpu.resident.as_ref(), gpu.buffers.as_ref()) else {
+        return Vec::new();
+    };
+    let length = resident.count as u64 * BYTES_PER_PARTICLE;
+    let mut encoder = gpu
+        .gpu
+        .wgpu()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("smoothing read-back"),
+        });
+    encoder.copy_buffer_to_buffer(&buffers.particles, 0, &buffers.readback, 0, length);
+    gpu.gpu.queue.submit(Some(encoder.finish()));
+    let state = MapState::new();
+    map_async(&buffers.readback, length, &state);
+    gpu.gpu.wgpu().poll(wgpu::Maintain::Wait);
+    assert_eq!(state.get(), Mapping::Ready);
+    let values = read_mapped(&buffers.readback, length);
+    values
+        .chunks(FLOATS_PER_PARTICLE)
+        .map(|particle| particle[28])
+        .collect()
+}
+
+/// How the spread of the fluid's reach and the cost of each pass change through the impact, for
+/// fluid `experiment_8` stepped with every tick done (no frame budget), so simulated time keeps
+/// up. The cell list's cell is the largest reach of any particle, and each particle searches the
+/// `5³` cells around it, so the candidates it tests grow as `(largest / its own)³`; this shows how
+/// large that gets once the impact throws out debris.
+///
+/// Run with `cargo test --release -- --ignored measure_through_the_impact --nocapture`.
+/// `RGA_MEASURE_SIZES` sets the particles a planet (default `20000`), `RGA_MEASURE_HOURS` the
+/// simulated hours (`4`), `RGA_MEASURE_THETA` the opening angle (`0.9`), `RGA_MEASURE_NEIGHBOURS`
+/// `grid` (the default) or `tree`, and `RGA_MEASURE_GRAVITY_INTERVAL` the ticks between gravity
+/// evaluations (`1`). `RGA_MEASURE_ENERGY=1` also reads the particles back at each sample and
+/// reports the drift of the energy (heat included, against the starting gravitational energy) and of
+/// the angular momentum: an O(N²) sum on the CPU, so for the smaller sizes.
+#[test]
+#[ignore = "measurement"]
+fn measure_through_the_impact() {
+    use crate::compute::profiler::GpuPhase;
+    use crate::projects::interstellar::moon_forming::{
+        moon_forming_impact_seconds, moon_forming_impact_with,
+    };
+    use std::time::Instant;
+    let env = |name: &str| std::env::var(name).ok();
+    let n: u32 = env("RGA_MEASURE_SIZES")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20000);
+    let hours: f64 = env("RGA_MEASURE_HOURS")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(4.0);
+    let theta: f32 = env("RGA_MEASURE_THETA")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.9);
+    let mut gpu = gpu().unwrap();
+    assert!(
+        gpu.set_profiling(true),
+        "no timestamps on {}",
+        gpu.describe()
+    );
+    let neighbours = match env("RGA_MEASURE_NEIGHBOURS").as_deref() {
+        Some("tree") => NeighbourSearch::Tree,
+        _ => NeighbourSearch::Grid,
+    };
+    gpu.solver = GpuSolver {
+        gravity: GravitySolver::BarnesHut,
+        neighbours,
+        opening_angle: theta,
+        ..GpuSolver::DEFAULT
+    };
+    gpu.solver.gravity_interval = env("RGA_MEASURE_GRAVITY_INTERVAL")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let energy = env("RGA_MEASURE_ENERGY").is_some_and(|v| v == "1");
+    let mut scene = moon_forming_impact_with(&CollisionSettings {
+        particles_per_body: n,
+        planet_model: crate::core::scene::PlanetModel::Fluid,
+        ..CollisionSettings::default()
+    })
+    .scene;
+    assert!(gpu.upload(&scene));
+    let contact = moon_forming_impact_seconds();
+    eprintln!(
+        "MEASURE n={n} ({} particles), θ {theta}, {neighbours:?}, gravity every {} ticks; contact \
+         at {:.2} h",
+        scene.props.len(),
+        gpu.solver.gravity_interval,
+        contact / 3600.0
+    );
+    let softening = scene.softening_units;
+    // The angular momentum about the centre of mass, kg·m²/s (orbital, and the particles' spin).
+    let angular = |scene: &Scene| -> DVec3 {
+        let mass: f64 = scene.props.iter().map(|p| f64::from(p.mass_kg)).sum();
+        let centre: DVec3 = scene
+            .props
+            .iter()
+            .map(|p| p.body.center() * METRES_PER_UNIT * f64::from(p.mass_kg))
+            .sum::<DVec3>()
+            / mass;
+        scene
+            .props
+            .iter()
+            .map(|p| {
+                let m = f64::from(p.mass_kg);
+                let r = p.body.center() * METRES_PER_UNIT - centre;
+                let v = p.velocity_units_s * METRES_PER_UNIT;
+                r.cross(v) * m
+            })
+            .sum()
+    };
+    let (start_energy, start_angular) = if energy {
+        (
+            Some(particle_energy(&scene.props, softening)),
+            angular(&scene),
+        )
+    } else {
+        (None, DVec3::ZERO)
+    };
+    let mut after_contact_ms = Vec::new();
+    let mut worst_energy = 0.0_f64;
+    let mut worst_angular = 0.0_f64;
+    let frame = seconds(1000.0 / 30.0);
+    let sample_every = 600.0;
+    let mut next_sample = 0.0;
+    let mut simulated = 0.0;
+    let mut wall = Instant::now();
+    gpu.reset_profile();
+    while simulated < hours * 3600.0 {
+        assert!(gpu.advance(frame, 0.0));
+        gpu.finish();
+        simulated = gpu.simulated_seconds().unwrap_or(simulated);
+        if simulated < next_sample {
+            continue;
+        }
+        next_sample += sample_every;
+        let mut h: Vec<f32> = smoothing_lengths(&mut gpu)
+            .into_iter()
+            .filter(|&h| h > 0.0)
+            .collect();
+        h.sort_by(f32::total_cmp);
+        let at = |q: f64| h[((h.len() - 1) as f64 * q) as usize];
+        let (median, p99, largest) = (at(0.5), at(0.99), at(1.0));
+        let ratio = largest / median;
+        let conservation = match &start_energy {
+            Some(start) => {
+                assert!(gpu.read_back_blocking(&mut scene));
+                let now = particle_energy(&scene.props, softening).total();
+                let drift = (now - start.total()) / start.gravity.abs();
+                let turned = (angular(&scene) - start_angular).length() / start_angular.length();
+                worst_energy = worst_energy.max(drift.abs());
+                worst_angular = worst_angular.max(turned);
+                format!("; energy {drift:+.2e}, angular momentum {turned:.2e}")
+            }
+            None => String::new(),
+        };
+        let line = match gpu.profile_since_reset() {
+            Some(p) if p.ticks > 0.0 => {
+                let per_tick = |phases: &[GpuPhase]| {
+                    phases.iter().map(|&ph| p.phase(ph)).sum::<f64>() / p.ticks
+                };
+                if simulated > contact + sample_every {
+                    after_contact_ms.push(p.passes_ms() / p.ticks);
+                }
+                format!(
+                    "a tick: density {:.2} ms, neighbours {:.2} ms, gravity {:.2} ms, all {:.2} ms; \
+                     {:.1} ticks a frame, {:.0}% active",
+                    per_tick(&[GpuPhase::Density]),
+                    per_tick(&[GpuPhase::GridContacts, GpuPhase::TreeWalk]),
+                    per_tick(&[GpuPhase::GravityWalk]),
+                    p.passes_ms() / p.ticks,
+                    p.ticks,
+                    100.0 * p.active_fraction
+                )
+            }
+            _ => String::from("no ticks timed"),
+        };
+        eprintln!(
+            "MEASURE t={:.2} h (wall {:.0} s): h median {:.3e} m, p99/median {:.2}, \
+             max/median {ratio:.2} (search volume x{:.1} over a cell of the median); {line}\
+             {conservation}",
+            simulated / 3600.0,
+            wall.elapsed().as_secs_f64(),
+            median,
+            p99 / median,
+            ratio.powi(3)
+        );
+        wall = Instant::now();
+        gpu.reset_profile();
+    }
+    let mean = after_contact_ms.iter().sum::<f64>() / after_contact_ms.len().max(1) as f64;
+    eprintln!(
+        "MEASURE SUMMARY gravity every {} ticks: {mean:.2} ms a tick after contact; worst energy \
+         drift {worst_energy:.2e}, worst angular momentum {worst_angular:.2e}",
+        gpu.solver.gravity_interval
+    );
+}
+
+/// Gravity evaluated every few ticks, and predicted from its jerk between (`gravity_due`,
+/// `predicted_gravity`), against gravity every tick: the same approach of fluid `experiment_8`
+/// stepped both ways must end with the particles in nearly the same places and the energy held
+/// as well. Over the approach nothing chaotic has had time to grow, so a difference is the
+/// prediction's error.
+///
+/// Each run has a stepper of its own: a stepper carries its substep budget from one upload to the
+/// next, so a second run on the same one takes different ticks, and lands its particles about
+/// `0.04` radii (median) from the first for that reason alone.
+#[test]
+fn gravity_every_few_ticks_follows_gravity_every_tick() {
+    use crate::projects::interstellar::moon_forming::moon_forming_impact_with;
+    if gpu().is_none() {
+        return;
+    }
+    let start = moon_forming_impact_with(&CollisionSettings {
+        particles_per_body: 2000,
+        planet_model: crate::core::scene::PlanetModel::Fluid,
+        ..CollisionSettings::default()
+    })
+    .scene;
+    let softening = start.softening_units;
+    let binding = particle_energy(&start.props, softening).gravity.abs();
+    let initial = particle_energy(&start.props, softening).total();
+    let run = |interval: u32| -> (Scene, f64) {
+        let mut gpu = gpu().unwrap();
+        gpu.solver = GpuSolver {
+            gravity: GravitySolver::BarnesHut,
+            neighbours: NeighbourSearch::Tree,
+            opening_angle: 0.7,
+            ..GpuSolver::DEFAULT
+        };
+        gpu.solver.gravity_interval = interval;
+        let mut scene = start.clone();
+        assert!(gpu.upload(&scene));
+        let frame = seconds(1000.0 / 30.0);
+        // An hour, in a fixed count of frames so every run stops at the same time (stopping on the
+        // simulated time, which is read back a frame late, let runs stop a frame apart): the planets
+        // are still apart (they touch at about 1.5 h).
+        for _ in 0..108 {
+            assert!(gpu.advance(frame, 0.0));
+            gpu.finish();
+        }
+        let reached = gpu.simulated_seconds().unwrap_or(0.0);
+        assert!(
+            (reached - 3600.0).abs() < 1.0,
+            "interval {interval}: reached {reached} s"
+        );
+        assert!(gpu.read_back_blocking(&mut scene));
+        let drift = (particle_energy(&scene.props, softening).total() - initial).abs() / binding;
+        (scene, drift)
+    };
+    let (every, every_drift) = run(1);
+    let (again, _) = run(1);
+    let spacing = every
+        .props
+        .iter()
+        .filter_map(crate::collision::collision::physical_radius_m)
+        .fold(0.0_f64, f64::max) as f32
+        / METRES_PER_UNIT as f32;
+    // The median and the largest distance between the two runs' particles, in largest radii. The
+    // particles are matched by their prop index, which the sort keeps.
+    let apart = |a: &Scene, b: &Scene| -> (f32, f32) {
+        let mut d: Vec<f32> = a
+            .props
+            .iter()
+            .zip(&b.props)
+            .map(|(p, q)| (p.body.center() - q.body.center()).length() as f32 / spacing)
+            .collect();
+        d.sort_by(f32::total_cmp);
+        (d[d.len() / 2], d[d.len() - 1])
+    };
+    let (noise_median, noise_worst) = apart(&every, &again);
+    eprintln!(
+        "MEASURE every tick, run twice: median {noise_median:.2e}, worst {noise_worst:.2e} radii"
+    );
+    let mut results = Vec::new();
+    for interval in [2, 4, 8] {
+        let (scene, drift) = run(interval);
+        let (median, worst) = apart(&every, &scene);
+        eprintln!(
+            "MEASURE gravity every {interval} ticks against every tick after 1 h: median \
+             {median:.2e}, worst {worst:.2e} radii; energy drift {drift:.2e} against \
+             {every_drift:.2e}"
+        );
+        results.push((median, worst, drift));
+    }
+    assert!(
+        noise_worst < 1.0e-4,
+        "the same run twice ended {noise_worst:.2e} radii apart: the comparison needs it exact"
+    );
+    // Measured on an RTX 4070 SUPER at every 8 ticks: median `6.5e-4`, worst `5.9e-3` radii, and the
+    // difference growing with the interval (`3.5e-4`, `2.6e-3`, `5.9e-3` worst at 2, 4, 8).
+    let (median, worst, few_drift) = results[2];
+    assert!(
+        median < 2.0e-3 && worst < 2.0e-2,
+        "every 8 ticks: particles {median:.2e} (median) and {worst:.2e} (worst) radii from where \
+         every-tick gravity put them"
+    );
+    assert!(
+        results[0].1 < results[2].1,
+        "the error does not grow with the interval: {results:?}"
+    );
+    assert!(
+        few_drift < 2.0 * every_drift + 1.0e-5,
+        "energy drifted {few_drift:.2e}, against {every_drift:.2e} with gravity every tick"
+    );
 }

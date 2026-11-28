@@ -7,7 +7,8 @@
 //! - **The kernel** — [`GPU_WORKGROUP_SIZE`], the tile the particle shader works through.
 //! - **The device** — [`GPU_PHYSICS_ENV`], the switch that turns the GPU path off for one run, and
 //!   [`GPU_PROFILE_ENV`] with [`GPU_PROFILE_WINDOW_FRAMES`], the GPU pass timer.
-//! - **The solver** — [`DEFAULT_OPENING_ANGLE`] and its range, for the tree gravity.
+//! - **The solver** — [`DEFAULT_OPENING_ANGLE`] and its range, for the tree gravity, and
+//!   [`DEFAULT_GRAVITY_INTERVAL`] and [`MAX_GRAVITY_INTERVAL`], the ticks between its evaluations.
 
 /// How many particles one GPU workgroup handles, and so how many each tile of the N-body loop
 /// loads into workgroup memory at once.
@@ -208,3 +209,33 @@ pub const GPU_MAX_TIME_BINS: u32 = 10;
 /// **If you change it.** Smaller keeps neighbours closer in step, at more evaluations; larger lets
 /// stale forces back in.
 pub const GPU_NEIGHBOUR_STEP_RATIO: f64 = 4.0;
+
+/// Ticks between gravity evaluations by the cooperative Barnes–Hut walk that a new solver starts
+/// with: `1`, every tick.
+///
+/// **Why this value.** Unchanged behaviour by default. Between evaluations a particle's gravity is
+/// predicted from its last two (`gravity_due` in `particles.wgsl`, after Grudić 2021, MNRAS 507,
+/// 1324, doi:10.1093/mnras/stab2208). `8` is what to choose for big Barnes–Hut runs: measured on an
+/// RTX 4070 SUPER with fluid `experiment_8` at `200,000` particles a planet, a tick after contact
+/// takes `23 ms` against `39 ms`; at `20,000` a planet the energy and angular momentum drift as with
+/// gravity every tick (`7e-5`, `4.7e-3` worst over three hours, against `1e-4`, `4.2e-3`), and after
+/// an hour of approach at `2,000` a planet the particles are at most `6e-3` radii from where gravity
+/// every tick puts them (`gravity_every_few_ticks_follows_gravity_every_tick`).
+///
+/// **Used by.** [`crate::compute::particles::GpuSolver::DEFAULT`]; `collision.toml`'s
+/// `gravity_interval` and the menu change it.
+///
+/// **If you change it.** Only the cooperative Barnes–Hut walk honours it; direct gravity and the
+/// per-particle walk evaluate gravity every tick whatever it is.
+pub const DEFAULT_GRAVITY_INTERVAL: u32 = 1;
+
+/// The longest gravity interval allowed, in ticks. See [`DEFAULT_GRAVITY_INTERVAL`].
+///
+/// **Why this value.** `16`, the longest measured: past `8` the gravity pass hardly gets cheaper
+/// (`0.33` and `0.32 ms` a tick at `8` and `16`, `20,000` a planet), so a longer interval only adds
+/// prediction error.
+///
+/// **Used by.** [`crate::compute::particles::GpuSolver::is_valid`] and the menu.
+///
+/// **If you change it.** Keep it a power of two; measure the error against gravity every tick first.
+pub const MAX_GRAVITY_INTERVAL: u32 = 16;

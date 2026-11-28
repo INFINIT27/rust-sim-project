@@ -26,6 +26,24 @@ fn the_run_condition_follows_the_visibility_and_defaults_to_shown() {
 }
 
 #[test]
+fn the_debug_panel_starts_hidden() {
+    assert!(!DebugPanel::default().visible);
+}
+
+#[test]
+fn the_debug_panel_condition_follows_its_switch_and_defaults_to_hidden() {
+    let mut app = App::new();
+    assert!(
+        !app.world_mut().run_system_once(debug_panel_shown),
+        "no resource: hidden"
+    );
+    app.insert_resource(DebugPanel { visible: true });
+    assert!(app.world_mut().run_system_once(debug_panel_shown));
+    app.insert_resource(DebugPanel { visible: false });
+    assert!(!app.world_mut().run_system_once(debug_panel_shown));
+}
+
+#[test]
 fn h_toggles_the_hud() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);

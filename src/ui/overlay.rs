@@ -73,7 +73,9 @@ use crate::ui::constants::{MAX_DISTANCE_ROWS, MAX_PROP_ROWS, SCALE_REACHED_SHOWN
 ///    which have already installed `EguiPlugin` (e.g. because another
 ///    plugin did it) don't fail with Bevy's "plugin already added"
 ///    panic.
-/// 2. Register [`debug_overlay_system`] on the `Update` schedule.
+/// 2. Register [`debug_overlay_system`] on the `Update` schedule, running only while
+///    [`DebugPanel`](crate::ui::hud::DebugPanel) is on (off at start; the `Esc` menu turns
+///    it on) and the HUD is shown.
 ///    That system draws exactly one `egui::Window` per frame showing
 ///    FPS, `scene.props.len()`, the camera's `translation`, and the
 ///    camera's `rotation`.
@@ -92,9 +94,15 @@ impl Plugin for DebugUiPlugin {
         if !app.is_plugin_added::<EguiPlugin>() {
             app.add_plugins(EguiPlugin);
         }
+        // The debug panel is opt-in: off at start, turned on from the `Esc` menu.
+        app.init_resource::<crate::ui::hud::DebugPanel>();
         app.add_systems(
             Update,
-            (debug_overlay_system, mission_overlay_system).run_if(crate::ui::hud::hud_shown),
+            (
+                debug_overlay_system.run_if(crate::ui::hud::debug_panel_shown),
+                mission_overlay_system,
+            )
+                .run_if(crate::ui::hud::hud_shown),
         );
     }
 }

@@ -434,7 +434,9 @@ pub use crate::ui::wormhole_map::{
 pub use crate::ui::crosshair::{
     crosshair_segments, crosshair_system, CrosshairConfig, CrosshairPlugin,
 };
-pub use crate::ui::hud::{hud_shown, toggle_hud_system, HudPlugin, HudVisibility};
+pub use crate::ui::hud::{
+    debug_panel_shown, hud_shown, toggle_hud_system, DebugPanel, HudPlugin, HudVisibility,
+};
 
 // Re-export the physics surface so consumers can write
 // `physics_sandbox::gravitational_constant_calculator(..)` and

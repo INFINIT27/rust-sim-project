@@ -7,8 +7,9 @@
 //! # The pages
 //!
 //! - **Main**, where the menu always opens: Restart (and, for a randomised experiment, Restart
-//!   with a new seed), Experiments, Settings, Configuration, Exit (which quits the app), and a
-//!   read-only summary of the run ([`settings_rows`]).
+//!   with a new seed), Experiments, Settings, Configuration, Exit (which quits the app), the
+//!   "Show the debug panel" box (off at start, for this session only), and a read-only summary
+//!   of the run ([`settings_rows`]).
 //! - **Experiments**: every experiment in the catalog with its description; clicking one starts
 //!   it in place of the current run.
 //! - **Settings**, with two tabs. *Controls* lists every binding ([`crate::bindings::binding_rows`]);
@@ -59,7 +60,7 @@ use bevy::ecs::system::{Res, ResMut, Resource, SystemParam};
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::bindings::{binding_rows, BindingGroup, KeyMap};
-use crate::compute::constants::{MAX_OPENING_ANGLE, MIN_OPENING_ANGLE};
+use crate::compute::constants::{MAX_GRAVITY_INTERVAL, MAX_OPENING_ANGLE, MIN_OPENING_ANGLE};
 use crate::compute::particles::{GpuSolver, GravitySolver, NeighbourSearch};
 use crate::constants::METRES_PER_UNIT;
 use crate::core::constants::{
@@ -88,6 +89,7 @@ use crate::ui::constants::{
     MENU_WIDTH_PX,
 };
 use crate::ui::crosshair::CrosshairConfig;
+use crate::ui::hud::DebugPanel;
 
 /// One row of the settings list: a label and its current value.
 ///
@@ -297,6 +299,7 @@ pub struct MenuResources<'w> {
     mission: Option<ResMut<'w, Mission>>,
     physics: Option<Res<'w, PhysicsBackend>>,
     requests: ResMut<'w, MenuRequests>,
+    debug_panel: ResMut<'w, DebugPanel>,
 }
 
 /// Edit a copy of `value` with `edit`, and write it back only if it changed, so a page that is
@@ -472,6 +475,14 @@ fn main_page(
         if ui.add(egui::Button::new("Exit").min_size(size)).clicked() {
             exit.send(AppExit::Success);
         }
+        ui.add_space(MENU_SECTION_GAP_PX);
+        edit_copy(&mut resources.debug_panel, |panel| {
+            ui.checkbox(&mut panel.visible, "Show the debug panel")
+                .on_hover_text(
+                    "FPS, the clocks, the camera, and every body's state. \
+                     For this session only: it is off again at the next launch.",
+                );
+        });
     });
 
     ui.add_space(MENU_SECTION_GAP_PX);
@@ -664,6 +675,15 @@ fn controls_tab(ui: &mut egui::Ui, menu: &mut MenuState, resources: &mut MenuRes
     }
     if save {
         resources.requests.request_save(SaveTarget::Controls);
+    }
+}
+
+/// How a gravity interval is named on the collisions page.
+pub fn gravity_interval_label(ticks: u32) -> String {
+    match ticks {
+        1 => "tick (exact)".to_string(),
+        8 => "8 ticks (big runs)".to_string(),
+        n => format!("{n} ticks"),
     }
 }
 
@@ -987,16 +1007,48 @@ fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
                 ),
             );
             ui.end_row();
+            ui.label("Gravity every");
+            ui.add_enabled_ui(solver.gravity == GravitySolver::BarnesHut, |ui| {
+                egui::ComboBox::from_id_source("menu_gpu_gravity_interval")
+                    .selected_text(gravity_interval_label(solver.gravity_interval))
+                    .show_ui(ui, |ui| {
+                        let mut interval = 1;
+                        while interval <= MAX_GRAVITY_INTERVAL {
+                            ui.selectable_value(
+                                &mut solver.gravity_interval,
+                                interval,
+                                gravity_interval_label(interval),
+                            );
+                            interval *= 2;
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "With Barnes–Hut: how often gravity is evaluated. Between evaluations each \
+                         particle's gravity is predicted from how it was changing. 8 ticks makes a \
+                         big run about 1.7 times faster with no measurable loss of energy or \
+                         angular momentum.",
+                    );
+            });
+            ui.end_row();
         });
     });
+    ui.label(
+        egui::RichText::new(
+            "For large runs: Barnes–Hut at θ 0.9, gravity every 8 ticks, and the Tree neighbours. \
+             The cell list slows about sevenfold once the planets collide, because the debris sets \
+             its cells' size, and at 200,000 particles a planet it has lost the GPU.",
+        )
+        .weak(),
+    );
     ui.label(
         egui::RichText::new(
             "Particles per planet: how many particles the larger planet of the giant impact is \
              made of; the contact between the planets is simulated particle by particle, so this \
              is how finely the deformation, the merge and the debris are followed. It costs as \
              the square of the count on the CPU, which manages about 200; with a GPU (see Physics \
-             on the first page) the algorithms below set the cost. Save, then relaunch: the scene \
-             is built at launch.",
+             on the first page) the algorithms above set the cost. Restart to apply (Esc > \
+             Restart): the scene is built at launch.",
         )
         .weak(),
     );
@@ -1006,7 +1058,7 @@ fn collisions_tab(ui: &mut egui::Ui, resources: &mut MenuResources) {
              planet does, by smoothed-particle hydrodynamics: they resist compression with their \
              pressure but not a change of shape, so a tide stretches them. Rubble planets are \
              uniform piles of basalt held by springs and friction, stiff against tides, kept to \
-             compare against. Save, then relaunch: the scene is built at launch.",
+             compare against. Restart to apply (Esc > Restart): the scene is built at launch.",
         )
         .weak(),
     );
@@ -1328,6 +1380,7 @@ impl Plugin for MenuPanelPlugin {
             .init_resource::<CrosshairConfig>()
             .init_resource::<CompassConfig>()
             .init_resource::<ArrivalPopupConfig>()
+            .init_resource::<DebugPanel>()
             .add_event::<AppExit>()
             .add_systems(Update, menu_system);
     }

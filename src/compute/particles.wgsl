@@ -80,7 +80,10 @@ struct Motion {
 //
 // - `kinematics[i]`: `a` = acceleration xyz (m/s²) and heating w (J/kg/s) at the particle's last
 //   force evaluation; `b` = angular acceleration xyz (rad/s²) and w its current step, seconds;
-//   `c` = its spin at the half step xyz (rad/s), w unused.
+//   `c` = its spin at the half step xyz (rad/s), w unused; `d` = its gravity xyz (m/s²) at its last
+//   gravity evaluation and w the simulated time of it (s); `e` = xyz the rate the gravity was
+//   changing at (the jerk, m/s³, from its last two evaluations) and w one once `d` holds a value.
+//   `d` and `e` are used only when gravity skips ticks (`Params::gravity_interval`).
 // - `timing[i]`: `a` = x its step limit (s), y its step in ticks, z the tick its step began, w one
 //   when it is active this tick; `b` = its velocity at the half step xyz (m/s) and internal energy
 //   w (J/kg) integrated to the half step; `c` its fluid state, carried through the sort only; `d`
@@ -90,6 +93,7 @@ struct Slot {
     b: vec4<f32>,
     c: vec4<f32>,
     d: vec4<f32>,
+    e: vec4<f32>,
 }
 
 struct Force {
@@ -131,7 +135,9 @@ struct Params {
     flags: u32,
     // Particles per leaf; leaf `l` holds particles `l·leaf_size ..`.
     leaf_size: u32,
-    pad1: u32,
+    // Ticks between gravity evaluations by the cooperative walk, a power of two; 1 is every tick.
+    // See `gravity_due`.
+    gravity_interval: u32,
     // The fluids' artificial viscosity: α, β, and ε (of h²); `SPH_VISCOSITY_*`.
     viscosity_alpha: f32,
     viscosity_beta: f32,
@@ -320,6 +326,62 @@ fn store_nearest(i: u32, nearest: f32) {
     } else {
         forces[i].angular.w = nearest;
     }
+}
+
+// Whether particle `i`'s gravity is due: at the first evaluation after an upload, when none is
+// remembered, and once the last is `gravity_interval` ticks old (of this tick's length). The age,
+// not the tick within the macro step, because macro steps can be a couple of ticks long, and a
+// boundary every other tick would make every interval two. The cooperative walk runs for a
+// workgroup when any of its active particles is due, and then evaluates all of them; particles
+// next to each other in Morton order are evaluated together and stay in step. On the ticks between,
+// an active particle is kicked with its gravity
+// predicted from its last two evaluations (`predicted_gravity`), after Grudić, M. Y. (2021),
+// Accelerating self-gravitating hydrodynamics simulations with adaptive force updates, MNRAS 507(1),
+// 1324 (doi:10.1093/mnras/stab2208; arXiv:2010.13792): gravity changes on its own, longer time scale
+// than the fluid's, so evaluating it at every hydrodynamic step wastes most of those evaluations.
+// Grudić predicts with the jerk the gravity solver evaluates; here it is the difference of the last
+// two evaluations, and the interval is one for every particle rather than set by each one's tidal
+// time. A particle whose own step is `gravity_interval` ticks or more is always evaluated: its last
+// evaluation is at least a step old.
+fn gravity_due(i: u32) -> bool {
+    if params.gravity_interval <= 1u || control.prime == 1u {
+        return true;
+    }
+    let k = kinematics[i];
+    return k.e.w < 0.5
+        || control.simulated - k.d.w >= (f32(params.gravity_interval) - 0.5) * control.dt;
+}
+
+// Whether the cooperative walk evaluated particle `i`'s gravity this tick (`remember_gravity` stamps
+// it with this tick's time).
+fn gravity_evaluated(k: Slot) -> bool {
+    return k.e.w > 0.5 && k.d.w == control.simulated;
+}
+
+// Remember gravity `g` just evaluated for particle `i`, and the rate it is changing at from the last
+// evaluation, for `predicted_gravity`. Nothing when gravity is evaluated every tick.
+fn remember_gravity(i: u32, g: vec3<f32>) {
+    if params.gravity_interval <= 1u {
+        return;
+    }
+    let last = kinematics[i].d;
+    let now = control.simulated;
+    let elapsed = now - last.w;
+    var jerk = vec3<f32>(0.0);
+    if kinematics[i].e.w > 0.5 && elapsed > 0.0 {
+        jerk = (g - last.xyz) / elapsed;
+    }
+    kinematics[i].d = vec4<f32>(g, now);
+    kinematics[i].e = vec4<f32>(jerk, 1.0);
+}
+
+// Particle `i`'s gravity now, predicted from its slot `k` (`remember_gravity`): the last value moved
+// on by the jerk for the time since.
+fn predicted_gravity(k: Slot) -> vec3<f32> {
+    if k.e.w < 0.5 {
+        return vec3<f32>(0.0);
+    }
+    return k.d.xyz + k.e.xyz * (control.simulated - k.d.w);
 }
 
 // Whether this tick runs at all.
@@ -945,9 +1007,13 @@ fn close_kick(@builtin(global_invocation_id) global: vec3<u32>) {
         return;
     }
     var p = particles[i];
-    let f = forces[i];
+    var f = forces[i];
     var k = kinematics[i];
     var t = timing[i];
+    // A tick the cooperative walk skipped this particle: the gravity it would have added, predicted.
+    if params.gravity_interval > 1u && !gravity_evaluated(k) {
+        f.linear = vec4<f32>(f.linear.xyz + predicted_gravity(k), f.linear.w);
+    }
     let half = 0.5 * k.b.w;
     let velocity = t.b.xyz + f.linear.xyz * half;
     var heat = t.b.w;
@@ -1797,7 +1863,9 @@ fn gravity_group(
 ) {
     let i = global.x;
     let in_range = i < params.count;
-    if !workgroup_has_work(local.x, i, in_range) {
+    // When no active particle of the workgroup is due the whole workgroup returns: `close_kick`
+    // predicts their gravity instead.
+    if !workgroup_has_work(local.x, i, in_range && gravity_due(i)) {
         return;
     }
     let mine = in_range && is_active(i);
@@ -1915,6 +1983,7 @@ fn gravity_group(
         }
         let f = forces[i];
         forces[i].linear = vec4<f32>(f.linear.xyz + acceleration, f.linear.w);
+        remember_gravity(i, acceleration);
     }
 }
 

@@ -587,6 +587,32 @@ fn the_gpu_algorithms_load_by_name_and_a_bad_name_or_angle_is_an_error_naming_it
 }
 
 #[test]
+fn the_gravity_interval_loads_saves_and_must_be_a_power_of_two_up_to_sixteen() {
+    let (_, solver) = parse("gravity_interval = 8", CollisionFile::into_runtime).unwrap();
+    assert_eq!(solver.gravity_interval, 8);
+    let wanted = GpuSolver {
+        gravity: GravitySolver::BarnesHut,
+        neighbours: NeighbourSearch::Tree,
+        opening_angle: 0.9,
+        gravity_interval: 4,
+    };
+    // A directory of its own: `save_and_reload` names one after the file, which the collision
+    // detail's test also saves, and tests run at once.
+    let dir = scratch("save_gravity_interval");
+    let file = CollisionFile::from_runtime(&CollisionSettings::default(), &wanted);
+    write_file(&dir, COLLISION_FILE, &file).expect("writes");
+    assert_eq!(Config::load(&dir).unwrap().solver, wanted);
+    for bad in [
+        "gravity_interval = 0",
+        "gravity_interval = 3",
+        "gravity_interval = 32",
+    ] {
+        let error = parse(bad, CollisionFile::into_runtime).unwrap_err();
+        assert!(error.contains("gravity_interval"), "{bad}: {error}");
+    }
+}
+
+#[test]
 fn a_saved_file_is_read_over_the_shipped_one_and_the_rest_are_still_read() {
     let (saved, base) = (scratch("layer_saved"), scratch("layer_base"));
     std::fs::write(base.join(TRAILS_FILE), "visible = false").unwrap();

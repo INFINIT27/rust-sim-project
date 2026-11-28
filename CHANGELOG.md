@@ -7,9 +7,39 @@ changed and why, and links the spec clause or amendment that governs it where
 one exists. The convention is specified in
 [`.claude/steering/changelog.md`](.claude/steering/changelog.md).
 
+## 2026-11-27
+
+### Changed
+
+- **The debug panel is off at start** (`DebugPanel`, `ui/hud.rs`). The `Esc` menu's first page
+  turns it on and off for the session ("Show the debug panel"), and it is off again at the next
+  launch. Most runs do not need FPS, the clocks and every body's state on screen. While it is on,
+  `H` still hides it with the rest of the HUD.
+
 ## 2026-11-26
 
 ### Added
+
+- **Gravity every few ticks** (`gravity_interval` in `collision.toml`, `Esc` > Configuration >
+  Collisions). With Barnes–Hut gravity, a particle's gravity is evaluated only once its last
+  evaluation is that many ticks old. In between, it is predicted from the last two evaluations,
+  after Grudić 2021 (*MNRAS* 507, 1324). At `8` ticks, a tick of fluid `experiment_8` at `200,000`
+  particles a planet takes `23 ms` instead of `39 ms` after contact. The energy and angular
+  momentum hold as with gravity every tick (`src/compute/README.md`, Gravity every few ticks;
+  `gravity_every_few_ticks_follows_gravity_every_tick`). The default stays `1`, every tick.
+  Integrator slots grew a fifth `vec4` to carry the last gravity and its jerk through the sort.
+- **`measure_through_the_impact`**, a GPU measurement that runs `experiment_8` past contact. It
+  records the spread of the particles' reach, each pass's time and, optionally, the energy and
+  angular momentum. The existing profile stopped 22 simulated minutes in, long before the impact.
+
+### Fixed
+
+- **Advice that crashed big runs.** The README recommended the grid neighbour search for big runs.
+  Its cell is the largest reach of any particle, and after the impact that is `3.6×` the median.
+  A tick then took about seven times longer at `20,000` particles a planet, and at `200,000` the
+  GPU was lost within ten minutes of contact. The tree is unaffected and as fast. The README, the
+  menu and `NeighbourSearch::Grid`'s documentation now recommend the tree. The menu's "Save, then
+  relaunch" hints now say Restart.
 
 - **Restart and switch experiments from the menu** (`Esc`). Restart replays the current run with
   the same seed. For the three-body ring, the only randomised experiment

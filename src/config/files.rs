@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bindings::{key_name, parse_key, Action, KeyMap};
 
-use crate::compute::constants::{MAX_OPENING_ANGLE, MIN_OPENING_ANGLE};
+use crate::compute::constants::{MAX_GRAVITY_INTERVAL, MAX_OPENING_ANGLE, MIN_OPENING_ANGLE};
 use crate::compute::particles::{GpuSolver, GravitySolver, NeighbourSearch};
 use crate::core::constants::{
     MAX_DEBRIS_FRAGMENTS, MAX_PARTICLES_PER_BODY, MIN_PARTICLES_PER_BODY,
@@ -355,6 +355,9 @@ pub struct CollisionFile {
     pub neighbours: String,
     /// Barnes–Hut's opening angle `θ`, `0.1` to `1.0`. Applies at once.
     pub opening_angle: f32,
+    /// Ticks between gravity evaluations with Barnes–Hut, `1`, `2`, `4`, `8` or `16`; between them
+    /// gravity is predicted. `1` is every tick; `8` for big runs. Applies at once.
+    pub gravity_interval: u32,
     /// What planets built from particles are made of: `"fluid"` (smoothed-particle hydrodynamics,
     /// an iron core under a basalt mantle) or `"rubble"` (basalt particles held by springs). Read when
     /// the scene is built, so it applies from the next launch.
@@ -376,6 +379,7 @@ impl CollisionFile {
             gravity: solver.gravity.name().to_string(),
             neighbours: solver.neighbours.name().to_string(),
             opening_angle: solver.opening_angle,
+            gravity_interval: solver.gravity_interval,
             planet_model: settings.planet_model.name().to_string(),
         }
     }
@@ -405,11 +409,18 @@ impl CollisionFile {
             gravity,
             neighbours,
             opening_angle: self.opening_angle,
+            gravity_interval: self.gravity_interval,
         };
-        if !solver.is_valid() {
+        if !(MIN_OPENING_ANGLE..=MAX_OPENING_ANGLE).contains(&self.opening_angle) {
             return Err(format!(
                 "`opening_angle` must be from {MIN_OPENING_ANGLE} to {MAX_OPENING_ANGLE}, got {}",
                 self.opening_angle
+            ));
+        }
+        if !solver.is_valid() {
+            return Err(format!(
+                "`gravity_interval` must be 1, 2, 4, 8 or 16 (a power of two up to \n                 {MAX_GRAVITY_INTERVAL}), got {}",
+                self.gravity_interval
             ));
         }
         if !(MIN_PARTICLES_PER_BODY..=MAX_PARTICLES_PER_BODY).contains(&self.particles_per_body) {
